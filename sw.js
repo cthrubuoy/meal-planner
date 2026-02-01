@@ -1,14 +1,17 @@
-const CACHE_NAME = "meal-planner-v8-0";
+const CACHE_NAME = "meal-planner-v9-0";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./sw.js",
+  "./assets/styles.css",
+  "./assets/app.js",
+  "./assets/pwa.js",
   "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icons/icon-512.png",
+  "./icons/icon-180.png"
 ];
 
-// Install: cache core files
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
@@ -16,7 +19,6 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate: clear old caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -26,17 +28,12 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch strategy:
-// - For navigation (index.html): network first, fallback to cache (so updates arrive)
-// - For everything else: cache first
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Only handle same-origin requests
   if (url.origin !== location.origin) return;
 
-  // Navigation requests (app shell)
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req).then((res) => {
@@ -48,9 +45,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Other assets
   event.respondWith(
     caches.match(req).then((cached) => cached || fetch(req))
   );
-
 });
