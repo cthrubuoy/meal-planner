@@ -1,11 +1,11 @@
-/* Meal Planner & Shopping List — v9 (modular)
-   - Mobile-first views (Meals/Shopping/Add/Cook) with bottom nav
-   - Cook mode uses exactly ONE selected meal (dropdown), independent of shopping list
-   - Ingredient add focuses + highlights new row
-   - Success message includes meal name
-   - Image upload robust: webp if supported, fallback to jpeg, never blocks saving
-   - Selected meals counter
-   - TSV export includes Meals selected header
+/* Meal Planner & Shopping List — v9.1 (modular)
+   Fixes:
+   - Toast messages always visible (success messages no longer "disappear")
+   - Prevent horizontal overflow on mobile (paired with CSS)
+   - Meal selection on mobile: tap image/title toggles selection; favourite is icon-only
+   - Ingredient highlight focuses the ingredient NAME input only (not whole row)
+   - Add-meal submit: hard try/catch so image processing never blocks saving
+   - Bottom nav view switching retained
 */
 
 const DB_NAME = "mealPlannerDBv8";   // keep DB name to preserve existing data
@@ -30,7 +30,6 @@ const state = {
 
   timeFilter: { min: 0, max: 120 },
 
-  // mobile view switching
   view: "meals"
 };
 
@@ -62,11 +61,19 @@ function formatNumber(n) {
   return Number.isInteger(t) ? String(t) : t.toFixed(2).replace(/\.00$/, "");
 }
 
+/* ===== Status + Toast ===== */
+let toastTimer = null;
 function status(msg, ms = 2400) {
   const el = $("#status");
-  if (!el) return;
-  el.textContent = msg;
-  if (ms) setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, ms);
+  if (el) el.textContent = msg;
+
+  const toast = $("#toast");
+  if (toast) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), ms || 2400);
+  }
 }
 
 /* ===== IndexedDB ===== */
@@ -126,7 +133,8 @@ function applyTheme() {
     mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   }
   document.documentElement.setAttribute("data-theme", mode === "light" ? "light" : "dark");
-  $("#theme-toggle").textContent = mode === "light" ? "☀️" : "🌙";
+  const t = $("#theme-toggle");
+  if (t) t.textContent = mode === "light" ? "☀️" : "🌙";
 }
 $("#theme-toggle")?.addEventListener("click", async () => {
   const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
@@ -144,13 +152,11 @@ function setView(view) {
   state.view = view;
 
   if (isMobile()) {
-    // show/hide views
     VIEWS.forEach(v => {
       const el = document.getElementById(`view-${v}`);
-      if (!el) return;
-      el.classList.toggle("active", v === view);
+      if (el) el.classList.toggle("active", v === view);
     });
-    // Add panel is not inside view; treat it as view-add
+
     const addPanel = $("#add-panel");
     const rightPanel = $("#right-panel");
     if (view === "add") {
@@ -162,24 +168,19 @@ function setView(view) {
       rightPanel.style.display = "";
     }
   } else {
-    // desktop: show all (two-column layout)
     $("#add-panel").style.display = "";
     $("#right-panel").style.display = "";
     VIEWS.forEach(v => {
       const el = document.getElementById(`view-${v}`);
-      if (!el) return;
-      // on desktop we show meals+shopping+cook stacked; hide cook unless user selects it via nav? keep visible
-      el.classList.add("active");
-      el.style.display = "";
+      if (el) { el.classList.add("active"); el.style.display = ""; }
     });
   }
 
-  // nav active state
   $$("#bottom-nav .navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === view));
 
-  // cook view refresh
   if (view === "cook") populateCookSelect();
 }
+
 $$("#bottom-nav .navbtn").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
 
 /* ===== Collapsible Add panel (mobile) ===== */
@@ -200,6 +201,7 @@ function updateIngredientSuggestions() {
   const set = new Set();
   state.meals.forEach(m => (m.ingredients || []).forEach(i => set.add(normaliseRaw(i.name))));
   const list = $("#ingredient-suggestions");
+  if (!list) return;
   list.innerHTML = "";
   Array.from(set).sort().forEach(n => {
     const o = document.createElement("option");
@@ -214,6 +216,7 @@ function allTagsSet() {
 }
 function refreshTagSuggestions() {
   const list = $("#tag-suggestions");
+  if (!list) return;
   list.innerHTML = "";
   Array.from(allTagsSet()).sort().forEach(t => {
     const o = document.createElement("option");
@@ -259,7 +262,7 @@ async function fileToCompressedDataURL(file) {
       o.src = URL.createObjectURL(file);
     });
 
-    let max = 1600;
+    let max = 1400; // slightly smaller to be safer on mobile
     let quality = mime === "image/jpeg" ? 0.82 : 0.86;
     let data = null;
 
@@ -380,7 +383,6 @@ function maybeApplyUnitDefault(row) {
   typeEl.title = locked ? "Locked by unit defaults (Settings)" : "";
   unitEl.title = typeEl.title;
 
-  // qty should be integer
   if (typeEl.value === "qty") {
     amtEl.step = "1";
     if (amtEl.value) amtEl.value = String(Math.max(0, Math.round(parseFloat(amtEl.value) || 0)));
@@ -413,13 +415,14 @@ function addIngredientRow(container, pref = {}) {
   nameEl.addEventListener("change", () => maybeApplyUnitDefault(row));
   container.appendChild(row);
 
-  // v9: auto-focus + highlight new row when user adds ingredient
+  // v9.1: focus + highlight ingredient NAME input only
   if (!pref || !pref.name) {
     setTimeout(() => {
       nameEl.focus();
-      row.classList.remove("flash");
-      row.classList.add("flash");
-      row.scrollIntoView({ behavior: "smooth", block: "center" });
+      nameEl.classList.remove("flash-input");
+      nameEl.classList.add("flash-input");
+      nameEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => nameEl.classList.remove("flash-input"), 1300);
     }, 30);
   }
 
@@ -491,6 +494,7 @@ function lockBodyScroll(locked) {
   else document.body.classList.remove("modal-open");
 }
 
+/* ===== Selection count ===== */
 function updateSelectedCount() {
   const n = state.selected.size;
   const el = $("#selected-count");
@@ -516,79 +520,92 @@ refreshCreateSteps();
 $("#meal-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const title = $("#title").value.trim();
-  if (!title) return alert("Please provide a title.");
+  try {
+    const title = $("#title").value.trim();
+    if (!title) return alert("Please provide a title.");
 
-  // image (robust, non-blocking)
-  const file = $("#image-file").files[0];
-  const imageDataUrl = await fileToCompressedDataURL(file);
+    // image (never block saving)
+    let imageDataUrl = null;
+    const file = $("#image-file").files[0];
+    if (file) {
+      try {
+        imageDataUrl = await fileToCompressedDataURL(file);
+      } catch (err) {
+        console.warn("Image processing failed:", err);
+        imageDataUrl = null;
+      }
+    }
 
-  // cook mins
-  const cookRaw = $("#cook-mins").value.trim();
-  let cookMins = Number(cookRaw);
-  if (!isFinite(cookMins)) cookMins = null;
-  if (cookMins !== null) cookMins = Math.max(0, Math.min(120, cookMins));
+    // cook mins
+    const cookRaw = $("#cook-mins").value.trim();
+    let cookMins = Number(cookRaw);
+    if (!isFinite(cookMins)) cookMins = null;
+    if (cookMins !== null) cookMins = Math.max(0, Math.min(120, cookMins));
 
-  // ingredients
-  const ingredients = [];
-  $$(".ingredient-row", ingContainer).forEach(row => {
-    const [nEl, tEl, aEl, uEl] = row.children;
-    const name = nEl.value.trim();
-    if (!name) return;
+    // ingredients
+    const ingredients = [];
+    $$(".ingredient-row", ingContainer).forEach(row => {
+      const [nEl, tEl, aEl, uEl] = row.children;
+      const name = nEl.value.trim();
+      if (!name) return;
 
-    let amount = Number(aEl.value);
-    if (!isFinite(amount) || amount < 0) return;
+      let amount = Number(aEl.value);
+      if (!isFinite(amount) || amount < 0) return;
 
-    const type = tEl.value;
-    if (type === "qty") amount = Math.max(0, Math.round(amount));
-    const unit = uEl.value.trim();
+      const type = tEl.value;
+      if (type === "qty") amount = Math.max(0, Math.round(amount));
+      const unit = uEl.value.trim();
 
-    ingredients.push({ name: normaliseRaw(name), type, amount, unit });
-  });
-  if (!ingredients.length) return alert("Please add at least one valid ingredient.");
+      ingredients.push({ name: normaliseRaw(name), type, amount, unit });
+    });
+    if (!ingredients.length) return alert("Please add at least one valid ingredient.");
 
-  const autoTags = ingredientNamesToTags(ingredients);
-  const userTags = tagEditor.get();
-  const tags = Array.from(new Set([...userTags, ...autoTags]));
+    const autoTags = ingredientNamesToTags(ingredients);
+    const userTags = tagEditor.get();
+    const tags = Array.from(new Set([...userTags, ...autoTags]));
 
-  const steps = createSteps.slice();
-  const notes = ($("#notes").value || "").trim();
+    const steps = createSteps.slice();
+    const notes = ($("#notes").value || "").trim();
 
-  const meal = {
-    id: uid(),
-    title,
-    image: imageDataUrl ? { type: "data", src: imageDataUrl } : null,
-    fav: false,
-    tags,
-    ingredients,
-    cookMins: cookMins || null,
-    steps,
-    notes
-  };
+    const meal = {
+      id: uid(),
+      title,
+      image: imageDataUrl ? { type: "data", src: imageDataUrl } : null,
+      fav: false,
+      tags,
+      ingredients,
+      cookMins: cookMins || null,
+      steps,
+      notes
+    };
 
-  state.meals.unshift(meal);
-  await saveAll();
+    state.meals.unshift(meal);
+    await saveAll();
 
-  renderMeals();
-  renderShopping();
-  populateCookSelect();
+    renderMeals();
+    renderShopping();
+    populateCookSelect();
 
-  updateIngredientSuggestions();
-  refreshTagSuggestions();
+    updateIngredientSuggestions();
+    refreshTagSuggestions();
 
-  e.target.reset();
-  ingContainer.innerHTML = "";
-  addIngredientRow(ingContainer);
-  addIngredientRow(ingContainer);
-  tagEditor.set([]);
-  createSteps = [];
-  refreshCreateSteps();
-  $("#notes").value = "";
+    e.target.reset();
+    ingContainer.innerHTML = "";
+    addIngredientRow(ingContainer);
+    addIngredientRow(ingContainer);
+    tagEditor.set([]);
+    createSteps = [];
+    refreshCreateSteps();
+    $("#notes").value = "";
 
-  status(`Success — ${meal.title} meal added`);
+    status(`Success — ${meal.title} meal added`);
 
-  // mobile: collapse after add
-  if (isMobile()) setView("meals");
+    // mobile: switch after toast has shown (toast stays visible anyway)
+    if (isMobile()) setView("meals");
+  } catch (err) {
+    console.error(err);
+    alert("Something went wrong while saving. If it keeps happening, open DevTools/console and share the error.");
+  }
 });
 
 $("#reset-form")?.addEventListener("click", () => {
@@ -1031,19 +1048,35 @@ function renderMeals() {
     const star = document.createElement("span");
     star.textContent = meal.fav ? "★" : "☆";
     const ft = document.createElement("span");
-    ft.textContent = meal.fav ? "Favourited" : "Favourite";
+    ft.textContent = meal.fav ? "Favourited" : "Favourite"; // hidden on mobile by CSS
     fav.append(star, ft);
-    fav.addEventListener("click", async () => {
+    fav.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
       const m = state.meals.find(x => x.id === meal.id);
       m.fav = !m.fav;
       await saveAll();
       renderMeals();
     });
 
+    // v9.1: allow tapping image area to toggle selection (except favourite/checkbox)
+    function toggleSelected() {
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    media.addEventListener("click", (ev) => {
+      if (ev.target.closest(".fav")) return;
+      if (ev.target.tagName === "INPUT") return;
+      toggleSelected();
+    });
+
     media.append(img, sel, fav);
 
     const title = document.createElement("h3");
     title.textContent = meal.title;
+
+    // v9.1: allow tapping title to toggle selection
+    title.style.cursor = "pointer";
+    title.addEventListener("click", toggleSelected);
 
     const chips = document.createElement("div");
     chips.className = "chips";
@@ -1074,7 +1107,8 @@ function renderMeals() {
       nt.className = "no-tags";
       nt.textContent = "no tags";
       nt.title = "Click to add tags";
-      nt.addEventListener("click", () => {
+      nt.addEventListener("click", (ev) => {
+        ev.stopPropagation();
         openEdit(meal.id);
         setTimeout(() => $("#edit-tags-input")?.focus(), 80);
       });
@@ -1087,12 +1121,13 @@ function renderMeals() {
     const editBtn = document.createElement("button");
     editBtn.className = "btn";
     editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", () => openEdit(meal.id));
+    editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); openEdit(meal.id); });
 
     const del = document.createElement("button");
     del.className = "btn danger";
     del.textContent = "Delete";
-    del.addEventListener("click", async () => {
+    del.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
       if (!confirm(`Delete “${meal.title}”?`)) return;
       state.meals = state.meals.filter(m => m.id !== meal.id);
       state.selected.delete(meal.id);
@@ -1514,13 +1549,8 @@ $("#unit-add")?.addEventListener("click", async () => {
   refreshTagSuggestions();
   setupMobileAddPanel();
 
-  // default mobile start
-  if (isMobile()) {
-    setView("meals");
-  } else {
-    // desktop shows everything; still mark nav default
-    setView("meals");
-  }
+  if (isMobile()) setView("meals");
+  else setView("meals");
 
   syncTimeSliders();
   clampTime();
