@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Meal Planner & Shopping List — v9</title>
+  <title>Meal Planner & Shopping List — v9.1</title>
 
   <link rel="stylesheet" href="assets/styles.css" />
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0b0f1a">
 
-  <!-- iOS home screen icon support -->
+  <!-- iOS home screen icon support (harmless on Android) -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Meal Planner">
@@ -22,7 +22,7 @@
 <body>
   <header>
     <div class="wrap headerbar">
-      <h1>🛒 Meal Planner & Shopping List <span class="pill">v9</span></h1>
+      <h1>🛒 Meal Planner & Shopping List <span class="pill">v9.1</span></h1>
       <div class="group">
         <button class="btn" id="theme-toggle" title="Toggle theme">🌙</button>
         <button class="btn" id="settings">Settings</button>
@@ -372,5 +372,8 @@
     <button class="navbtn" data-view="add">➕ Add</button>
     <button class="navbtn" data-view="cook">🔥 Cook</button>
   </nav>
+
+  <!-- v9.1 toast -->
+  <div id="toast" class="toast" aria-live="polite"></div>
 </body>
 </html>
