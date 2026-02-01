@@ -1,4 +1,4 @@
-const CACHE_NAME = "meal-planner-v9-1";
+const CACHE_NAME = "meal-planner-v9-2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -49,3 +49,4 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
+
