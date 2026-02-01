@@ -440,3 +440,77 @@ body.modal-open{overflow:hidden}
     z-index: 9999 !important;
   }
 }
+
+/* ===== v9.3 MOBILE LIST TUNING (final polish for portrait) ===== */
+@media (max-width:720px){
+
+  /* Card becomes a compact list row */
+  .card{
+    padding:0;
+    gap:0;
+  }
+
+  /* Thumbnail smaller + calmer */
+  .card .media{
+    width:72px;
+    min-width:72px;
+    height:72px;
+  }
+  .card img{
+    height:72px !important;
+    border-radius:12px 0 0 12px;
+  }
+
+  /* Right-hand content: tighter */
+  .card > :nth-child(2){
+    padding:8px 10px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+
+  /* Title: clamp to 2 lines */
+  .card h3{
+    font-size:.95rem;
+    line-height:1.2;
+    margin:0;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+
+  /* Time pill smaller */
+  .card .chip{
+    font-size:.7rem;
+    padding:3px 8px;
+  }
+
+  /* Controls: shorter buttons, less dominance */
+  .controls{
+    margin:4px 0 0;
+    gap:6px;
+  }
+  .controls .btn{
+    padding:8px 10px;
+    font-size:.85rem;
+    border-radius:10px;
+  }
+
+  /* Danger button less aggressive visually */
+  .controls .btn.danger{
+    background:linear-gradient(180deg,#a11f2a,#7f1d1d);
+  }
+
+  /* Selection + favourite: icon-only, quieter */
+  .select{
+    padding:4px 6px;
+    font-size:.7rem;
+    gap:4px;
+  }
+
+  .fav{
+    padding:4px 6px;
+    opacity:.85;
+  }
+}
