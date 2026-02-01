@@ -12,7 +12,7 @@
   --shadow:0 6px 20px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box}
-html, body { max-width: 100%; overflow-x: hidden; } /* hard stop for horizontal overflow */
+html, body { max-width: 100%; overflow-x: hidden; }
 
 body{
   margin:0;
@@ -286,14 +286,14 @@ body.modal-open{overflow:hidden}
 .mobile-controls{display:none}
 .desktop-controls{display:flex}
 
-/* Views: on mobile we truly switch views */
+/* Views */
 .view{display:block}
 
 /* toast */
 .toast{
   position: fixed;
   left: 12px; right: 12px;
-  bottom: 92px; /* above bottom nav */
+  bottom: 92px;
   z-index: 99999;
   display:none;
   padding: 12px 14px;
@@ -305,13 +305,12 @@ body.modal-open{overflow:hidden}
 }
 .toast.show{ display:block; }
 
-/* ===== Mobile-first behaviour ===== */
+/* ===== Existing mobile behaviour ===== */
 @media (max-width:720px){
-  input,select,textarea{font-size:16px} /* prevent mobile zoom quirks */
+  input,select,textarea{font-size:16px}
   .layout{padding:12px;gap:12px}
   .inner{padding:12px}
 
-  /* Mobile: show bottom nav (always visible) */
   .bottom-nav{
     display:flex;position:fixed;left:0;right:0;bottom:0;
     gap:8px;padding:10px 12px;
@@ -322,7 +321,6 @@ body.modal-open{overflow:hidden}
   }
   .layout{padding-bottom:92px}
 
-  /* Mobile: collapse Add by default */
   #add-panel{order:2}
   #right-panel{order:1}
   #add-panel{min-height:auto}
@@ -331,17 +329,15 @@ body.modal-open{overflow:hidden}
   .desktop-controls{display:none}
   .mobile-controls{display:flex}
 
-  /* --- Mobile meals: list layout with small thumbnail left --- */
   .grid{grid-template-columns:1fr !important}
 
-  /* v9.1b: stop card content overflowing viewport */
   .card{
     display:flex !important;
     flex-direction:row !important;
     align-items:stretch;
     max-width:100%;
     width:100%;
-    overflow:hidden; /* belt + braces */
+    overflow:hidden;
     border-radius:16px;
   }
 
@@ -353,7 +349,6 @@ body.modal-open{overflow:hidden}
   }
   .card img{height:84px !important}
 
-  /* IMPORTANT: allow right side to shrink instead of forcing overflow */
   .card > :nth-child(2){
     flex:1 1 auto;
     min-width:0;
@@ -383,12 +378,10 @@ body.modal-open{overflow:hidden}
     max-width:100%;
   }
 
-  /* Make selection accessible */
   .select{top:6px;left:6px;padding:4px 8px;font-size:.85rem}
   .fav{top:6px;right:6px;padding:6px 10px;font-size:.85rem}
-  .fav span:nth-child(2){display:none} /* icon-only favourite label */
+  .fav span:nth-child(2){display:none}
 
-  /* Ingredient rows: stack */
   .ingredient-row{
     grid-template-columns:1fr auto;
     grid-template-areas:
@@ -402,7 +395,6 @@ body.modal-open{overflow:hidden}
   .ingredient-row input:nth-child(4){grid-area:unit}
   .ingredient-row button.remove{grid-area:remove}
 
-  /* ingredient row sizing on mobile */
   .ingredient-row input, .ingredient-row select{width:100%}
   .ingredient-row button.remove{
     width:34px;height:34px;padding:0;border-radius:10px;
@@ -410,29 +402,21 @@ body.modal-open{overflow:hidden}
     font-size:18px;
   }
 
-  /* Mobile: Shopping list rows easier to scan */
   #shopping table thead{display:none}
   #shopping table tr{display:flex;justify-content:space-between;gap:10px}
   #shopping table td{border:none;padding:10px 0}
   #shopping table td:nth-child(1){flex:1}
   #shopping table td:nth-child(2), #shopping table td:nth-child(3){white-space:nowrap}
 
-  /* Bigger important actions */
   .big-action{padding:14px 16px !important;border-radius:14px;font-weight:700}
 
-  /* Views: only active view shown on mobile */
   .view{display:none}
   .view.active{display:block}
 
-  /* prevent toolbars/cards from forcing overflow */
   .toolbar, .group, .card, .chips, .controls { min-width: 0; }
   .tagbar { max-width: 100%; }
-
-  /* optional: if tagbar overlay causes weirdness on some devices */
-  /* .tagbar::after{ display:none; } */
 }
 
-/* harden bottom nav position */
 @media (max-width:720px){
   #bottom-nav{
     position: fixed !important;
@@ -441,76 +425,104 @@ body.modal-open{overflow:hidden}
   }
 }
 
-/* ===== v9.3 MOBILE LIST TUNING (final polish for portrait) ===== */
+/* ============================================================
+   v9.4 MOBILE LIST "FORCE" OVERRIDES
+   - These are intentionally strong so the layout *must* change.
+   - Only applies on phones.
+   ============================================================ */
 @media (max-width:720px){
 
-  /* Card becomes a compact list row */
+  /* Force compact list-row cards */
+  .grid .card,
   .card{
-    padding:0;
-    gap:0;
+    display:flex !important;
+    flex-direction:row !important;
+    align-items:stretch !important;
+    width:100% !important;
+    max-width:100% !important;
+    overflow:hidden !important;
   }
 
-  /* Thumbnail smaller + calmer */
+  /* Smaller thumbnail */
   .card .media{
-    width:72px;
-    min-width:72px;
-    height:72px;
+    flex:0 0 72px !important;
+    width:72px !important;
+    min-width:72px !important;
+    height:72px !important;
   }
   .card img{
     height:72px !important;
-    border-radius:12px 0 0 12px;
+    width:100% !important;
+    object-fit:cover !important;
+    border-radius:12px 0 0 12px !important;
   }
 
-  /* Right-hand content: tighter */
+  /* Make right side a tight vertical stack */
   .card > :nth-child(2){
-    padding:8px 10px;
-    display:flex;
-    flex-direction:column;
-    gap:6px;
+    flex:1 1 auto !important;
+    min-width:0 !important;
+    width:auto !important;
+    padding:8px 10px !important;
+    display:flex !important;
+    flex-direction:column !important;
+    gap:6px !important;
   }
 
-  /* Title: clamp to 2 lines */
+  /* Title: 2-line clamp */
   .card h3{
-    font-size:.95rem;
-    line-height:1.2;
-    margin:0;
-    display:-webkit-box;
-    -webkit-line-clamp:2;
-    -webkit-box-orient:vertical;
-    overflow:hidden;
+    margin:0 !important;
+    font-size:.95rem !important;
+    line-height:1.2 !important;
+    overflow:hidden !important;
+    display:-webkit-box !important;
+    -webkit-line-clamp:2 !important;
+    -webkit-box-orient:vertical !important;
+    word-break:break-word !important;
+    overflow-wrap:anywhere !important;
   }
 
-  /* Time pill smaller */
+  /* Smaller chips / time */
   .card .chip{
-    font-size:.7rem;
-    padding:3px 8px;
+    font-size:.72rem !important;
+    padding:3px 8px !important;
   }
 
-  /* Controls: shorter buttons, less dominance */
+  /* Buttons: always fit (no off-screen) */
   .controls{
-    margin:4px 0 0;
-    gap:6px;
+    margin:4px 0 0 !important;
+    display:flex !important;
+    flex-wrap:nowrap !important;        /* keep side-by-side */
+    gap:6px !important;
+    max-width:100% !important;
+    min-width:0 !important;
   }
   .controls .btn{
-    padding:8px 10px;
-    font-size:.85rem;
-    border-radius:10px;
+    flex:1 1 0 !important;              /* share available width */
+    min-width:0 !important;
+    max-width:100% !important;
+    padding:8px 10px !important;
+    font-size:.85rem !important;
+    border-radius:10px !important;
+    white-space:nowrap !important;
   }
 
-  /* Danger button less aggressive visually */
-  .controls .btn.danger{
-    background:linear-gradient(180deg,#a11f2a,#7f1d1d);
-  }
-
-  /* Selection + favourite: icon-only, quieter */
+  /* Selection pill: stop it eating the image */
   .select{
-    padding:4px 6px;
-    font-size:.7rem;
-    gap:4px;
+    top:6px !important;
+    left:6px !important;
+    padding:4px 6px !important;
+    font-size:.75rem !important;
+    gap:4px !important;
+    max-width:44px !important;          /* hides "Include" without needing spans */
+    overflow:hidden !important;
+    white-space:nowrap !important;
   }
 
+  /* Favourite pill: icon-only already, keep it subtle */
   .fav{
-    padding:4px 6px;
-    opacity:.85;
+    top:6px !important;
+    right:6px !important;
+    padding:4px 6px !important;
+    opacity:.9 !important;
   }
 }
