@@ -12,7 +12,7 @@
   --shadow:0 6px 20px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box}
-html, body { max-width: 100%; overflow-x: hidden; } /* v9.1 hard stop for horizontal overflow */
+html, body { max-width: 100%; overflow-x: hidden; } /* hard stop for horizontal overflow */
 
 body{
   margin:0;
@@ -81,7 +81,10 @@ textarea{resize:vertical}
 
 .group{display:flex;gap:10px;flex-wrap:wrap;align-items:center;max-width:100%}
 .space-between{justify-content:space-between}
-.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px;overflow-x:hidden}
+.toolbar{
+  display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+  justify-content:space-between;margin-bottom:10px;overflow-x:hidden
+}
 .toolbar.tight{margin-top:-4px}
 .muted{color:var(--muted)}
 .form-row{display:grid;gap:8px;margin-bottom:12px}
@@ -100,7 +103,7 @@ textarea{resize:vertical}
   padding:8px 10px;border-radius:10px;cursor:pointer
 }
 
-/* v9.1: highlight only the ingredient NAME input */
+/* highlight only the ingredient NAME input */
 .flash-input{
   outline: 2px solid rgba(34,197,94,.75);
   box-shadow: 0 0 0 6px rgba(34,197,94,.12);
@@ -286,7 +289,7 @@ body.modal-open{overflow:hidden}
 /* Views: on mobile we truly switch views */
 .view{display:block}
 
-/* v9.1: toast */
+/* toast */
 .toast{
   position: fixed;
   left: 12px; right: 12px;
@@ -328,25 +331,62 @@ body.modal-open{overflow:hidden}
   .desktop-controls{display:none}
   .mobile-controls{display:flex}
 
-  /* Mobile: meals compact list with small thumbnail left */
+  /* --- Mobile meals: list layout with small thumbnail left --- */
   .grid{grid-template-columns:1fr !important}
+
+  /* v9.1b: stop card content overflowing viewport */
   .card{
     display:flex !important;
     flex-direction:row !important;
-    grid-template-rows:unset !important;
+    align-items:stretch;
+    max-width:100%;
+    width:100%;
+    overflow:hidden; /* belt + braces */
     border-radius:16px;
   }
-  .card .media{width:92px;min-width:92px;height:92px}
-  .card img{height:92px !important}
-  .card h3{font-size:1rem;margin:10px 10px 6px}
-  .chips{margin:0 10px 8px}
-  .controls{margin:0 10px 10px}
-  .controls button{flex:1}
+
+  .card .media{
+    width:84px;
+    min-width:84px;
+    height:84px;
+    flex:0 0 84px;
+  }
+  .card img{height:84px !important}
+
+  /* IMPORTANT: allow right side to shrink instead of forcing overflow */
+  .card > :nth-child(2){
+    flex:1 1 auto;
+    min-width:0;
+    width:auto;
+  }
+
+  .card h3{
+    font-size:1rem;
+    margin:10px 10px 6px;
+    line-height:1.2;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+  }
+
+  .chips{margin:0 10px 8px;min-width:0;max-width:100%}
+  .controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin:0 10px 10px;
+    min-width:0;
+    max-width:100%;
+  }
+  .controls .btn{
+    flex:1 1 120px;
+    min-width:0;
+    max-width:100%;
+  }
 
   /* Make selection accessible */
   .select{top:6px;left:6px;padding:4px 8px;font-size:.85rem}
   .fav{top:6px;right:6px;padding:6px 10px;font-size:.85rem}
-  .fav span:nth-child(2){display:none} /* v9.1: icon-only favourite label */
+  .fav span:nth-child(2){display:none} /* icon-only favourite label */
 
   /* Ingredient rows: stack */
   .ingredient-row{
@@ -362,7 +402,7 @@ body.modal-open{overflow:hidden}
   .ingredient-row input:nth-child(4){grid-area:unit}
   .ingredient-row button.remove{grid-area:remove}
 
-  /* v9.1: ingredient row sizing on mobile */
+  /* ingredient row sizing on mobile */
   .ingredient-row input, .ingredient-row select{width:100%}
   .ingredient-row button.remove{
     width:34px;height:34px;padding:0;border-radius:10px;
@@ -384,12 +424,15 @@ body.modal-open{overflow:hidden}
   .view{display:none}
   .view.active{display:block}
 
-  /* v9.1: prevent toolbars/cards from forcing overflow */
+  /* prevent toolbars/cards from forcing overflow */
   .toolbar, .group, .card, .chips, .controls { min-width: 0; }
   .tagbar { max-width: 100%; }
+
+  /* optional: if tagbar overlay causes weirdness on some devices */
+  /* .tagbar::after{ display:none; } */
 }
 
-/* v9.1: harden bottom nav position */
+/* harden bottom nav position */
 @media (max-width:720px){
   #bottom-nav{
     position: fixed !important;
