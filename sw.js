@@ -1,5 +1,5 @@
 /* sw.js — v9.4 */
-const CACHE_NAME = "meal-planner-v9-4";
+const CACHE_NAME = "meal-planner-v9-5";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -59,3 +59,4 @@ self.addEventListener("fetch", (event) => {
     return fresh;
   })());
 });
+
