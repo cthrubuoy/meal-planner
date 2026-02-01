@@ -12,6 +12,8 @@
   --shadow:0 6px 20px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box}
+html, body { max-width: 100%; overflow-x: hidden; } /* v9.1 hard stop for horizontal overflow */
+
 body{
   margin:0;
   background:linear-gradient(180deg,var(--bg),#0a0f1c 45%,#0a0e19);
@@ -77,9 +79,9 @@ textarea{resize:vertical}
   border-color:rgba(239,68,68,.5)
 }
 
-.group{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.group{display:flex;gap:10px;flex-wrap:wrap;align-items:center;max-width:100%}
 .space-between{justify-content:space-between}
-.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px;overflow-x:hidden}
 .toolbar.tight{margin-top:-4px}
 .muted{color:var(--muted)}
 .form-row{display:grid;gap:8px;margin-bottom:12px}
@@ -98,19 +100,19 @@ textarea{resize:vertical}
   padding:8px 10px;border-radius:10px;cursor:pointer
 }
 
-/* v9: highlight new ingredient row */
-.flash{
-  outline:2px solid rgba(34,197,94,.75);
-  box-shadow:0 0 0 6px rgba(34,197,94,.12);
-  border-radius:12px;
-  animation:flashFade 1.2s ease-out forwards;
+/* v9.1: highlight only the ingredient NAME input */
+.flash-input{
+  outline: 2px solid rgba(34,197,94,.75);
+  box-shadow: 0 0 0 6px rgba(34,197,94,.12);
+  border-radius: 10px;
+  animation: flashFade 1.2s ease-out forwards;
 }
 @keyframes flashFade{
-  0%{box-shadow:0 0 0 10px rgba(34,197,94,.18)}
-  100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}
+  0%{ box-shadow: 0 0 0 10px rgba(34,197,94,.18); }
+  100%{ box-shadow: 0 0 0 0 rgba(34,197,94,0); }
 }
 
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--card-min),1fr));gap:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--card-min),1fr));gap:14px;max-width:100%}
 .card{
   background:var(--card);
   border:1px solid rgba(255,255,255,.06);
@@ -119,6 +121,7 @@ textarea{resize:vertical}
   box-shadow:var(--shadow);
   display:grid;
   grid-template-rows:160px auto;
+  max-width:100%;
 }
 .media{position:relative}
 .card img{
@@ -132,7 +135,8 @@ textarea{resize:vertical}
   display:flex;align-items:center;gap:8px;
   background:rgba(2,6,23,.6);
   border:1px solid rgba(255,255,255,.15);
-  padding:6px 10px;border-radius:999px
+  padding:6px 10px;border-radius:999px;
+  z-index:2;
 }
 .fav{
   position:absolute;top:10px;right:10px;
@@ -140,11 +144,12 @@ textarea{resize:vertical}
   background:rgba(2,6,23,.6);
   color:var(--gold);
   padding:6px 10px;cursor:pointer;
-  display:flex;align-items:center;gap:6px
+  display:flex;align-items:center;gap:6px;
+  z-index:3;
 }
 .fav[data-on=true]{background:rgba(250,204,21,.18);border-color:rgba(250,204,21,.5)}
-.card h3{margin:12px 12px 8px;font-size:1.05rem}
-.chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 12px 12px}
+.card h3{margin:12px 12px 8px;font-size:1.05rem;word-break:break-word}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 12px 12px;min-width:0}
 .chip{
   font-size:.75rem;background:var(--chip);
   color:#cbd5e1;border:1px solid rgba(255,255,255,.08);
@@ -158,11 +163,12 @@ textarea{resize:vertical}
   text-decoration:underline dotted 1px transparent
 }
 .no-tags:hover{text-decoration-color:rgba(255,255,255,.35)}
-.controls{display:flex;gap:8px;margin:0 12px 12px}
+.controls{display:flex;gap:8px;margin:0 12px 12px;min-width:0}
 
 .tagbar{
   display:flex;gap:8px;flex-wrap:nowrap;
-  overflow-x:auto;white-space:nowrap;position:relative;padding-bottom:4px
+  overflow-x:auto;white-space:nowrap;position:relative;padding-bottom:4px;
+  max-width:100%;
 }
 .tagbar::-webkit-scrollbar{display:none}
 .tagbar::after{
@@ -280,20 +286,36 @@ body.modal-open{overflow:hidden}
 /* Views: on mobile we truly switch views */
 .view{display:block}
 
+/* v9.1: toast */
+.toast{
+  position: fixed;
+  left: 12px; right: 12px;
+  bottom: 92px; /* above bottom nav */
+  z-index: 99999;
+  display:none;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(2,6,23,.92);
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+.toast.show{ display:block; }
+
 /* ===== Mobile-first behaviour ===== */
 @media (max-width:720px){
-  input,select,textarea{font-size:16px} /* prevent iOS zoom */
+  input,select,textarea{font-size:16px} /* prevent mobile zoom quirks */
   .layout{padding:12px;gap:12px}
   .inner{padding:12px}
 
-  /* Mobile: show bottom nav */
+  /* Mobile: show bottom nav (always visible) */
   .bottom-nav{
     display:flex;position:fixed;left:0;right:0;bottom:0;
     gap:8px;padding:10px 12px;
     background:rgba(10,14,25,.9);
     border-top:1px solid rgba(255,255,255,.08);
     backdrop-filter:blur(8px);
-    z-index:80
+    z-index:9999;
   }
   .layout{padding-bottom:92px}
 
@@ -321,8 +343,10 @@ body.modal-open{overflow:hidden}
   .controls{margin:0 10px 10px}
   .controls button{flex:1}
 
+  /* Make selection accessible */
   .select{top:6px;left:6px;padding:4px 8px;font-size:.85rem}
-  .fav{top:6px;right:6px;padding:4px 8px;font-size:.85rem}
+  .fav{top:6px;right:6px;padding:6px 10px;font-size:.85rem}
+  .fav span:nth-child(2){display:none} /* v9.1: icon-only favourite label */
 
   /* Ingredient rows: stack */
   .ingredient-row{
@@ -338,6 +362,14 @@ body.modal-open{overflow:hidden}
   .ingredient-row input:nth-child(4){grid-area:unit}
   .ingredient-row button.remove{grid-area:remove}
 
+  /* v9.1: ingredient row sizing on mobile */
+  .ingredient-row input, .ingredient-row select{width:100%}
+  .ingredient-row button.remove{
+    width:34px;height:34px;padding:0;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;
+  }
+
   /* Mobile: Shopping list rows easier to scan */
   #shopping table thead{display:none}
   #shopping table tr{display:flex;justify-content:space-between;gap:10px}
@@ -351,4 +383,17 @@ body.modal-open{overflow:hidden}
   /* Views: only active view shown on mobile */
   .view{display:none}
   .view.active{display:block}
+
+  /* v9.1: prevent toolbars/cards from forcing overflow */
+  .toolbar, .group, .card, .chips, .controls { min-width: 0; }
+  .tagbar { max-width: 100%; }
+}
+
+/* v9.1: harden bottom nav position */
+@media (max-width:720px){
+  #bottom-nav{
+    position: fixed !important;
+    left: 0; right: 0; bottom: 0;
+    z-index: 9999 !important;
+  }
 }
