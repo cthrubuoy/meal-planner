@@ -1,4 +1,4 @@
-const CACHE_NAME = "meal-planner-v9-0";
+const CACHE_NAME = "meal-planner-v9-1";
 const ASSETS = [
   "./",
   "./index.html",
@@ -36,16 +36,16 @@ self.addEventListener("fetch", (event) => {
 
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
-        return res;
-      }).catch(() => caches.match("./index.html"))
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+          return res;
+        })
+        .catch(() => caches.match("./index.html"))
     );
     return;
   }
 
-  event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req))
-  );
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
