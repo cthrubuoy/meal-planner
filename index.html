@@ -3,12 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Meal Planner & Shopping List — v7</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#0b0f1a">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>Meal Planner & Shopping List — v8</title>
   <style>
     :root { --bg:#0b0f1a; --panel:#101826; --card:#0b1220; --text:#e5e7eb; --muted:#94a3b8; --chip:#1f2937; --danger:#ef4444; --accent:#22c55e; --gold:#facc15; --radius:18px; --shadow:0 10px 30px rgba(0,0,0,.35); --card-min:260px; }
     [data-theme="light"] { --bg:#f6f7fb; --panel:#fff; --card:#fff; --text:#111827; --muted:#64748b; --chip:#e5e7eb; --danger:#ef4444; --accent:#16a34a; --gold:#b45309; --shadow:0 6px 20px rgba(0,0,0,.08); }
@@ -30,6 +25,7 @@
     label{font-size:.9rem;color:var(--muted)}
     input[type=text],input[type=number],input[type=file],select{background:var(--card);border:1px solid rgba(255,255,255,.12);color:var(--text);padding:10px 12px;border-radius:10px;width:100%}
     textarea{background:var(--card);border:1px solid rgba(255,255,255,.12);color:var(--text);padding:10px 12px;border-radius:10px;width:100%;resize:vertical}
+
     .btn{border:1px solid rgba(255,255,255,.12);background:#111827;color:var(--text);padding:10px 14px;border-radius:12px;cursor:pointer}
     [data-theme="light"] .btn{background:#111827;color:#e5e7eb}
     .btn.primary{background:linear-gradient(180deg,#1f8e54,#1b7b49);border-color:rgba(34,197,94,.5)}
@@ -62,7 +58,7 @@
     tfoot td{color:var(--muted);font-size:.9rem}
     .empty{color:var(--muted);font-style:italic;text-align:center;padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:12px}
 
-    /* Tag strip (single row, scroll, fade) */
+    /* Tag strip */
     .tagbar{display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;position:relative;padding-bottom:4px}
     .tagbar::-webkit-scrollbar{display:none}
     .tagbar::after{content:"";position:absolute;right:0;top:0;width:48px;height:100%;pointer-events:none;background:linear-gradient(90deg,rgba(0,0,0,0), var(--panel))}
@@ -83,11 +79,11 @@
     .modal.open{display:flex}
     .dialog{width:min(900px,96vw);background:linear-gradient(180deg,var(--panel),var(--card));border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:var(--shadow);padding:16px}
 
-    /* Fix: keep dialogs inside viewport + scroll internally */
+    /* Keep dialogs inside viewport + scroll internally */
     .dialog{max-height:calc(100vh - 32px); overflow:auto}
 
     /* Sticky headers inside modals */
-    #edit-modal .toolbar, #settings-modal .toolbar{position:sticky;top:0;z-index:1;background:linear-gradient(180deg,var(--panel),var(--card));padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid rgba(255,255,255,.08)}
+    #edit-modal .toolbar, #settings-modal .toolbar, #filters-modal .toolbar{position:sticky;top:0;z-index:1;background:linear-gradient(180deg,var(--panel),var(--card));padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid rgba(255,255,255,.08)}
 
     body.modal-open{overflow:hidden}
 
@@ -105,12 +101,62 @@
     .step-row{ display:grid; grid-template-columns: 1fr auto auto auto; gap:8px; align-items:center; }
     .step-row .step-text{ padding:10px 12px; border:1px solid rgba(255,255,255,.12); border-radius:10px; background:var(--card); }
     .step-row .mini { padding:8px 10px; border-radius:10px; }
+
+    /* ===== Mobile support (v8) ===== */
+    @media (max-width: 720px){
+      main{ padding:12px; gap:12px; }
+      .inner{ padding:12px; }
+      input, select, textarea{ font-size:16px; } /* prevent iOS zoom */
+
+      /* Cards: single column for scanability */
+      .grid{ grid-template-columns: 1fr !important; }
+      .card{ grid-template-rows: 200px auto; }
+      .controls button{ flex:1; }
+
+      /* Ingredient rows: stack into 2-3 lines */
+      .ingredient-row{
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+          "name remove"
+          "type amount"
+          "unit unit";
+      }
+      .ingredient-row input:nth-child(1){ grid-area:name; }
+      .ingredient-row select{ grid-area:type; }
+      .ingredient-row input:nth-child(3){ grid-area:amount; }
+      .ingredient-row input:nth-child(4){ grid-area:unit; }
+      .ingredient-row button.remove{ grid-area:remove; }
+
+      /* Shopping list: make rows easier to scan */
+      #shopping table thead{ display:none; }
+      #shopping table tr{ display:flex; justify-content:space-between; gap:10px; }
+      #shopping table td{ border:none; padding:10px 0; }
+      #shopping table td:nth-child(1){ flex:1; }
+      #shopping table td:nth-child(2), #shopping table td:nth-child(3){ white-space:nowrap; }
+
+      /* Mobile: collapse Add panel by default */
+      .collapsible-header{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; }
+      .collapsible-header .chev{ transition:transform .2s ease; }
+      .panel.collapsible:not(.open) .collapsible-body{ display:none; }
+      .panel.collapsible.open .collapsible-header .chev{ transform:rotate(180deg); }
+
+      /* Mobile: hide heavy filter controls; use a Filters button */
+      .desktop-controls{ display:none !important; }
+      .mobile-controls{ display:flex !important; }
+
+      /* Make tag bar less tall on mobile */
+      .tagbar{ padding-bottom:2px; }
+    }
+
+    /* Default visibility (desktop shows full controls) */
+    .mobile-controls{ display:none; }
+
   </style>
 </head>
 <body>
   <header>
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between">
-      <h1>🛒 Meal Planner & Shopping List <span class="pill">v7</span></h1>
+      <h1>🛒 Meal Planner & Shopping List <span class="pill">v8</span></h1>
       <div class="group">
         <button class="btn" id="theme-toggle" title="Toggle theme">🌙</button>
         <button class="btn" id="settings">Settings</button>
@@ -119,84 +165,90 @@
   </header>
 
   <main>
-    <section class="panel">
+    <!-- Add panel (collapsible on mobile) -->
+    <section class="panel" id="add-panel">
       <div class="inner">
-        <h2>Add a meal</h2>
-        <form id="meal-form">
-          <div class="form-row">
-            <label for="title">Meal name</label>
-            <input id="title" type="text" placeholder="e.g. Chicken fajitas" required maxlength="80" />
-          </div>
-          <div class="form-row">
-            <label for="image-file">Photo (upload)</label>
-            <input id="image-file" type="file" accept="image/*" />
-            <small class="muted">Large images are auto‑compressed; very large files will be down‑scaled.</small>
-          </div>
-
-          <div class="form-row">
-            <label for="cook-mins">Time to cook (mins)</label>
-            <input id="cook-mins" type="number" min="0" max="120" step="5" placeholder="e.g. 30" />
-          </div>
-
-          <div class="form-row">
-            <div class="group" style="width:100%;justify-content:space-between">
-              <label>Ingredients</label>
-              <small class="muted" id="ing-hint">Qty supports an optional unit label (e.g. pack)</small>
+        <h2 class="collapsible-header" id="add-header">Add a meal <span class="chev">▾</span></h2>
+        <div class="collapsible-body" id="add-body">
+          <form id="meal-form">
+            <div class="form-row">
+              <label for="title">Meal name</label>
+              <input id="title" type="text" placeholder="e.g. Chicken fajitas" required maxlength="80" />
             </div>
-            <div id="ingredients" class="ingredients" aria-live="polite"></div>
-            <div class="group">
-              <button class="btn" type="button" id="add-ingredient">+ Add ingredient</button>
-              <button class="btn" type="button" id="duplicate-last" title="Duplicate last meal">Duplicate last</button>
+            <div class="form-row">
+              <label for="image-file">Photo (upload)</label>
+              <input id="image-file" type="file" accept="image/*" />
+              <small class="muted">Large images are auto-compressed; very large files will be down-scaled.</small>
             </div>
-          </div>
 
-          <div class="form-row">
-            <label>Tags (auto‑seeded from ingredients; comma or Enter to add)</label>
-            <div class="group" id="tags-editor"></div>
-            <input id="tags-input" type="text" list="tag-suggestions" placeholder="e.g. veggie, quick" />
-          </div>
-
-          <div class="form-row">
-            <label>Steps</label>
-            <div class="group">
-              <input id="step-input" type="text" placeholder="Add a step (e.g. Fry onions for 5 mins)" />
-              <button class="btn" type="button" id="add-step">+ Add step</button>
+            <div class="form-row">
+              <label for="cook-mins">Time to cook (mins)</label>
+              <input id="cook-mins" type="number" min="0" max="120" step="5" placeholder="e.g. 30" />
             </div>
-            <div id="steps" class="steps"></div>
-            <small class="muted">Use the arrows to reorder.</small>
-          </div>
 
-          <div class="form-row">
-            <label for="notes">Notes</label>
-            <textarea id="notes" rows="4" placeholder="Optional notes (e.g. less chilli for kids, freezes well)"></textarea>
-          </div>
-
-          <div class="form-row">
-            <div class="group">
-              <button class="btn primary" type="submit">Add meal</button>
-              <button class="btn" type="reset" id="reset-form">Reset</button>
+            <div class="form-row">
+              <div class="group" style="width:100%;justify-content:space-between">
+                <label>Ingredients</label>
+                <small class="muted" id="ing-hint">Qty supports an optional unit label (e.g. pack)</small>
+              </div>
+              <div id="ingredients" class="ingredients" aria-live="polite"></div>
+              <div class="group">
+                <button class="btn" type="button" id="add-ingredient">+ Add ingredient</button>
+                <button class="btn" type="button" id="duplicate-last" title="Duplicate last meal">Duplicate last</button>
+              </div>
             </div>
-          </div>
 
-          <hr style="border:none;border-top:1px solid rgba(255,255,255,.08);margin:14px 0" />
-          <div class="toolbar">
-            <div class="group">
-              <button class="btn" id="export">Export</button>
-              <label class="btn" for="import">Import</label>
-              <input id="import" type="file" accept="application/json" style="display:none" />
-              <button class="btn danger" id="clear-all">Clear all</button>
+            <div class="form-row">
+              <label>Tags (auto-seeded from ingredients; comma or Enter to add)</label>
+              <div class="group" id="tags-editor"></div>
+              <input id="tags-input" type="text" list="tag-suggestions" placeholder="e.g. veggie, quick" />
             </div>
-            <span class="muted" id="status"></span>
-          </div>
-        </form>
+
+            <div class="form-row">
+              <label>Steps</label>
+              <div class="group">
+                <input id="step-input" type="text" placeholder="Add a step (e.g. Fry onions for 5 mins)" />
+                <button class="btn" type="button" id="add-step">+ Add step</button>
+              </div>
+              <div id="steps" class="steps"></div>
+              <small class="muted">Use the arrows to reorder.</small>
+            </div>
+
+            <div class="form-row">
+              <label for="notes">Notes</label>
+              <textarea id="notes" rows="4" placeholder="Optional notes (e.g. less chilli for kids, freezes well)"></textarea>
+            </div>
+
+            <div class="form-row">
+              <div class="group">
+                <button class="btn primary" type="submit">Add meal</button>
+                <button class="btn" type="reset" id="reset-form">Reset</button>
+              </div>
+            </div>
+
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,.08);margin:14px 0" />
+            <div class="toolbar">
+              <div class="group">
+                <button class="btn" id="export">Export</button>
+                <label class="btn" for="import">Import</label>
+                <input id="import" type="file" accept="application/json" style="display:none" />
+                <button class="btn danger" id="clear-all">Clear all</button>
+              </div>
+              <span class="muted" id="status"></span>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
 
+    <!-- Meals + shopping -->
     <section class="panel">
       <div class="inner">
         <div class="toolbar">
           <h2 style="margin:0">Your meals</h2>
-          <div class="group">
+
+          <!-- Desktop controls (full) -->
+          <div class="group desktop-controls">
             <input id="search" type="text" placeholder="Search titles…" style="width:220px" />
             <div class="group" title="Filter by time">
               <span class="muted">⏱</span>
@@ -213,6 +265,12 @@
             <button class="btn" data-density="cozy">Cozy</button>
             <button class="btn" data-density="comfy">Comfy</button>
           </div>
+
+          <!-- Mobile controls (simple) -->
+          <div class="group mobile-controls">
+            <input id="search-m" type="text" placeholder="Search…" style="width:min(56vw,260px)" />
+            <button class="btn" id="open-filters">Filters</button>
+          </div>
         </div>
 
         <div class="toolbar" style="margin-top:-4px">
@@ -228,7 +286,7 @@
         <h2 style="margin-top:18px">Shopping list</h2>
         <div class="toolbar">
           <div class="group">
-            <button class="btn" id="copy-tsv" title="Copy as tab‑separated for Excel">Copy as TSV</button>
+            <button class="btn" id="copy-tsv" title="Copy as tab-separated for Excel">Copy as TSV</button>
             <button class="btn" id="print">Print</button>
           </div>
           <span class="muted">Tick meals to include</span>
@@ -328,7 +386,7 @@
           </table>
           <div class="group" style="margin-top:8px">
             <input id="norm-canonical" type="text" placeholder="e.g. spring onion" />
-            <input id="norm-aliases" type="text" placeholder="aliases (comma‑separated)" />
+            <input id="norm-aliases" type="text" placeholder="aliases (comma-separated)" />
             <button class="btn" id="norm-add">Add</button>
           </div>
         </section>
@@ -357,11 +415,55 @@
     </div>
   </div>
 
+  <!-- Mobile Filters Modal -->
+  <div id="filters-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="dialog">
+      <div class="toolbar" style="margin:0 0 6px">
+        <h3 style="margin:0">Filters</h3>
+        <button class="btn" id="filters-close">Close</button>
+      </div>
+
+      <div class="form-row">
+        <label>Time to cook</label>
+        <div class="range" style="width:100%">
+          <input id="m-time-min" type="range" min="0" max="120" step="5" value="0" style="flex:1" />
+          <span class="muted" id="m-time-label">0–120 min</span>
+          <input id="m-time-max" type="range" min="0" max="120" step="5" value="120" style="flex:1" />
+        </div>
+        <div class="group" style="margin-top:8px">
+          <button class="btn" id="m-time-clear" type="button">Clear time</button>
+          <button class="btn" id="m-favs" type="button">Show favourites only</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Tag filter</label>
+        <div class="group">
+          <button class="btn" id="m-tag-filter" type="button">Choose tags</button>
+          <span class="muted" id="m-tag-active"></span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Grid density</label>
+        <div class="group">
+          <button class="btn" data-density="compact" type="button">Compact</button>
+          <button class="btn" data-density="cozy" type="button">Cozy</button>
+          <button class="btn" data-density="comfy" type="button">Comfy</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <small class="muted">Tip: tags are usually auto-seeded from ingredients. Use Settings → Backfill tags if needed.</small>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const DB_NAME='mealPlannerDBv7';
+    const DB_NAME='mealPlannerDBv8';
     const STORE='kv';
     const IDB_KEYS={meals:'meals',normaliser:'normaliser',unitDefaults:'unitDefaults',prefs:'prefs'};
-    const EXPORT_SCHEMA_VERSION=8; // steps + notes schema bump
+    const EXPORT_SCHEMA_VERSION=8; // steps + notes schema
     const NO_TAGS='__NO_TAGS__';
 
     function idbOpen(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
@@ -372,10 +474,10 @@
 
     const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>Array.from(r.querySelectorAll(s)); const uid=()=>Math.random().toString(36).slice(2,10);
     const status=(m,ms=2200)=>{const el=$('#status');el.textContent=m;if(ms)setTimeout(()=>{if(el.textContent===m)el.textContent='';},ms);};
-    function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));}
-    function titleCase(s){return s.toLowerCase().replace(/(^|\s|[-_])([a-z])/g,(_,p1,p2)=>p1+p2.toUpperCase());}
-    function normaliseRaw(s){return s.trim().toLowerCase();}
-    function normaliseKey(s){return s.trim().toLowerCase().replace(/[-_]/g,' ').replace(/\s+/g,' ').replace(/[^a-z0-9\s]/g,'');}
+    function escapeHtml(s){return String(s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\'':'&#39;'}[c]));}
+    function titleCase(s){return String(s).toLowerCase().replace(/(^|\s|[-_])([a-z])/g,(_,p1,p2)=>p1+p2.toUpperCase());}
+    function normaliseRaw(s){return String(s).trim().toLowerCase();}
+    function normaliseKey(s){return String(s).trim().toLowerCase().replace(/[-_]/g,' ').replace(/\s+/g,' ').replace(/[^a-z0-9\s]/g,'');}
     function singularise(s){if(/ies$/.test(s))return s.replace(/ies$/,'y');if(/ses$/.test(s))return s.replace(/es$/,'');if(/s$/.test(s))return s.replace(/s$/,'');return s;}
     function formatNumber(n){const t=Math.round(n*100)/100;return Number.isInteger(t)?String(t):t.toFixed(2).replace(/\.00$/,'');}
 
@@ -390,8 +492,8 @@
       state.unitDefaults=(unitDefaults&&typeof unitDefaults==='object')?unitDefaults:{};
       state.prefs=(prefs&&typeof prefs==='object')?{theme:'auto',gridMin:'cozy',includeIngredientTags:false,tagStripMax:12,...prefs}:{theme:'auto',gridMin:'cozy',includeIngredientTags:false,tagStripMax:12};
     }
-    function saveSelection(){sessionStorage.setItem('sel-v7',JSON.stringify(Array.from(state.selected)));}
-    function loadSelection(){try{const raw=sessionStorage.getItem('sel-v7');if(raw)state.selected=new Set(JSON.parse(raw));}catch{}}
+    function saveSelection(){sessionStorage.setItem('sel-v8',JSON.stringify(Array.from(state.selected)));}
+    function loadSelection(){try{const raw=sessionStorage.getItem('sel-v8');if(raw)state.selected=new Set(JSON.parse(raw));}catch{}}
 
     function applyTheme(){let mode=state.prefs.theme;if(mode==='auto'){mode=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',mode==='light'?'light':'dark');$('#theme-toggle').textContent=mode==='light'?'☀️':'🌙';}
     $('#theme-toggle').addEventListener('click',async()=>{const current=document.documentElement.getAttribute('data-theme')==='light'?'light':'dark';state.prefs.theme=current==='light'?'dark':'light';applyTheme();await saveAll();});
@@ -492,12 +594,15 @@
         row.after(prompt);
       }
       prompt.innerHTML=`Merge "${escapeHtml(from)}" into <b>${escapeHtml(to)}</b>? <button class="btn" style="padding:4px 8px">Merge</button> <button class="btn" style="padding:4px 8px">Keep</button> <label style="margin-left:6px"><input type="checkbox"/> also update existing meals</label>`;
-      const [mergeBtn,keepBtn,label]=prompt.querySelectorAll('button,button,label');
+      const buttons=prompt.querySelectorAll('button');
+      const mergeBtn=buttons[0];
+      const keepBtn=buttons[1];
+      const also=prompt.querySelector('input[type=checkbox]');
       mergeBtn.addEventListener('click',()=>{
         const [nameEl]=row.children;
         nameEl.value=to;
         prompt.remove();
-        if(label.querySelector('input').checked){
+        if(also && also.checked){
           const fromKey=normaliseKey(from),toKey=normaliseKey(to);
           for(const meal of state.meals){
             for(const ing of meal.ingredients){
@@ -547,7 +652,7 @@
       input.addEventListener('keydown',(e)=>{if(e.key==='Enter'||e.key===','){e.preventDefault();addToken(input.value.replace(/,$/,''));}});
       input.addEventListener('change',()=>addToken(input.value));
       render();
-      return{get:()=>Array.from(tokens),set:(arr)=>{arr=(arr||[]).map(x=>x.toLowerCase());tokens.clear();arr.forEach(x=>tokens.add(x));render();}, addMany:(arr)=>{arr.forEach(x=>tokens.add(x.toLowerCase()));render();}};
+      return{get:()=>Array.from(tokens),set:(arr)=>{arr=(arr||[]).map(x=>x.toLowerCase());tokens.clear();arr.forEach(x=>tokens.add(x));render();}, addMany:(arr)=>{arr.forEach(x=>tokens.add(String(x).toLowerCase()));render();}};
     }
 
     function ingredientNamesToTags(ings){
@@ -626,6 +731,18 @@
       else document.body.classList.remove('modal-open');
     }
 
+    // ===== Mobile collapsible add panel =====
+    function setupMobileAddPanel(){
+      const panel=$('#add-panel');
+      const header=$('#add-header');
+      if(!panel||!header) return;
+      const isMobile = window.matchMedia('(max-width: 720px)').matches;
+      if(!isMobile) return;
+      panel.classList.add('collapsible');
+      panel.classList.remove('open');
+      header.addEventListener('click',()=>panel.classList.toggle('open'));
+    }
+
     const ingContainer=$('#ingredients');
     $('#add-ingredient').addEventListener('click',()=>addIngredientRow(ingContainer));
     addIngredientRow(ingContainer);addIngredientRow(ingContainer);
@@ -700,6 +817,10 @@
       refreshCreateSteps();
       $('#notes').value='';
       status('Meal added.');
+
+      // On mobile, collapse add panel after adding
+      const panel=$('#add-panel');
+      if(panel && panel.classList.contains('collapsible')) panel.classList.remove('open');
     });
 
     $('#reset-form').addEventListener('click',()=>{
@@ -827,15 +948,16 @@
     // Close modals with Escape
     window.addEventListener('keydown',(e)=>{
       if(e.key!=='Escape') return;
+      if($('#filters-modal').classList.contains('open')) closeFilters();
       if($('#settings-modal').classList.contains('open')) closeSettings();
       if(modal.classList.contains('open')) closeEdit();
     });
 
-    // ==== Tag bar: counts + top N + popover ====
+    // ===== Tag bar & popover =====
     function computeTagStats(){
       const counts=new Map();
       const ingNames=new Set();
-      state.meals.forEach(m=>m.ingredients.forEach(i=>ingNames.add(normaliseRaw(i.name))));
+      state.meals.forEach(m=>(m.ingredients||[]).forEach(i=>ingNames.add(normaliseRaw(i.name))));
       state.meals.forEach(m=> (m.tags||[]).forEach(t=>{const k=String(t).toLowerCase();counts.set(k,(counts.get(k)||0)+1);}));
       const rows=Array.from(counts.entries()).map(([tag,count])=>({tag,count,isIngredient:ingNames.has(tag)}));
       rows.sort((a,b)=> b.count-a.count || a.tag.localeCompare(b.tag));
@@ -864,8 +986,8 @@
       const active=Array.from(state.tagFilter).filter(t=>t!==NO_TAGS);
 
       const list=[];
-      active.forEach(t=>{if(!list.find(x=>x.tag===t)) list.push({tag:t,count:rows.find(r=>r.tag===t)?.count||0});});
-      rows.forEach(r=>{if(!includeIng && r.isIngredient) return; if(!list.find(x=>x.tag===r.tag)) list.push({tag:r.tag,count:r.count});});
+      active.forEach(t=>{ if(!list.find(x=>x.tag===t)) list.push({tag:t,count:rows.find(r=>r.tag===t)?.count||0}); });
+      rows.forEach(r=>{ if(!includeIng && r.isIngredient) return; if(!list.find(x=>x.tag===r.tag)) list.push({tag:r.tag,count:r.count}); });
 
       const extra=list.length>max?list.length-max:0;
       const show=list.slice(0,max);
@@ -904,6 +1026,17 @@
 
       const mode=state.tagMode==='ALL'?'ALL':'ANY';
       $('#tag-active').textContent = state.tagFilter.size? `${state.tagFilter.size} selected (${mode})` : '';
+      const mta=$('#m-tag-active');
+      if(mta) mta.textContent = state.tagFilter.size? `${state.tagFilter.size} selected (${mode})` : '';
+    }
+
+    let popEl=null;
+    function closePopover(){
+      if(popEl){
+        popEl.remove();
+        popEl=null;
+        window.removeEventListener('click',closePopover);
+      }
     }
 
     function openTagPopover(anchor){
@@ -964,6 +1097,41 @@
       renderList();
     }
 
+    $('#tag-filter').addEventListener('click',(e)=>{ e.preventDefault(); openTagPopover(e.currentTarget); });
+
+    // ===== Filters modal (mobile) =====
+    const filtersModal=$('#filters-modal');
+    function openFilters(){ filtersModal.classList.add('open'); filtersModal.setAttribute('aria-hidden','false'); lockBodyScroll(true); syncMobileFiltersUI(); }
+    function closeFilters(){ filtersModal.classList.remove('open'); filtersModal.setAttribute('aria-hidden','true'); lockBodyScroll(false); }
+    $('#open-filters')?.addEventListener('click',openFilters);
+    $('#filters-close')?.addEventListener('click',closeFilters);
+    $('#m-tag-filter')?.addEventListener('click',(e)=>openTagPopover(e.currentTarget));
+
+    function syncMobileFiltersUI(){
+      const minEl=$('#m-time-min');
+      const maxEl=$('#m-time-max');
+      if(!minEl||!maxEl) return;
+      minEl.value=String(state.timeFilter.min);
+      maxEl.value=String(state.timeFilter.max);
+      $('#m-time-label').textContent = `${state.timeFilter.min}–${state.timeFilter.max} min`;
+      $('#m-favs').textContent = state.showFavsOnly ? 'Show all' : 'Show favourites only';
+      const mta=$('#m-tag-active');
+      if(mta) mta.textContent = state.tagFilter.size? `${state.tagFilter.size} selected (${state.tagMode==='ALL'?'ALL':'ANY'})` : '';
+    }
+
+    function clampMobileTime(){
+      let a=Number($('#m-time-min').value), b=Number($('#m-time-max').value);
+      if(a>b){ const t=a; a=b; b=t; }
+      state.timeFilter.min=a; state.timeFilter.max=b;
+      $('#m-time-label').textContent = `${a}–${b} min`;
+      renderMeals();
+    }
+
+    $('#m-time-min')?.addEventListener('input',clampMobileTime);
+    $('#m-time-max')?.addEventListener('input',clampMobileTime);
+    $('#m-time-clear')?.addEventListener('click',()=>{ state.timeFilter.min=0; state.timeFilter.max=120; syncTimeSliders(); syncMobileFiltersUI(); renderMeals(); });
+    $('#m-favs')?.addEventListener('click',()=>{ state.showFavsOnly=!state.showFavsOnly; syncMobileFiltersUI(); $('#toggle-favs').textContent=state.showFavsOnly?'Show all':'Show favourites only'; renderMeals(); });
+
     // ====== Card grid ======
     const grid=$('#meal-grid');
 
@@ -980,7 +1148,6 @@
           return need.every(t=> t===NO_TAGS?hasNoTags:tags.has(t));
         });
       }
-      // time filter
       items = items.filter(m=>{ const t=m.cookMins; if(typeof t!=='number') return (state.timeFilter.min===0 && state.timeFilter.max===120); return t>=state.timeFilter.min && t<=state.timeFilter.max; });
       return items.sort((a,b)=>{const fav=(b.fav===true)-(a.fav===true); if(fav) return fav; return (a.title||'').localeCompare(b.title||'','en-GB',{sensitivity:'base'});});
     }
@@ -1098,18 +1265,11 @@
         card.append(media,body);
         grid.appendChild(card);
       });
+
+      syncMobileFiltersUI();
     }
 
-    // ===== Popover helpers (reuse) =====
-    let popEl=null;
-    function closePopover(){
-      if(popEl){
-        popEl.remove();
-        popEl=null;
-        window.removeEventListener('click',closePopover);
-      }
-    }
-
+    // Density buttons (works for desktop & mobile modal)
     $$('[data-density]').forEach(btn=>btn.addEventListener('click',()=>{
       const mode=btn.dataset.density;
       document.documentElement.style.setProperty('--card-min',mode==='compact'?'200px':mode==='cozy'?'260px':'320px');
@@ -1118,16 +1278,27 @@
       renderMeals();
     }));
 
+    function syncTimeSliders(){
+      // desktop
+      const a=$('#time-min'), b=$('#time-max');
+      if(a&&b){ a.value=String(state.timeFilter.min); b.value=String(state.timeFilter.max); $('#time-label').textContent=`${state.timeFilter.min}–${state.timeFilter.max} min`; }
+      // mobile
+      const ma=$('#m-time-min'), mb=$('#m-time-max');
+      if(ma&&mb){ ma.value=String(state.timeFilter.min); mb.value=String(state.timeFilter.max); $('#m-time-label').textContent=`${state.timeFilter.min}–${state.timeFilter.max} min`; }
+    }
+
     $('#toggle-favs').addEventListener('click',()=>{
       state.showFavsOnly=!state.showFavsOnly;
       $('#toggle-favs').textContent=state.showFavsOnly?'Show all':'Show favourites only';
+      syncMobileFiltersUI();
       renderMeals();
     });
 
-    // Search
-    $('#search').addEventListener('input',(e)=>{ state.search=(e.target.value||'').trim().toLowerCase(); renderMeals(); });
+    // Search (desktop + mobile)
+    $('#search').addEventListener('input',(e)=>{ state.search=(e.target.value||'').trim().toLowerCase(); if($('#search-m')) $('#search-m').value=e.target.value; renderMeals(); });
+    $('#search-m').addEventListener('input',(e)=>{ state.search=(e.target.value||'').trim().toLowerCase(); if($('#search')) $('#search').value=e.target.value; renderMeals(); });
 
-    // Time filter
+    // Desktop time filter
     function clampTime(){
       const minEl=$('#time-min');
       const maxEl=$('#time-max');
@@ -1135,10 +1306,11 @@
       if(a>b){ const tmp=a; a=b; b=tmp; }
       state.timeFilter.min=a; state.timeFilter.max=b;
       $('#time-label').textContent = `${a}–${b} min`;
+      syncMobileFiltersUI();
     }
     $('#time-min').addEventListener('input',()=>{ clampTime(); renderMeals(); });
     $('#time-max').addEventListener('input',()=>{ clampTime(); renderMeals(); });
-    $('#time-clear').addEventListener('click',(e)=>{ e.preventDefault(); $('#time-min').value='0'; $('#time-max').value='120'; clampTime(); renderMeals(); });
+    $('#time-clear').addEventListener('click',(e)=>{ e.preventDefault(); state.timeFilter.min=0; state.timeFilter.max=120; syncTimeSliders(); clampTime(); renderMeals(); });
     clampTime();
 
     // ===== Shopping list =====
@@ -1220,7 +1392,7 @@
 
     $('#print').addEventListener('click',()=>window.print());
 
-    // Export current data
+    // Export
     $('#export').addEventListener('click',()=>{
       const data=JSON.stringify({schemaVersion:EXPORT_SCHEMA_VERSION,meals:state.meals,normaliser:state.normaliser,unitDefaults:state.unitDefaults,prefs:state.prefs},null,2);
       const blob=new Blob([data],{type:'application/json'});
@@ -1232,7 +1404,7 @@
       URL.revokeObjectURL(url);
     });
 
-    // Import data (with migration)
+    // Import
     $('#import').addEventListener('change',async(e)=>{
       const f=e.target.files[0];
       if(!f) return;
@@ -1286,7 +1458,6 @@
             clone.image={type:'data',src:clone.imageDataUrl};
             delete clone.imageDataUrl;
           }
-          // Optional bridge: older exports with string instructions
           if(!clone.steps.length && typeof clone.instructions==='string' && clone.instructions.trim()){
             clone.steps = clone.instructions.split('\n').map(s=>s.trim()).filter(Boolean);
           }
@@ -1350,7 +1521,6 @@
         renderSettings();
       }));
 
-      // Backfill tags from ingredients — inject into Settings header
       (function addBackfillButton(){
         const header = document.querySelector('#settings-modal .toolbar');
         if(!header || document.getElementById('backfill-tags')) return;
@@ -1414,8 +1584,10 @@
       document.documentElement.style.setProperty('--card-min',state.prefs.gridMin==='compact'?'200px':state.prefs.gridMin==='cozy'?'260px':'320px');
       updateIngredientSuggestions();
       refreshTagSuggestions();
+      setupMobileAddPanel();
       renderMeals();
       renderShopping();
+      syncTimeSliders();
     })();
 
     function placeholderSvg(text){
@@ -1428,12 +1600,5 @@
       return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
     }
   </script>
- <script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js");
-    });
-  }
-</script>
 </body>
 </html>
