@@ -1,77 +1,64 @@
-# Meal Planner & Shopping List — v10
+# Meal Planner Backend (Cloudflare Worker)
 
-A self-contained Progressive Web App for building a meal library, planning shops, and auto-generating aggregated shopping lists. Works fully offline. All data stored locally in IndexedDB.
+A tiny Worker that proxies recipe-card photos to Google Gemini and returns
+structured ingredient JSON. Used by the Meal Planner PWA.
 
-## File structure
+## Files
 
-```
-meal-planner/
-├── index.html              # markup, modals, templates, datalists
-├── manifest.webmanifest    # PWA manifest
-├── sw.js                   # service worker (offline cache)
-├── assets/
-│   ├── app.js              # all app logic
-│   ├── styles.css          # styling, mobile polish
-│   └── pwa.js              # service worker registration
-└── icons/
-    ├── favicon.ico
-    ├── icon-180.png        # iOS apple-touch-icon
-    ├── icon-192.png        # PWA standard
-    ├── icon-512.png        # PWA standard
-    └── icon-maskable-512.png
-```
+- `src/index.js` — the Worker code
+- `wrangler.toml` — Cloudflare config
+- `package.json` — placeholder so npm/wrangler are happy
 
-## How to run
+## Deploy
 
-### Local (recommended for testing)
-A service worker requires `http://` not `file://`, so use any static server:
+From this folder:
 
 ```bash
-cd meal-planner
-python3 -m http.server 8000
-# open http://localhost:8000
+wrangler deploy
 ```
 
-Or use any of: `npx serve`, `live-server`, VS Code "Live Server" extension, etc.
+That uploads `src/index.js` to your existing Worker (`meal-planner-backend`).
 
-### GitHub Pages
-1. Push the contents of `meal-planner/` to a repo
-2. Settings → Pages → Source: main branch, root
-3. Visit `https://YOUR_USER.github.io/REPO/` — install to home screen on iOS/Android
+## Secrets
 
-### Install to home screen
-- **iOS Safari:** Share → Add to Home Screen
-- **Android Chrome:** menu (⋮) → Install app
-- **Desktop Chrome/Edge:** address bar install icon
+The Gemini API key lives in Cloudflare's secret store, never in code. Set/rotate it:
 
-## Path to APK / Google Play Store
+```bash
+wrangler secret put GEMINI_API_KEY
+```
 
-The app is a fully compliant PWA, so wrapping as an APK is straightforward when you're ready:
+Verify:
 
-1. **PWABuilder (easiest):** https://www.pwabuilder.com — paste your hosted PWA URL, it generates a signed APK / AAB with a Trusted Web Activity wrapper
-2. **Bubblewrap CLI** (Google's official tool): `npm i -g @bubblewrap/cli && bubblewrap init --manifest=https://your-url/manifest.webmanifest`
-3. **Capacitor** if you want richer native features later
+```bash
+wrangler secret list
+```
 
-The PWA needs to be hosted over HTTPS for Play Store wrapping. GitHub Pages works fine for that.
+## Endpoints
 
-## What changed vs your previous v9.4
+- `GET /` or `GET /health` — health check, returns `{ ok: true, ... }`
+- `POST /scan` — body `{ image: "data:image/...;base64,..." }`, returns extracted recipe JSON
 
-**Priority fixes you asked for:**
-- **Mobile layout polish** — list-row cards, no horizontal overflow, safe-area insets, buttons always fit, image thumbnail sized cleanly, ingredient row reflows nicely on narrow screens, bottom nav stays in place over content
-- **Ingredient normaliser actually merges across meals** — when you add a normaliser entry in Settings (with the "Also rename matches in existing meals" checkbox ticked, which is the default), it walks every saved meal and rewrites both ingredient names and tags to the canonical. Previously the normaliser dictionary existed but it didn't propagate.
+## Test it
 
-**Other cleanups while I was in there:**
-- Empty cook-time field now correctly stores `null` instead of showing "0 min" chip
-- Shopping list converts grams ≥ 1000 to kg (parallel to ml → L)
-- Clipboard fallback: if copy-to-clipboard fails (common on iOS file:// or older Safari), shows a textarea overlay so you can manually copy
-- Theme picker in Settings: explicit Auto / Light / Dark buttons
-- Import asks for confirmation before replacing data
-- Schema version bumped to 10 (still imports v6/v7/v8/v9 exports)
+After deploy, browse to `https://meal-planner-backend.YOUR-SUBDOMAIN.workers.dev/`
+to see the health-check JSON.
 
-## Data model (unchanged)
+The `/scan` endpoint is exercised from the PWA — there's no point hitting it
+directly from a terminal because you'd have to base64-encode an image first.
 
-Existing exports (v6, v7, v8, v9) import cleanly. Old `imageDataUrl` field is migrated to `image: { type: "data", src }`.
+## Cost expectations
 
-## Known mobile caveats (unchanged)
-- iOS Safari may open exported JSON in a new tab rather than downloading; long-press → "Download Linked File" if needed
-- Clipboard requires HTTPS or localhost; fallback textarea handles file:// case
+At ~100 scans/month you stay inside both:
+
+- Gemini's free tier (250–500 requests/day on Flash models, no card)
+- Cloudflare Workers free tier (100,000 requests/day, no card)
+
+So this whole thing costs $0/month indefinitely at your volume.
+
+## Tail logs while debugging
+
+```bash
+wrangler tail
+```
+
+Streams console output from the Worker live. Useful if `/scan` returns 502.

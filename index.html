@@ -46,6 +46,15 @@
       <div class="collapsible-body">
         <form id="meal-form" autocomplete="off" novalidate>
 
+          <div class="scan-cta">
+            <button type="button" id="scan-card-btn" class="btn primary scan-btn">
+              <span class="scan-icon">📷</span>
+              <span>Scan recipe card</span>
+            </button>
+            <input id="scan-file" type="file" accept="image/*" capture="environment" hidden />
+            <small class="muted">Take a photo of a recipe card to auto-fill the form below.</small>
+          </div>
+
           <div class="form-row">
             <label for="title">Meal name</label>
             <input id="title" type="text" required placeholder="e.g. Lemon chicken pasta" />
@@ -195,6 +204,82 @@
 
 <!-- ================== TOAST ================== -->
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<!-- ================== SCAN RESULT MODAL ================== -->
+<div id="scan-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="scan-modal-title">
+  <div class="dialog">
+    <div class="stickybar group space-between">
+      <h3 id="scan-modal-title" class="h3">📷 Review scanned recipe</h3>
+      <button id="scan-close" class="btn" aria-label="Close">✕</button>
+    </div>
+
+    <div id="scan-loading" class="scan-loading" hidden>
+      <div class="scan-spinner" aria-hidden="true"></div>
+      <p class="muted">Scanning the recipe card…</p>
+      <p class="muted small">This usually takes 5–10 seconds.</p>
+    </div>
+
+    <div id="scan-error" class="scan-error" hidden>
+      <p class="error-message"></p>
+      <div class="group">
+        <button type="button" id="scan-retry" class="btn">Try again</button>
+        <button type="button" id="scan-error-close" class="btn">Close</button>
+      </div>
+    </div>
+
+    <div id="scan-form-wrap" hidden>
+      <p class="muted small" style="margin: 0 0 12px;">
+        Review what was scanned. Fields highlighted in <span style="color: var(--gold)">yellow</span> need a closer look.
+        Edit anything that's wrong, then save.
+      </p>
+
+      <form id="scan-form" novalidate>
+        <div class="form-row">
+          <label for="scan-title">Meal name</label>
+          <input id="scan-title" type="text" required />
+        </div>
+
+        <div class="form-row">
+          <label for="scan-cook-mins">Time to cook (minutes)</label>
+          <input id="scan-cook-mins" type="number" min="0" max="600" />
+        </div>
+
+        <div class="form-row">
+          <label>Ingredients</label>
+          <div id="scan-ingredients" class="ingredients"></div>
+          <div class="group">
+            <button type="button" id="scan-add-ingredient" class="btn">+ Add ingredient</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="scan-tags-input">Tags</label>
+          <div id="scan-tags-editor" class="token-editor"></div>
+          <input id="scan-tags-input" type="text" list="tag-suggestions" placeholder="Add a tag and press Enter" />
+        </div>
+
+        <div class="form-row">
+          <label>Steps</label>
+          <div id="scan-steps" class="steps"></div>
+          <div class="group">
+            <input id="scan-step-input" type="text" placeholder="Add a step and press Enter" />
+            <button type="button" id="scan-add-step" class="btn">+ Add step</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="scan-notes">Notes</label>
+          <textarea id="scan-notes" rows="2"></textarea>
+        </div>
+
+        <div class="group" style="justify-content:flex-end; margin-top:8px;">
+          <button type="button" id="scan-cancel" class="btn">Cancel</button>
+          <button type="submit" class="btn primary">Add meal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <!-- ================== EDIT MODAL ================== -->
 <div id="edit-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="edit-title-label">
@@ -411,6 +496,7 @@
 <datalist id="tag-suggestions"></datalist>
 
 <script src="assets/app.js" defer></script>
+<script src="assets/scan.js" defer></script>
 <script src="assets/pwa.js" defer></script>
 </body>
 </html>

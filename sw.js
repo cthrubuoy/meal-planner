@@ -4,13 +4,14 @@
    - Cache-first for static assets (CSS/JS/icons)
    - Same-origin only
 */
-const CACHE_NAME = "meal-planner-v10-1";
+const CACHE_NAME = "meal-planner-v11";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./assets/styles.css",
   "./assets/app.js",
+  "./assets/scan.js",
   "./assets/pwa.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
