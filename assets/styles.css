@@ -443,14 +443,54 @@ input[type=file]{ padding:8px; }
   max-width: 96vw;
 }
 @media (max-width:720px){
+  /* On mobile, modal sits in the safe area between the page header (~70px)
+     and the bottom nav (~74px + safe-area-inset). Dialog stretches to fit
+     that area so its scroll boundaries align with the visible region.
+     Header is ~69px tall (12px wrap padding + ~28px content + 12px + 1px border).
+     Use 70px to be safe — any tiny overlap shows as a content bleed. */
+  .modal{
+    padding: 0;
+    align-items: stretch;
+  }
   .dialog{
-    padding:14px 12px;
-    max-width: calc(100vw - 16px);
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+    margin-top: 70px;
+    margin-bottom: calc(78px + var(--safe-bottom));
+    max-height: calc(100dvh - 70px - 78px - var(--safe-bottom));
+    padding: 0 12px calc(20px + var(--safe-bottom));   /* no top padding — stickybar provides it */
+    border-left: none;
+    border-right: none;
   }
   .dialog .row{ grid-template-columns: 1fr; }
   .dialog .table{ font-size: .82rem; }
   .dialog .table th, .dialog .table td{
     padding: 6px 4px;
+  }
+
+  /* Hide bottom nav while a modal is open — keeps focus inside the dialog
+     and prevents the nav from obscuring the dialog's submit/cancel buttons.
+     !important guards against any later rule re-showing it. */
+  body.modal-open .bottom-nav,
+  body.modal-open #bottom-nav{
+    display: none !important;
+  }
+  /* When nav is hidden, dialog can claim the space at the bottom too */
+  body.modal-open .modal.open .dialog{
+    margin-bottom: 0;
+    max-height: calc(100dvh - 70px);
+    padding-bottom: calc(20px + var(--safe-bottom));
+  }
+
+  /* Sticky header inside the dialog: spans full width, owns its own padding,
+     no negative margins so position:sticky works cleanly. */
+  .dialog .stickybar{
+    margin: 0 -12px 10px;          /* extend full bleed left/right only */
+    padding: 14px 12px 10px;       /* own its top/bottom padding */
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 4px 8px -4px rgba(0,0,0,.4);
   }
 }
 .stickybar{
