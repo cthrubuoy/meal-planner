@@ -110,12 +110,14 @@ h1{
 /* ============== LAYOUT ============== */
 .layout{
   display:grid;
-  grid-template-columns: 420px 1fr;
+  /* minmax(0, 1fr) prevents grid items from blowing out
+     when their content has intrinsic size (long titles, etc.) */
+  grid-template-columns: 420px minmax(0, 1fr);
   gap:18px;
   padding:18px;
 }
 @media (max-width:980px){
-  .layout{ grid-template-columns:1fr; padding:12px; gap:12px; }
+  .layout{ grid-template-columns: minmax(0, 1fr); padding:12px; gap:12px; }
 }
 
 .panel{
@@ -123,6 +125,9 @@ h1{
   border:1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  /* belt-and-braces: never let a panel exceed its grid column */
+  min-width: 0;
+  max-width: 100%;
 }
 .inner{ padding:16px; }
 
@@ -434,6 +439,19 @@ input[type=file]{ padding:8px; }
   padding:16px;
   max-height: calc(100dvh - 32px);
   overflow:auto;
+  min-width: 0;
+  max-width: 96vw;
+}
+@media (max-width:720px){
+  .dialog{
+    padding:14px 12px;
+    max-width: calc(100vw - 16px);
+  }
+  .dialog .row{ grid-template-columns: 1fr; }
+  .dialog .table{ font-size: .82rem; }
+  .dialog .table th, .dialog .table td{
+    padding: 6px 4px;
+  }
 }
 .stickybar{
   position:sticky; top:0; z-index:1;
@@ -447,11 +465,13 @@ body.modal-open{ overflow:hidden; }
 .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 @media (max-width:720px){ .row{ grid-template-columns:1fr; } }
 
-.table{ width:100%; border-collapse:collapse; }
+.table{ width:100%; border-collapse:collapse; table-layout: fixed; }
 .table th, .table td{
   border-bottom:1px dashed var(--border);
   padding:8px 10px; text-align:left;
   font-size:.9rem;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .mt8{ margin-top:8px; }
 .empty{
@@ -593,11 +613,52 @@ body.modal-open{ overflow:hidden; }
   #right-panel{ order:1; }
 
   .desktop-controls{ display:none; }
-  .mobile-controls{ display:flex; flex:1 1 100%; }
-  .mobile-controls input{ flex:1 1 auto; }
+  .mobile-controls{
+    display:flex;
+    width:100%;
+    min-width:0;
+    flex-wrap:nowrap;
+    gap:8px;
+  }
+  .mobile-controls input{
+    flex:1 1 auto;
+    min-width:0;
+  }
+  .mobile-controls .btn{ flex-shrink:0; }
+
+  /* Make sure no view/inner blows the column out */
+  #right-panel,
+  #right-panel .inner,
+  .view{
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+  .toolbar{
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .toolbar > *{ min-width: 0; }
+  .toolbar > h2{ flex: 1 1 auto; }
+
+  /* tag bar must scroll inside its column, not push it wider */
+  .tagbar-wrap{
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .tagbar{
+    max-width: 100%;
+    min-width: 0;
+  }
 
   /* Force LIST cards on mobile (compact, side-by-side, no overflow) */
-  .grid{ grid-template-columns:1fr !important; }
+  .grid{
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100%;
+    min-width: 0;
+  }
   .card{
     display:flex !important;
     flex-direction:row !important;
@@ -605,64 +666,83 @@ body.modal-open{ overflow:hidden; }
     align-items:stretch !important;
     width:100% !important;
     max-width:100% !important;
+    min-width: 0 !important;
     overflow:hidden !important;
-    min-height:88px;
+    height: 96px;          /* fixed compact height — image + buttons fit cleanly */
   }
   .card .media{
-    flex:0 0 88px !important;
-    width:88px !important;
-    min-width:88px !important;
-    height:auto !important;
+    flex:0 0 96px !important;
+    width:96px !important;
+    min-width:96px !important;
+    max-width:96px !important;
+    height: 96px !important;     /* lock height — was stretching with content */
     align-self:stretch;
+    overflow: hidden;
   }
   .card img{
-    height:100% !important; width:100% !important;
+    height:96px !important;
+    width:96px !important;
     object-fit:cover !important;
+    display:block;
   }
   .card > :nth-child(2){
     flex:1 1 auto !important;
     min-width:0 !important;
+    max-width: 100%;
     width:auto !important;
     padding:8px 10px !important;
     display:flex !important;
     flex-direction:column !important;
-    gap:6px !important;
+    gap:4px !important;
+    overflow: hidden;
   }
   .card h3{
     margin:0 !important;
     font-size:.95rem !important;
-    line-height:1.25 !important;
+    line-height:1.2 !important;
     overflow:hidden !important;
     display:-webkit-box !important;
     -webkit-line-clamp:2 !important;
     -webkit-box-orient:vertical !important;
     overflow-wrap:anywhere !important;
+    word-break:break-word !important;
+    min-width: 0;
   }
   .card .chip{ font-size:.7rem !important; padding:2px 7px !important; }
-  .chips{ margin:0 !important; }
+  .chips{ margin:0 !important; min-width:0 !important; }
   .controls{
-    margin:2px 0 0 !important;
+    margin: 0 !important;
     flex-wrap:nowrap !important;
     gap:6px !important;
+    min-width: 0 !important;
+    width: 100%;
   }
   .controls .btn{
-    padding:7px 10px !important;
-    font-size:.82rem !important;
-    border-radius:10px !important;
+    flex:1 1 0 !important;
+    min-width:0 !important;
+    padding:6px 8px !important;
+    font-size:.8rem !important;
+    border-radius:8px !important;
     white-space:nowrap !important;
   }
-  .no-tags{ margin:0 !important; }
+  /* When titles are long, hide the "no tags" hint to save space */
+  .no-tags{ display:none !important; }
 
-  /* Selection pill: compact icon-only on mobile */
+  /* Selection pill: tiny icon-only on mobile, top-left of image */
   .select{
-    top:6px !important; left:6px !important;
-    padding:3px 6px !important; gap:4px !important;
+    top:4px !important; left:4px !important;
+    padding:2px !important; gap:0 !important;
     font-size:0 !important;          /* hide "Include" label */
+    background: rgba(2,6,23,.78) !important;
+    border-color: rgba(255,255,255,.22) !important;
   }
-  .select input{ width:14px; height:14px; }
+  .select input{ width:14px; height:14px; margin:0; }
+  /* Favourite: tiny icon-only top-right */
   .fav{
-    top:6px !important; right:6px !important;
-    padding:3px 7px !important;
+    top:4px !important; right:4px !important;
+    padding:2px 5px !important;
+    background: rgba(2,6,23,.78) !important;
+    font-size:.85rem !important;
   }
   .fav span:nth-child(2){ display:none; }
 
