@@ -216,7 +216,9 @@
       const type = t.value;
       if (type === "qty") amount = Math.max(0, Math.round(amount));
       const canon = normaliserLookup(name) || name.toLowerCase();
-      ingredients.push({ name: canon, type, amount, unit: u.value.trim() });
+      let unit = singulariseUnitLabel(u.value.trim());
+      if (type === "qty" && !unit) unit = "piece";
+      ingredients.push({ name: canon, type, amount, unit });
     });
     if (!ingredients.length) {
       alert("Please add at least one valid ingredient before saving.");
@@ -258,4 +260,100 @@
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && scanModal.classList.contains("open")) closeScan();
   });
+
+  /* =====================================================
+     STEPS-ONLY SCAN (back of card)
+     - Triggered from Edit modal "Scan back of card" button
+     - Different prompt mode, merges into the currently-editing meal
+     ===================================================== */
+
+  $("#edit-scan-steps")?.addEventListener("click", () => {
+    $("#edit-scan-file").click();
+  });
+
+  $("#edit-scan-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await runStepsScan(file);
+  });
+
+  async function runStepsScan(file) {
+    if (!state.editingId) {
+      alert("Please open a meal for editing first.");
+      return;
+    }
+    status("📷 Scanning the back of the card…", 30000);
+
+    let dataUrl;
+    try {
+      dataUrl = await fileToCompressedDataURL(file);
+      if (!dataUrl) throw new Error("Couldn't process the image.");
+    } catch (err) {
+      status(`Image error: ${err.message || "couldn't process photo"}`, 4000);
+      return;
+    }
+
+    let resp, data;
+    try {
+      resp = await fetch(SCAN_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl, mode: "steps_only" })
+      });
+    } catch {
+      status("Couldn't reach the scan server. Check your connection.", 4000);
+      return;
+    }
+
+    try { data = await resp.json(); }
+    catch { status("Scan server returned an unexpected response.", 4000); return; }
+
+    if (!resp.ok || data.error) {
+      if (data?.error === "not_a_recipe_card") {
+        status("That doesn't look like a recipe-instructions page.", 4000);
+      } else {
+        status(`Scan failed: ${data?.reason || resp.status}`, 4000);
+      }
+      return;
+    }
+
+    const newSteps = Array.isArray(data.steps) ? data.steps : [];
+    if (!newSteps.length) {
+      status("No cooking steps found on that photo.", 4000);
+      return;
+    }
+
+    // Decide: replace, append, or cancel
+    let replace = true;
+    if (editSteps.length) {
+      const choice = confirm(
+        `Found ${newSteps.length} cooking step${newSteps.length === 1 ? "" : "s"}.\n\n` +
+        `This meal already has ${editSteps.length} step${editSteps.length === 1 ? "" : "s"}.\n\n` +
+        `OK = replace existing steps with the scanned ones\n` +
+        `Cancel = keep existing, add scanned to the end`
+      );
+      replace = choice;
+    }
+
+    if (replace) {
+      editSteps.length = 0;
+      newSteps.forEach(s => editSteps.push(s));
+    } else {
+      newSteps.forEach(s => editSteps.push(s));
+    }
+    refreshEditSteps();
+
+    // Merge cookMins only if not already set
+    if (typeof data.cookMins === "number" && !$("#edit-cook-mins").value.trim()) {
+      $("#edit-cook-mins").value = String(data.cookMins);
+    }
+
+    // Merge notes only if existing notes are empty
+    if (data.notes && !$("#edit-notes").value.trim()) {
+      $("#edit-notes").value = data.notes;
+    }
+
+    status(`✓ Added ${newSteps.length} step${newSteps.length === 1 ? "" : "s"} from scan`, 3500);
+  }
 })();

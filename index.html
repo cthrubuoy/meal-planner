@@ -23,7 +23,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v10</span>
+      <span class="pill">v11</span>
     </h1>
     <div class="group">
       <input id="search" type="search" placeholder="Search meals…" autocomplete="off" class="desktop-only-input" />
@@ -153,7 +153,17 @@
         <div class="tagbar-wrap">
           <div id="tag-bar" class="tagbar" aria-label="Tag filter"></div>
           <button id="tag-filter" class="btn mini" title="Filter by tag">Filter by tag ▾</button>
+          <button id="contains-toggle" class="btn mini" title="Filter by ingredients">🥬 Contains ▾</button>
           <span id="tag-active" class="muted small"></span>
+        </div>
+
+        <div id="contains-bar" class="contains-bar" hidden>
+          <div class="contains-row">
+            <div id="contains-editor" class="token-editor"></div>
+            <input id="contains-input" type="text" list="ingredient-suggestions" placeholder="Type an ingredient and press Enter…" />
+            <button id="contains-clear" class="btn mini" title="Clear ingredients">Clear</button>
+          </div>
+          <small class="muted">Shows meals containing <strong>all</strong> selected ingredients (matches partial words).</small>
         </div>
 
         <div id="meal-grid" class="grid" aria-live="polite"></div>
@@ -165,11 +175,12 @@
           <h2 class="h2">🛒 Shopping list</h2>
           <div class="group">
             <span id="selected-count" class="muted">No meals selected</span>
+            <button id="reset-ticks" class="btn" disabled>Reset ticks</button>
             <button id="copy-tsv" class="btn">Copy as TSV</button>
             <button id="print" class="btn">Print</button>
           </div>
         </div>
-        <p class="muted" style="margin:.2rem 0 .8rem;">Tick meals (in the Meals tab) to include them in the shopping list.</p>
+        <p class="muted" style="margin:.2rem 0 .8rem;">Tick meals in the Meals tab to add to the list. Tick the ✓ next to an ingredient if you already have it — it'll be skipped when copying or printing. Tap the ⇄ icon to merge differently-spelled ingredients into one canonical name.</p>
         <div id="shopping"></div>
       </section>
 
@@ -323,7 +334,11 @@
       </div>
 
       <div class="form-row">
-        <label>Steps</label>
+        <div class="group space-between" style="align-items:center;">
+          <label>Steps</label>
+          <button type="button" id="edit-scan-steps" class="btn mini scan-steps-btn">📷 Scan back of card</button>
+        </div>
+        <input id="edit-scan-file" type="file" accept="image/*" capture="environment" hidden />
         <div id="edit-steps" class="steps"></div>
         <div class="group">
           <input id="edit-step-input" type="text" placeholder="Add a step and press Enter" />
@@ -428,6 +443,16 @@
       <thead><tr><th>Ingredient</th><th>Type</th><th>Unit label</th><th>Locked</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
+
+    <hr class="sep" />
+
+    <h4 class="h4">Data cleanup</h4>
+    <p class="muted small">Tidy up old meal data: singularise unit labels (e.g. "cloves" → "clove") and add missing labels where quantity has none (e.g. "8 qty" → "8 piece"). Run a preview first to see what would change.</p>
+    <div class="group">
+      <button id="cleanup-preview" class="btn">Preview changes</button>
+      <button id="cleanup-apply" class="btn primary" disabled>Apply</button>
+    </div>
+    <div id="cleanup-results" class="muted small mt8" style="display:none;"></div>
 
   </div>
 </div>

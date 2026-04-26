@@ -29,6 +29,7 @@ const state = {
   search: "",
   tagFilter: new Set(),
   tagMode: "ANY",
+  containsFilter: new Set(),   // ingredient names that meals must all contain
 
   normaliser: [],
   unitDefaults: {},
@@ -69,9 +70,178 @@ function singularise(s){
   if (/s$/.test(s))   return s.replace(/s$/, "");
   return s;
 }
+
+/* Singularise a unit *label* (like "cloves", "tins", "pieces").
+   Conservative — only normalises known plural forms, leaves unknowns alone.
+   This means "rice" stays "rice", but "cloves" becomes "clove". */
+const UNIT_LABEL_PLURALS = {
+  "cloves": "clove",
+  "pieces": "piece",
+  "slices": "slice",
+  "tins": "tin",
+  "cans": "can",
+  "packs": "pack",
+  "packets": "packet",
+  "bunches": "bunch",
+  "sprigs": "sprig",
+  "leaves": "leaf",
+  "stalks": "stalk",
+  "heads": "head",
+  "sticks": "stick",
+  "rashers": "rasher",
+  "fillets": "fillet",
+  "breasts": "breast",
+  "thighs": "thigh",
+  "drumsticks": "drumstick",
+  "wings": "wing",
+  "shoulders": "shoulder",
+  "joints": "joint",
+  "links": "link",
+  "sausages": "sausage",
+  "patties": "patty",
+  "meatballs": "meatball",
+  "chops": "chop",
+  "steaks": "steak",
+  "ribs": "rib",
+  "loaves": "loaf",
+  "rolls": "roll",
+  "buns": "bun",
+  "tortillas": "tortilla",
+  "wraps": "wrap",
+  "sheets": "sheet",
+  "bars": "bar",
+  "bottles": "bottle",
+  "jars": "jar",
+  "tubs": "tub",
+  "punnets": "punnet",
+  "bags": "bag",
+  "boxes": "box",
+  "blocks": "block",
+  "cubes": "cube",
+  "knobs": "knob",
+  "splashes": "splash",
+  "pinches": "pinch",
+  "dashes": "dash",
+  "drops": "drop",
+  "handfuls": "handful"
+};
+function singulariseUnitLabel(s){
+  const lower = String(s ?? "").trim().toLowerCase();
+  if (!lower) return "";
+  return UNIT_LABEL_PLURALS[lower] || lower;
+}
 function formatNumber(n){
   const t = Math.round((Number(n) || 0) * 100) / 100;
   return Number.isInteger(t) ? String(t) : t.toFixed(2).replace(/\.?0+$/, "");
+}
+
+/* Common unit-label aliases — collapsed to canonical singulars so things like
+   "10 clove" and "2 cloves" merge in the shopping list. Add freely. */
+const UNIT_LABEL_ALIASES = {
+  "cloves": "clove",
+  "pieces": "piece",
+  "pcs": "piece",
+  "pc": "piece",
+  "tins": "tin",
+  "cans": "can",
+  "packs": "pack",
+  "packets": "packet",
+  "sachets": "sachet",
+  "slices": "slice",
+  "sprigs": "sprig",
+  "leaves": "leaf",
+  "stalks": "stalk",
+  "stems": "stem",
+  "bunches": "bunch",
+  "heads": "head",
+  "rashers": "rasher",
+  "fillets": "fillet",
+  "strips": "strip",
+  "wedges": "wedge",
+  "cubes": "cube",
+  "bottles": "bottle",
+  "jars": "jar",
+  "tbsps": "tbsp",
+  "tablespoons": "tbsp",
+  "tablespoon": "tbsp",
+  "tsps": "tsp",
+  "teaspoons": "tsp",
+  "teaspoon": "tsp",
+  "cups": "cup",
+  "to-taste": "to taste",
+  "totaste": "to taste"
+};
+function normaliseUnitLabel(s){
+  const raw = String(s ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  if (UNIT_LABEL_ALIASES[raw]) return UNIT_LABEL_ALIASES[raw];
+  // generic plural -> singular
+  const sing = singularise(raw);
+  return UNIT_LABEL_ALIASES[sing] || sing;
+}
+
+/* Walk all meals, normalise ingredient names + unit labels, and return a
+   structured report of what changed. Used by the Settings "Clean up" button. */
+function planIngredientCleanup(){
+  const changes = [];
+  for (const m of state.meals){
+    for (const ing of (m.ingredients || [])){
+      const oldName = ing.name || "";
+      const oldUnit = ing.unit || "";
+      const oldType = ing.type;
+
+      const newName = normaliserLookup(oldName) || normaliseRaw(oldName);
+      let newUnit = oldUnit;
+      let newType = oldType;
+
+      // Singularise unit labels for qty-typed ingredients
+      if (oldType === "qty" && oldUnit){
+        newUnit = normaliseUnitLabel(oldUnit);
+      }
+
+      // Special case: type=qty with no unit label is meaningless — promote to "piece"
+      if (oldType === "qty" && !oldUnit){
+        newUnit = "piece";
+      }
+
+      if (newName !== oldName || newUnit !== oldUnit || newType !== oldType){
+        changes.push({
+          mealId: m.id,
+          mealTitle: m.title,
+          oldName, newName,
+          oldUnit, newUnit,
+          oldType, newType
+        });
+      }
+    }
+  }
+  return changes;
+}
+function applyIngredientCleanup(plan){
+  const byMeal = new Map();
+  for (const c of plan){
+    if (!byMeal.has(c.mealId)) byMeal.set(c.mealId, []);
+    byMeal.get(c.mealId).push(c);
+  }
+  let mealsTouched = 0;
+  for (const m of state.meals){
+    const ch = byMeal.get(m.id);
+    if (!ch) continue;
+    let changed = false;
+    for (const c of ch){
+      // Find the matching ingredient (best-effort by old triplet)
+      const ing = (m.ingredients || []).find(i =>
+        i.name === c.oldName && i.unit === c.oldUnit && i.type === c.oldType
+      );
+      if (!ing) continue;
+      ing.name = c.newName;
+      ing.unit = c.newUnit;
+      ing.type = c.newType;
+      changed = true;
+    }
+    if (changed) mealsTouched++;
+  }
+  return mealsTouched;
 }
 
 /* ============== status / toast ============== */
@@ -81,11 +251,35 @@ function status(msg, ms = 2400){
   if (el) el.textContent = msg;
   const toast = $("#toast");
   if (toast){
+    toast.innerHTML = "";
     toast.textContent = msg;
     toast.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toast.classList.remove("show"), ms);
   }
+}
+
+/* Toast with an Undo action. The undo button stays for `ms` ms (default 6000)
+   then disappears. Calling status() again will replace it. */
+function showUndoToast(msg, onUndo, ms = 6000){
+  const toast = $("#toast");
+  if (!toast) return;
+  toast.innerHTML = "";
+  const span = document.createElement("span");
+  span.textContent = msg;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "toast-undo";
+  btn.textContent = "Undo";
+  btn.addEventListener("click", async () => {
+    clearTimeout(toastTimer);
+    toast.classList.remove("show");
+    try { await onUndo(); } catch (e) { console.error("Undo failed:", e); }
+  });
+  toast.append(span, btn);
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), ms);
 }
 
 /* ============== IndexedDB ============== */
@@ -390,6 +584,32 @@ function applyNormaliserAcrossMeals(){
   return changes;
 }
 
+/* Walk all meals, dry-run a singularise + qty-needs-unit cleanup.
+   Returns { changes: [{mealTitle, before, after}, ...], totalChanges }.
+   Pass apply=true to actually mutate state.meals. */
+function cleanupIngredientUnits(apply = false){
+  const changes = [];
+  for (const m of state.meals){
+    for (let i = 0; i < (m.ingredients || []).length; i++){
+      const ing = m.ingredients[i];
+      const oldUnit = ing.unit || "";
+      let newUnit = singulariseUnitLabel(oldUnit);
+      if (ing.type === "qty" && !newUnit) newUnit = "piece";
+      if (newUnit !== oldUnit){
+        changes.push({
+          mealTitle: m.title,
+          ingredient: ing.name,
+          type: ing.type,
+          before: oldUnit || "(empty)",
+          after: newUnit
+        });
+        if (apply) ing.unit = newUnit;
+      }
+    }
+  }
+  return { changes, totalChanges: changes.length };
+}
+
 /* ============== Token (tag) editor ============== */
 function tokenEditor(container, input, initial = []){
   const tokens = new Set((initial || []).map(t => String(t).toLowerCase()));
@@ -604,7 +824,8 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
       if (!isFinite(amount) || amount < 0) return;
       const type = t.value;
       if (type === "qty") amount = Math.max(0, Math.round(amount));
-      const unit = u.value.trim();
+      let unit = singulariseUnitLabel(u.value.trim());
+      if (type === "qty" && !unit) unit = "piece";   // never store qty without a label
       // apply normaliser at save time
       const canon = normaliserLookup(name) || normaliseRaw(name);
       ingredients.push({ name: canon, type, amount, unit });
@@ -759,7 +980,9 @@ $("#edit-form")?.addEventListener("submit", async (e) => {
     const type = t.value;
     if (type === "qty") amount = Math.max(0, Math.round(amount));
     const canon = normaliserLookup(name) || normaliseRaw(name);
-    ing.push({ name: canon, type, amount, unit: u.value.trim() });
+    let unit = singulariseUnitLabel(u.value.trim());
+    if (type === "qty" && !unit) unit = "piece";
+    ing.push({ name: canon, type, amount, unit });
   });
   if (!ing.length){ alert("Please add at least one ingredient."); return; }
 
@@ -1012,7 +1235,29 @@ const grid = $("#meal-grid");
 function visibleMeals(){
   let items = [...state.meals];
   if (state.showFavsOnly) items = items.filter(m => m.fav);
-  if (state.search) items = items.filter(m => (m.title || "").toLowerCase().includes(state.search));
+
+  // Search now matches title OR any ingredient name
+  if (state.search){
+    const q = state.search;
+    items = items.filter(m => {
+      if ((m.title || "").toLowerCase().includes(q)) return true;
+      return (m.ingredients || []).some(i => normaliseRaw(i.name).includes(q));
+    });
+  }
+
+  // Contains filter: meal must contain ALL listed ingredients (substring match,
+  // canonicalised via normaliser so "scallion" matches if mapped to "spring onion")
+  if (state.containsFilter.size){
+    const need = [...state.containsFilter].map(s => {
+      const canon = normaliserLookup(s) || normaliseRaw(s);
+      return canon;
+    });
+    items = items.filter(m => {
+      const ingNames = (m.ingredients || []).map(i => normaliseRaw(i.name));
+      return need.every(n => ingNames.some(ing => ing.includes(n)));
+    });
+  }
+
   if (state.tagFilter.size){
     const need = [...state.tagFilter];
     items = items.filter(m => {
@@ -1152,16 +1397,30 @@ function renderMeals(){
     editBtn.type = "button"; editBtn.className = "btn"; editBtn.textContent = "Edit";
     editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); openEdit(meal.id); });
     const del = document.createElement("button");
-    del.type = "button"; del.className = "btn danger"; del.textContent = "Delete";
+    del.type = "button";
+    del.className = "btn danger card-del";
+    del.innerHTML = "🗑";
+    del.title = "Delete meal";
+    del.setAttribute("aria-label", `Delete ${meal.title}`);
     del.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       if (!confirm(`Delete "${meal.title}"?`)) return;
-      state.meals = state.meals.filter(m => m.id !== meal.id);
+      const idx = state.meals.findIndex(m => m.id === meal.id);
+      if (idx === -1) return;
+      const removed = state.meals[idx];
+      state.meals.splice(idx, 1);
       state.selected.delete(meal.id);
       await saveAll();
       renderMeals(); renderShopping(); populateCookSelect();
       updateIngredientSuggestions(); refreshTagSuggestions(); updateSelectedCount();
-      status("Meal deleted.");
+      showUndoToast(`"${removed.title}" deleted`, async () => {
+        // restore at the same index
+        state.meals.splice(Math.min(idx, state.meals.length), 0, removed);
+        await saveAll();
+        renderMeals(); renderShopping(); populateCookSelect();
+        updateIngredientSuggestions(); refreshTagSuggestions();
+        status(`"${removed.title}" restored`);
+      });
     });
     controls.append(editBtn, del);
     body.appendChild(controls);
@@ -1184,6 +1443,45 @@ $$("[data-density]").forEach(btn => btn.addEventListener("click", async () => {
   await saveAll();
   renderMeals();
 }));
+
+/* ===== Contains filter (search by ingredient) ===== */
+let containsEditor = null;
+function refreshContainsBadge(){
+  const btn = $("#contains-toggle");
+  if (!btn) return;
+  const n = state.containsFilter.size;
+  btn.textContent = n ? `🥬 ${n} ingredient${n === 1 ? "" : "s"} ▾` : "🥬 Contains ▾";
+  btn.classList.toggle("active", n > 0);
+}
+$("#contains-toggle")?.addEventListener("click", () => {
+  const bar = $("#contains-bar");
+  if (!bar) return;
+  const opening = bar.hasAttribute("hidden");
+  if (opening){
+    bar.removeAttribute("hidden");
+    if (!containsEditor){
+      containsEditor = tokenEditor($("#contains-editor"), $("#contains-input"), Array.from(state.containsFilter));
+      // Rewire to update state on every change
+      const origGet = containsEditor.get;
+      const sync = () => {
+        state.containsFilter = new Set(origGet());
+        refreshContainsBadge();
+        renderMeals();
+      };
+      // Patch by observing the editor's container
+      new MutationObserver(sync).observe($("#contains-editor"), { childList: true, subtree: true });
+    }
+    setTimeout(() => $("#contains-input")?.focus(), 30);
+  } else {
+    bar.setAttribute("hidden", "");
+  }
+});
+$("#contains-clear")?.addEventListener("click", () => {
+  state.containsFilter.clear();
+  if (containsEditor) containsEditor.set([]);
+  refreshContainsBadge();
+  renderMeals();
+});
 
 /* Search */
 $("#search")?.addEventListener("input", (e) => {
@@ -1262,6 +1560,9 @@ function displayValueAndUnit(r){
   if (["tsp","tbsp","cup"].includes(r.type)) return { value:r.total, unit:r.type };
   return { value:r.total, unit:(r.unit || "qty") };
 }
+/* Per-shop "I have it" ticks. Keyed by aggKey, lives in memory only. */
+const haveIt = new Set();
+
 function renderShopping(){
   shoppingWrap.innerHTML = "";
   const rows = aggregate();
@@ -1271,22 +1572,184 @@ function renderShopping(){
     d.textContent = "Select meals to build your shopping list.";
     shoppingWrap.appendChild(d);
     updateSelectedCount();
+    updateShoppingActions();
     return;
   }
+
+  // Prune ticks for rows that no longer exist
+  const liveKeys = new Set(rows.map(r => aggKey(r)));
+  for (const k of Array.from(haveIt)) if (!liveKeys.has(k)) haveIt.delete(k);
+
   const table = document.createElement("table");
-  table.className = "table";
+  table.className = "table shopping-table";
   const thead = document.createElement("thead");
-  thead.innerHTML = "<tr><th>Ingredient</th><th>Total</th><th>Unit</th></tr>";
+  thead.innerHTML = "<tr><th class='col-tick' aria-label='Have'></th><th>Ingredient</th><th>Total</th><th>Unit</th><th class='col-merge' aria-label='Merge'></th></tr>";
   const tbody = document.createElement("tbody");
+
   rows.forEach(r => {
+    const k = aggKey(r);
     const tr = document.createElement("tr");
+    const ticked = haveIt.has(k);
+    if (ticked) tr.classList.add("ticked");
+
     const { value, unit } = displayValueAndUnit(r);
-    tr.innerHTML = `<td>${escapeHtml(titleCase(r.name))}</td><td>${formatNumber(value)}</td><td>${escapeHtml(unit)}</td>`;
+
+    // Tick column
+    const tdTick = document.createElement("td");
+    tdTick.className = "col-tick";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = ticked;
+    cb.setAttribute("aria-label", `I have ${r.name}`);
+    cb.addEventListener("change", () => {
+      if (cb.checked) haveIt.add(k); else haveIt.delete(k);
+      tr.classList.toggle("ticked", cb.checked);
+      updateShoppingActions();
+    });
+    tdTick.appendChild(cb);
+
+    // Ingredient name
+    const tdName = document.createElement("td");
+    tdName.textContent = titleCase(r.name);
+
+    // Total
+    const tdTotal = document.createElement("td");
+    tdTotal.textContent = formatNumber(value);
+    tdTotal.className = "col-total";
+
+    // Unit
+    const tdUnit = document.createElement("td");
+    tdUnit.textContent = unit;
+    tdUnit.className = "col-unit";
+
+    // Merge button
+    const tdMerge = document.createElement("td");
+    tdMerge.className = "col-merge";
+    const merge = document.createElement("button");
+    merge.type = "button";
+    merge.className = "btn mini merge-btn";
+    merge.textContent = "⇄";
+    merge.title = `Merge "${r.name}" into a canonical name`;
+    merge.setAttribute("aria-label", `Merge ${r.name}`);
+    merge.addEventListener("click", () => openMergeDialog(r.name));
+    tdMerge.appendChild(merge);
+
+    tr.append(tdTick, tdName, tdTotal, tdUnit, tdMerge);
     tbody.appendChild(tr);
   });
+
   table.append(thead, tbody);
   shoppingWrap.appendChild(table);
   updateSelectedCount();
+  updateShoppingActions();
+}
+
+function updateShoppingActions(){
+  const tickedN = haveIt.size;
+  const reset = $("#reset-ticks");
+  if (reset){
+    reset.disabled = tickedN === 0;
+    reset.textContent = tickedN ? `Reset ticks (${tickedN})` : "Reset ticks";
+  }
+}
+
+/* Reset ticks button (hooked up below in init handlers) */
+function resetHaveItTicks(){
+  haveIt.clear();
+  renderShopping();
+}
+
+/* ===== Merge dialog: quick-add an alias to an existing canonical or create a new one ===== */
+function openMergeDialog(rawName){
+  // Build a list of canonical options
+  const canonicals = state.normaliser.map(e => e.canonical);
+  const wrap = document.createElement("div");
+  wrap.className = "modal open";
+  wrap.innerHTML = `
+    <div class="dialog merge-dialog" style="max-width:520px">
+      <div class="stickybar group space-between">
+        <h3 class="h3">Merge "${escapeHtml(rawName)}"</h3>
+        <button class="btn" data-close aria-label="Close">✕</button>
+      </div>
+      <p class="muted small" style="margin:0 0 10px;">
+        Merge this ingredient into a canonical name. All existing meals using
+        "<strong>${escapeHtml(rawName)}</strong>" will be updated.
+      </p>
+
+      <div class="form-row">
+        <label>Merge into</label>
+        <select id="merge-canonical">
+          ${canonicals.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")}
+          <option value="__new__">+ Create new canonical…</option>
+        </select>
+      </div>
+
+      <div id="merge-new-canonical-row" class="form-row" style="display:none;">
+        <label for="merge-new-canonical">New canonical name</label>
+        <input id="merge-new-canonical" type="text" placeholder="e.g. garlic" value="${escapeHtml(rawName)}" />
+      </div>
+
+      <div class="group" style="justify-content:flex-end;">
+        <button class="btn" data-close>Cancel</button>
+        <button class="btn primary" id="merge-confirm">Merge</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.body.classList.add("modal-open");
+
+  const close = () => {
+    wrap.remove();
+    if (!$(".modal.open")) document.body.classList.remove("modal-open");
+  };
+  wrap.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", close));
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+
+  // If no existing canonicals, default to "create new" mode
+  const sel = $("#merge-canonical", wrap);
+  const newRow = $("#merge-new-canonical-row", wrap);
+  if (!canonicals.length){
+    sel.value = "__new__";
+    newRow.style.display = "";
+  }
+  sel.addEventListener("change", () => {
+    newRow.style.display = sel.value === "__new__" ? "" : "none";
+    if (sel.value === "__new__") $("#merge-new-canonical", wrap).focus();
+  });
+
+  $("#merge-confirm", wrap).addEventListener("click", async () => {
+    let canonical;
+    if (sel.value === "__new__"){
+      canonical = ($("#merge-new-canonical", wrap).value || "").trim().toLowerCase();
+      if (!canonical) { alert("Please enter a canonical name."); return; }
+    } else {
+      canonical = sel.value;
+    }
+    const alias = normaliseRaw(rawName);
+
+    // If a canonical entry already exists, just append the alias.
+    // Otherwise create a new entry.
+    let entry = state.normaliser.find(e => normaliseRaw(e.canonical) === canonical);
+    if (entry){
+      if (!entry.aliases) entry.aliases = [];
+      if (alias !== normaliseRaw(entry.canonical) && !entry.aliases.map(normaliseRaw).includes(alias)){
+        entry.aliases.push(alias);
+      }
+    } else {
+      const aliases = (alias !== canonical) ? [alias] : [];
+      state.normaliser.push({ canonical, aliases });
+    }
+
+    // Apply across existing meals
+    const changed = applyNormaliserAcrossMeals();
+    await saveAll();
+    renderMeals(); renderShopping();
+    updateIngredientSuggestions(); refreshTagSuggestions();
+    close();
+    status(changed
+      ? `Merged "${rawName}" → "${canonical}" (${changed} meal${changed === 1 ? "" : "s"})`
+      : `Merged "${rawName}" → "${canonical}"`);
+  });
 }
 
 /* TSV copy with mobile fallback */
@@ -1313,19 +1776,23 @@ function showFallbackTSV(tsv){
 }
 
 $("#copy-tsv")?.addEventListener("click", async () => {
-  const rows = aggregate();
-  if (!rows.length){ status("No items to copy."); return; }
+  const allRows = aggregate();
+  if (!allRows.length){ status("No items to copy."); return; }
+  const rows = allRows.filter(r => !haveIt.has(aggKey(r)));
+  if (!rows.length){ status("Everything is ticked — nothing to copy."); return; }
   const selectedCount = state.selected.size;
+  const tickedCount = allRows.length - rows.length;
   const header = ["Ingredient", "Total", "Unit"];
   const body = rows.map(r => {
     const { value, unit } = displayValueAndUnit(r);
     return [titleCase(r.name), String(value), unit];
   });
   const top = [
-    ["Meals selected", String(selectedCount), ""],
-    ["", "", ""],
-    header
+    ["Meals selected", String(selectedCount), ""]
   ];
+  if (tickedCount) top.push(["Skipped (ticked as 'have')", String(tickedCount), ""]);
+  top.push(["", "", ""]);
+  top.push(header);
   const tsv = [...top, ...body]
     .map(cols => cols.map(v => String(v).replaceAll("\t", " ")).join("\t"))
     .join("\n");
@@ -1333,7 +1800,9 @@ $("#copy-tsv")?.addEventListener("click", async () => {
   try {
     if (navigator.clipboard && window.isSecureContext){
       await navigator.clipboard.writeText(tsv);
-      status("Shopping list copied (TSV).");
+      status(tickedCount
+        ? `Copied ${rows.length} items (${tickedCount} skipped).`
+        : `Copied ${rows.length} items.`);
       return;
     }
     throw new Error("clipboard unavailable");
@@ -1342,6 +1811,7 @@ $("#copy-tsv")?.addEventListener("click", async () => {
   }
 });
 $("#print")?.addEventListener("click", () => window.print());
+$("#reset-ticks")?.addEventListener("click", resetHaveItTicks);
 
 /* =====================================================
    COOK MODE
@@ -1567,6 +2037,55 @@ $("#backfill-tags")?.addEventListener("click", async () => {
   await saveAll();
   refreshTagSuggestions(); renderMeals();
   status(changed ? `Backfilled tags on ${changed} meal${changed === 1 ? "" : "s"}.` : "Nothing to backfill.");
+});
+
+/* ===== Data cleanup (singularise units, fill missing qty labels) ===== */
+let cleanupPreviewData = null;
+$("#cleanup-preview")?.addEventListener("click", () => {
+  const results = $("#cleanup-results");
+  const applyBtn = $("#cleanup-apply");
+  if (!state.meals.length){
+    results.style.display = "block";
+    results.innerHTML = "<em>No meals saved yet.</em>";
+    applyBtn.disabled = true;
+    return;
+  }
+  cleanupPreviewData = cleanupIngredientUnits(false);
+  results.style.display = "block";
+
+  if (!cleanupPreviewData.totalChanges){
+    results.innerHTML = "<em>Nothing to clean up — your data already looks tidy. ✓</em>";
+    applyBtn.disabled = true;
+    return;
+  }
+
+  // Group changes by before→after for compactness
+  const grouped = new Map();
+  cleanupPreviewData.changes.forEach(c => {
+    const key = `${c.before} → ${c.after}`;
+    grouped.set(key, (grouped.get(key) || 0) + 1);
+  });
+  const summaryRows = Array.from(grouped.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `<li><code>${escapeHtml(k)}</code> &mdash; ${n} time${n === 1 ? "" : "s"}</li>`)
+    .join("");
+
+  results.innerHTML = `
+    <strong>${cleanupPreviewData.totalChanges} change${cleanupPreviewData.totalChanges === 1 ? "" : "s"} would be made:</strong>
+    <ul style="margin:6px 0 0; padding-left:20px;">${summaryRows}</ul>
+  `;
+  applyBtn.disabled = false;
+});
+$("#cleanup-apply")?.addEventListener("click", async () => {
+  if (!cleanupPreviewData || !cleanupPreviewData.totalChanges) return;
+  const result = cleanupIngredientUnits(true);
+  await saveAll();
+  renderMeals();
+  renderShopping();
+  cleanupPreviewData = null;
+  $("#cleanup-results").innerHTML = `<em>✓ Applied ${result.totalChanges} change${result.totalChanges === 1 ? "" : "s"}.</em>`;
+  $("#cleanup-apply").disabled = true;
+  status(`Cleaned up ${result.totalChanges} ingredient${result.totalChanges === 1 ? "" : "s"}.`);
 });
 
 $("#norm-add")?.addEventListener("click", async () => {

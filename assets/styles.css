@@ -387,6 +387,15 @@ input[type=file]{ padding:8px; }
 }
 .controls .btn{ flex:1 1 0; min-width:0; }
 
+/* Card delete button — small, icon-only, takes minimum width */
+.controls .card-del{
+  flex: 0 0 auto !important;
+  width: 38px;
+  padding: 8px 0 !important;
+  font-size: 1rem;
+  line-height: 1;
+}
+
 /* ============== POPOVER (tag filter) ============== */
 .popover{
   position:fixed; z-index:60;
@@ -592,16 +601,31 @@ body.modal-open{ overflow:hidden; }
   border:1px solid var(--border-strong);
   box-shadow: var(--shadow);
   font-size:.95rem;
-  pointer-events:none;
   text-align:center;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
 }
 [data-theme="light"] .toast{
   background: rgba(15,23,42,.92);
 }
 .toast.show{
-  display:block;
+  display:flex;
   animation: toastIn .25s ease-out;
 }
+.toast-undo{
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.4);
+  color: #f8fafc;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+  flex-shrink: 0;
+}
+.toast-undo:hover{ background: rgba(255,255,255,.1); }
 @keyframes toastIn{
   from{ transform: translateY(8px); opacity:0; }
   to  { transform: translateY(0);   opacity:1; }
@@ -623,6 +647,21 @@ body.modal-open{ overflow:hidden; }
   .layout{ grid-template-columns:1fr !important; padding:0 !important; }
   #shopping table{ width:100%; }
   #shopping th, #shopping td{ border-bottom:1px solid #ccc; padding:6px 8px; }
+  /* Hide ticked rows + tick/merge columns when printing */
+  #shopping tr.ticked{ display: none !important; }
+  #shopping .col-tick, #shopping .col-merge{ display: none !important; }
+}
+
+/* Shopping list ticked row styling (screen) */
+#shopping tr.ticked td{
+  opacity: .45;
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+}
+#shopping tr.ticked td.col-tick,
+#shopping tr.ticked td.col-merge{
+  text-decoration: none;
+  opacity: 1;
 }
 
 /* =====================================================
@@ -765,6 +804,13 @@ body.modal-open{ overflow:hidden; }
     border-radius:8px !important;
     white-space:nowrap !important;
   }
+  /* Keep the delete button compact on mobile too */
+  .controls .card-del{
+    flex: 0 0 40px !important;
+    width: 40px !important;
+    padding: 6px 0 !important;
+    font-size: 1rem !important;
+  }
   /* When titles are long, hide the "no tags" hint to save space */
   .no-tags{ display:none !important; }
 
@@ -805,16 +851,31 @@ body.modal-open{ overflow:hidden; }
     font-size:18px;
   }
 
-  /* Shopping table -> rows */
+  /* Shopping table -> rows on mobile (5 cols: tick, name, total, unit, merge) */
   #shopping table thead{ display:none; }
   #shopping table tr{
-    display:flex; justify-content:space-between; gap:10px;
+    display:flex; align-items:center; gap:8px;
     border-bottom:1px dashed var(--border);
+    padding: 6px 0;
   }
-  #shopping table td{ border:none; padding:10px 0; }
-  #shopping table td:nth-child(1){ flex:1 1 auto; min-width:0; word-break:break-word; }
-  #shopping table td:nth-child(2),
-  #shopping table td:nth-child(3){ white-space:nowrap; }
+  #shopping table td{ border:none; padding:0; }
+  #shopping .col-tick{ flex: 0 0 28px; }
+  #shopping .col-tick input{ width: 22px; height: 22px; accent-color: var(--accent); }
+  #shopping table td:nth-child(2){
+    flex:1 1 auto; min-width:0;
+    word-break:break-word;
+    font-size: .95rem;
+  }
+  #shopping .col-total,
+  #shopping .col-unit{ white-space:nowrap; flex-shrink: 0; }
+  #shopping .col-merge{ flex: 0 0 32px; text-align: right; }
+  #shopping .merge-btn{
+    padding: 4px 7px !important;
+    font-size: .9rem !important;
+    border-radius: 8px !important;
+    opacity: .65;
+  }
+  #shopping .merge-btn:active{ opacity: 1; }
 
   /* hide #view-add helper section if on mobile (form is in aside) */
   .view{ display:none; }
@@ -830,6 +891,29 @@ body.modal-open{ overflow:hidden; }
 @media (max-width:380px){
   .controls .btn{ padding:6px 8px !important; font-size:.78rem !important; }
   .card .media{ flex:0 0 78px !important; width:78px !important; min-width:78px !important; }
+}
+
+/* =====================================================
+   CONTAINS FILTER (ingredient search)
+   ===================================================== */
+.contains-bar{
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  background: color-mix(in oklab, var(--accent) 6%, transparent);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+}
+.contains-row{
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 6px;
+}
+.contains-row #contains-input{
+  flex: 1 1 200px;
+  min-width: 0;
+}
+#contains-toggle.active{
+  background: var(--accent-glow);
+  border-color: var(--accent-border);
 }
 
 /* =====================================================
@@ -852,6 +936,14 @@ body.modal-open{ overflow:hidden; }
   font-weight: 600;
 }
 .scan-icon{ font-size: 1.2rem; }
+
+.scan-steps-btn{
+  font-size: .8rem !important;
+  padding: 5px 10px !important;
+  background: color-mix(in oklab, var(--accent) 12%, var(--card)) !important;
+  border-color: var(--accent-border) !important;
+  white-space: nowrap;
+}
 
 .scan-loading{
   text-align:center; padding: 32px 16px;

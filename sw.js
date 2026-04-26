@@ -4,7 +4,7 @@
    - Cache-first for static assets (CSS/JS/icons)
    - Same-origin only
 */
-const CACHE_NAME = "meal-planner-v12";
+const CACHE_NAME = "meal-planner-v13";
 const CORE_ASSETS = [
   "./",
   "./index.html",
