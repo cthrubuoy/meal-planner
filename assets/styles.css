@@ -1196,11 +1196,13 @@ body.modal-open{ overflow:hidden; }
 /* Running timers */
 .timer-tray{
   position:fixed; left:12px; bottom:calc(84px + var(--safe-bottom)); z-index:100000;
-  display:grid; gap:6px; width:min(420px, calc(100vw - 24px));
+  display:grid; grid-template-columns: minmax(0,1fr); gap:6px; width:min(420px, calc(100vw - 24px));
 }
 .timer-tray[hidden]{ display:none; }
 @media (min-width:840px){ .timer-tray{ bottom:16px; } }
-body.modal-open .timer-tray{ bottom:auto; top:calc(72px + env(safe-area-inset-top, 0px)); left:auto; right:12px; }
+/* In cook mode the tray sits just above the Back/Next bar, clear of the step text */
+body.cooking .timer-tray{ bottom:calc(96px + var(--safe-bottom)); left:12px; right:12px; width:auto; max-width:520px; }
+body.cooking .co-page{ padding-bottom:120px; }
 .timer{
   display:flex; align-items:center; gap:8px; padding:8px 10px;
   background: var(--panel); border:1px solid var(--accent-border);
@@ -1216,3 +1218,4 @@ body.modal-open .toast{ bottom: calc(100px + var(--safe-bottom)); }
   .co-head #co-units{ display:none; }   /* units are also set in the Cook tab */
   .co-head{ gap:8px; }
 }
+body.cooking .toast{ top:calc(70px + env(safe-area-inset-top, 0px)); bottom:auto; }

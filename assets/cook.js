@@ -281,7 +281,8 @@
     overlay.hidden = false;
     overlay.classList.add("open");   // counts as an open modal for lockBodyScroll
     lockBodyScroll(true);
-    overlay.classList.remove("show-ings");
+    document.body.classList.add("cooking");   // docks the timer tray above Back/Next
+    setIngsShown(false);
     requestWakeLock();
     renderGuided();
     $("#co-next")?.focus();
@@ -291,6 +292,7 @@
     overlay.hidden = true;
     overlay.classList.remove("open");
     lockBodyScroll(false);
+    document.body.classList.remove("cooking");
     try { wakeLock?.release(); } catch { /* already released */ }
     wakeLock = null;
     renderCookTab();
@@ -389,12 +391,19 @@
     const next = Math.max(0, Math.min(pageCount(meal) - 1, guided.page + delta));
     if (next === guided.page) return;
     guided.page = next;
+    setIngsShown(false);
     renderGuided();
   }
   $("#co-prev")?.addEventListener("click", () => go(-1));
   $("#co-next")?.addEventListener("click", () => go(1));
   $("#co-close")?.addEventListener("click", closeGuided);
-  $("#co-ing-toggle")?.addEventListener("click", () => overlay.classList.toggle("show-ings"));
+  /* Phone/portrait: the button swaps the step for the ingredient checklist */
+  function setIngsShown(on){
+    overlay.classList.toggle("show-ings", on);
+    const b = $("#co-ing-toggle");
+    if (b) b.textContent = on ? "📖 Step" : "🥕 Ingredients";
+  }
+  $("#co-ing-toggle")?.addEventListener("click", () => setIngsShown(!overlay.classList.contains("show-ings")));
   window.addEventListener("keydown", (e) => {
     if (!guided || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
     if (e.key === "ArrowRight" || e.key === "PageDown"){ e.preventDefault(); go(1); }
@@ -459,27 +468,42 @@
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
     return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
   }
+  /* Rebuilds the tray rows. Only called when timers are added, removed or
+     finish — the 1-second tick just updates the countdown text, so a tap on
+     +1 / ✕ never lands on a row that's being replaced. */
   function renderTimers(){
     const tray = $("#timer-tray");
     if (!tray) return;
-    const now = Date.now();
-    for (const t of timers) if (!t.done && t.end <= now){ t.done = true; saveTimers(); alarm(t); }
     tray.hidden = !timers.length;
     tray.innerHTML = timers.map(t => `
-      <div class="timer ${t.done ? "done" : ""}">
-        <span class="timer-left">${t.done ? "Done!" : fmtLeft(t.end - now)}</span>
+      <div class="timer ${t.done ? "done" : ""}" data-timer="${t.id}">
+        <span class="timer-left">${t.done ? "Done!" : fmtLeft(t.end - Date.now())}</span>
         <span class="timer-label">${escapeHtml(t.label)}</span>
         ${t.done ? "" : `<button class="btn mini" data-add="${t.id}" aria-label="Add a minute">+1</button>`}
         <button class="btn mini" data-stop="${t.id}" aria-label="${t.done ? "Dismiss" : "Cancel"} timer">✕</button>
       </div>`).join("");
     $$("[data-add]", tray).forEach(b => b.addEventListener("click", () => {
-      const t = timers.find(x => x.id === b.dataset.add); if (t){ t.end += 60000; saveTimers(); renderTimers(); }
+      const t = timers.find(x => x.id === b.dataset.add); if (t){ t.end += 60000; saveTimers(); tickTimers(); }
     }));
     $$("[data-stop]", tray).forEach(b => b.addEventListener("click", () => {
       timers = timers.filter(x => x.id !== b.dataset.stop); saveTimers(); renderTimers();
     }));
-    if (timers.some(t => !t.done) && !tick) tick = setInterval(renderTimers, 1000);
-    if (!timers.some(t => !t.done) && tick){ clearInterval(tick); tick = null; }
+    tickTimers();
+  }
+  function tickTimers(){
+    const now = Date.now();
+    let finished = false;
+    for (const t of timers){
+      if (!t.done && t.end <= now){ t.done = true; finished = true; alarm(t); }
+    }
+    if (finished){ saveTimers(); renderTimers(); return; }
+    for (const t of timers){
+      const el = $(`[data-timer="${t.id}"] .timer-left`);
+      if (el && !t.done) el.textContent = fmtLeft(t.end - now);
+    }
+    const running = timers.some(t => !t.done);
+    if (running && !tick) tick = setInterval(tickTimers, 1000);
+    if (!running && tick){ clearInterval(tick); tick = null; }
   }
 
   /* ============== Init ============== */
