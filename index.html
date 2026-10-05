@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="assets/styles.css?v=12" />
+  <link rel="stylesheet" href="assets/styles.css?v=13" />
 </head>
 <body>
 
@@ -23,7 +23,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v12</span>
+      <span class="pill">v13</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal">＋ Add</button>
@@ -54,6 +54,8 @@
             <option value="most">Most chosen</option>
             <option value="least">Least chosen</option>
             <option value="oldest">Longest since chosen</option>
+            <option value="cooked">Most cooked</option>
+            <option value="rated">Top rated</option>
           </select>
           <button id="open-filters" class="btn">Filters</button>
         </div>
@@ -82,15 +84,28 @@
         <div id="meal-grid" class="grid" aria-live="polite"></div>
       </section>
 
-      <!-- ============ COOK VIEW ============ -->
-      <section id="view-cook" class="view" aria-label="Cook mode">
+      <!-- ============ COOK VIEW (rendered by assets/cook.js) ============ -->
+      <section id="view-cook" class="view" aria-label="Cook">
         <div class="toolbar">
-          <h2 class="h2 phone-only">🔥 Cook mode</h2>
-          <select id="cook-meal" aria-label="Choose a meal to cook" style="max-width:420px"></select>
+          <h2 class="h2 phone-only">🔥 Cook</h2>
+          <label class="units-label muted small">Units
+            <select id="cook-units" aria-label="Units">
+              <option value="asWritten">As written</option>
+              <option value="metric">Metric</option>
+              <option value="us">US</option>
+            </select>
+          </label>
         </div>
-        <p class="muted" style="margin:.2rem 0 .6rem;">Choose one meal and tick steps as you go. Tick state is local to this session.</p>
-        <div id="cook-meta" class="cook-meta muted"></div>
-        <div id="cook-steps" class="cook-steps"></div>
+
+        <h3 class="h3">This week</h3>
+        <div id="cook-queue" class="cook-queue"></div>
+
+        <h3 class="h3 cook-else">Cook something else</h3>
+        <div class="group cook-pick">
+          <select id="cook-meal" aria-label="Choose a meal to cook"></select>
+          <button id="cook-start" class="btn primary">▶ Start cooking</button>
+        </div>
+        <div id="cook-overview" class="cook-overview"></div>
       </section>
     </div>
   </section>
@@ -138,6 +153,35 @@
   <button class="navbtn" data-view="add">➕<br><small>Add</small></button>
   <button class="navbtn" data-view="cook">🔥<br><small>Cook</small></button>
 </nav>
+
+<!-- ================== GUIDED COOK MODE (assets/cook.js) ================== -->
+<div id="cook-overlay" class="cook-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="co-title">
+  <div class="co-head">
+    <button id="co-close" class="btn" aria-label="Close cook mode">✕</button>
+    <div class="co-titles">
+      <div id="co-title" class="co-title"></div>
+      <div id="co-progress-label" class="muted small"></div>
+    </div>
+    <select id="co-units" aria-label="Units">
+      <option value="asWritten">As written</option>
+      <option value="metric">Metric</option>
+      <option value="us">US</option>
+    </select>
+    <button id="co-ing-toggle" class="btn co-ing-toggle">🥕 Ingredients</button>
+  </div>
+  <div class="co-progress"><div id="co-progress-bar"></div></div>
+  <div class="co-body">
+    <aside id="co-ings" class="co-ings" aria-label="Ingredients"></aside>
+    <section id="co-page" class="co-page" aria-live="polite"></section>
+  </div>
+  <div class="co-nav">
+    <button id="co-prev" class="btn co-navbtn">‹ Back</button>
+    <button id="co-next" class="btn primary co-navbtn">Next ›</button>
+  </div>
+</div>
+
+<!-- Running timers: visible in every view and in cook mode -->
+<div id="timer-tray" class="timer-tray" hidden aria-live="polite"></div>
 
 <!-- ================== TOAST ================== -->
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -462,7 +506,7 @@
     <hr class="sep" />
 
     <h4 class="h4">Meal history</h4>
-    <p class="muted small">How often each meal has been chosen for a shop. A meal counts once per shop when you use Ocado, Share, Copy as TSV or Print. "Clear selection" starts a new shop.</p>
+    <p class="muted small">How often each meal has been chosen for a shop (counts once per shop when you use Ocado, Share, Copy as TSV or Print; "Clear selection" starts a new shop), and how often it's actually been cooked and rated in cook mode.</p>
     <div id="history-wrap"></div>
 
     <hr class="sep" />
@@ -543,8 +587,9 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/app.js?v=12" defer></script>
-<script src="assets/scan.js?v=12" defer></script>
-<script src="assets/pwa.js?v=12" defer></script>
+<script src="assets/app.js?v=13" defer></script>
+<script src="assets/cook.js?v=13" defer></script>
+<script src="assets/scan.js?v=13" defer></script>
+<script src="assets/pwa.js?v=13" defer></script>
 </body>
 </html>

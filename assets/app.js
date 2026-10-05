@@ -17,19 +17,22 @@ const IDB_KEYS = {
   prefs: "prefs",
   pantry: "pantry",     // ingredient keys you always have
   history: "history",   // { mealId: { count, dates[] } } — times chosen for a shop
-  session: "session"    // current shop: selected meals, ticks (not exported)
+  session: "session",   // current shop: selected meals, ticks (not exported)
+  cooklog: "cooklog",   // { mealId: [{ date, rating, note }] } — times actually cooked
+  cookQueue: "cookQueue" // [{ mealId, added }] — "This week" meals to cook (not exported)
 };
-const EXPORT_SCHEMA_VERSION = 11;
+const EXPORT_SCHEMA_VERSION = 12;
 const DEFAULT_PREFS = {
   theme: "auto",
   gridMin: "cozy",
   includeIngredientTags: false,
   tagStripMax: 12,
-  mealSort: "az"
+  mealSort: "az",
+  cookUnits: "asWritten"   // cook mode: asWritten | metric | us
 };
 const HISTORY_MAX_DATES = 50;
+const COOKLOG_MAX = 30;
 const NO_TAGS = "__NO_TAGS__";
-const COOK_LAST_KEY = "cook-last-meal-id-v10";
 
 const state = {
   meals: [],
@@ -48,6 +51,8 @@ const state = {
 
   pantry: new Set(),        // ingredient keys
   history: {},
+  cooklog: {},
+  cookQueue: [],
   haveIt: new Set(),        // shopping rows ticked as "have it" (row keys)
   pantryUse: new Set(),     // staples pulled back into the list for this shop
   countedIds: new Set(),    // meals already counted in history for this shop
@@ -81,7 +86,10 @@ function normaliseKey(s){
 
 /* Singularise one English word. Conservative: words ending -ss/-us/-is are
    left alone (couscous, lemongrass, hummus), as are known non-plurals. */
-const SINGULAR_IRREGULAR = { leaves:"leaf", loaves:"loaf", halves:"half", molasses:"molasses" };
+const SINGULAR_IRREGULAR = {
+  leaves:"leaf", loaves:"loaf", halves:"half", molasses:"molasses",
+  chillies:"chilli", chilies:"chili"   // not "chilly"
+};
 function singulariseWord(w){
   if (SINGULAR_IRREGULAR[w]) return SINGULAR_IRREGULAR[w];
   if (w.length <= 3 || !w.endsWith("s")) return w;
@@ -434,6 +442,8 @@ async function saveAll(){
     idbSet(IDB_KEYS.prefs, state.prefs),
     idbSet(IDB_KEYS.pantry, Array.from(state.pantry)),
     idbSet(IDB_KEYS.history, state.history),
+    idbSet(IDB_KEYS.cooklog, state.cooklog),
+    idbSet(IDB_KEYS.cookQueue, state.cookQueue),
     saveSession()
   ]);
 }
@@ -448,14 +458,16 @@ function saveSession(){
   }).catch(err => console.warn("Session save failed:", err));
 }
 async function loadAll(){
-  const [meals, normaliser, unitDefaults, prefs, pantry, history, session] = await Promise.all([
+  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue] = await Promise.all([
     idbGet(IDB_KEYS.meals),
     idbGet(IDB_KEYS.normaliser),
     idbGet(IDB_KEYS.unitDefaults),
     idbGet(IDB_KEYS.prefs),
     idbGet(IDB_KEYS.pantry),
     idbGet(IDB_KEYS.history),
-    idbGet(IDB_KEYS.session)
+    idbGet(IDB_KEYS.session),
+    idbGet(IDB_KEYS.cooklog),
+    idbGet(IDB_KEYS.cookQueue)
   ]);
   if (Array.isArray(meals)){
     state.meals = meals.map(m => ({
@@ -471,6 +483,9 @@ async function loadAll(){
 
   const ids = new Set(state.meals.map(m => m.id));
   for (const id of Object.keys(state.history)) if (!ids.has(id)) delete state.history[id];
+  state.cooklog   = (cooklog && typeof cooklog === "object") ? cooklog : {};
+  for (const id of Object.keys(state.cooklog)) if (!ids.has(id)) delete state.cooklog[id];
+  state.cookQueue = (Array.isArray(cookQueue) ? cookQueue : []).filter(q => ids.has(q.mealId));
 
   const s = (session && typeof session === "object") ? session : {};
   state.selected   = new Set((s.selected || []).filter(id => ids.has(id)));
@@ -887,7 +902,7 @@ function addStepFromInput(inputEl, steps, onChange){
 /* ============== Modal helpers ============== */
 function lockBodyScroll(locked){
   // Stay locked while any modal is still open (e.g. Scan over Add)
-  document.body.classList.toggle("modal-open", !!locked || !!$(".modal.open"));
+  document.body.classList.toggle("modal-open", !!locked || !!$(".modal.open, .cook-overlay.open"));
 }
 
 
@@ -1431,7 +1446,9 @@ function visibleMeals(){
     az:     (a, b) => ((b.fav === true) - (a.fav === true)) || byTitle(a, b),
     most:   (a, b) => (count(b) - count(a)) || byTitle(a, b),
     least:  (a, b) => (count(a) - count(b)) || byTitle(a, b),
-    oldest: (a, b) => last(a).localeCompare(last(b)) || byTitle(a, b)   // never chosen ("") first
+    oldest: (a, b) => last(a).localeCompare(last(b)) || byTitle(a, b),  // never chosen ("") first
+    rated:  (a, b) => ((cookStats(b.id).avg ?? -1) - (cookStats(a.id).avg ?? -1)) || byTitle(a, b),
+    cooked: (a, b) => (cookStats(b.id).count - cookStats(a.id).count) || byTitle(a, b)
   };
   return items.sort(sorts[state.prefs.mealSort] || sorts.az);
 }
@@ -1457,10 +1474,31 @@ async function recordShopUse(){
     h.dates = [...(h.dates || []), today].slice(-HISTORY_MAX_DATES);
     state.history[id] = h;
     state.countedIds.add(id);
+    if (!state.cookQueue.some(q => q.mealId === id)) state.cookQueue.push({ mealId:id, added:today });
     n++;
   }
   if (!n) return;
-  await Promise.all([idbSet(IDB_KEYS.history, state.history), saveSession()]);
+  await Promise.all([idbSet(IDB_KEYS.history, state.history), idbSet(IDB_KEYS.cookQueue, state.cookQueue), saveSession()]);
+  renderMeals();
+  window.renderCookTab?.();   // cook.js
+}
+
+/* ============== Cook log (times actually cooked) ============== */
+function cookStats(id){
+  const log = state.cooklog[id] || [];
+  const rated = log.filter(e => typeof e.rating === "number");
+  return {
+    count: log.length,
+    avg: rated.length ? rated.reduce((s, e) => s + e.rating, 0) / rated.length : null,
+    last: log[log.length - 1] || null
+  };
+}
+async function logCooked(id, rating, note){
+  const log = state.cooklog[id] || [];
+  log.push({ date: new Date().toISOString().slice(0, 10), rating: rating || null, note: (note || "").trim() });
+  state.cooklog[id] = log.slice(-COOKLOG_MAX);
+  state.cookQueue = state.cookQueue.filter(q => q.mealId !== id);
+  await Promise.all([idbSet(IDB_KEYS.cooklog, state.cooklog), idbSet(IDB_KEYS.cookQueue, state.cookQueue)]);
   renderMeals();
 }
 
@@ -1571,6 +1609,14 @@ function renderMeals(){
       h.title = `Chosen for ${hist.count} shop${hist.count === 1 ? "" : "s"}`;
       chips.appendChild(h);
     }
+    const cs = cookStats(meal.id);
+    if (cs.count){
+      const k = document.createElement("span");
+      k.className = "chip chip-history";
+      k.textContent = `🍳 ×${cs.count}${cs.avg != null ? ` · ★${formatNumber(Math.round(cs.avg * 10) / 10)}` : ""}`;
+      k.title = `Cooked ${cs.count} time${cs.count === 1 ? "" : "s"}`;
+      chips.appendChild(k);
+    }
     if (chips.childElementCount) body.append(chips);
 
     if (!meal.tags || !meal.tags.length){
@@ -1619,9 +1665,13 @@ function renderMeals(){
       }, UNDO_MS);
       // Drop its history once Undo is no longer possible (loadAll also prunes orphans)
       setTimeout(() => {
-        if (state.meals.some(m => m.id === removed.id) || !state.history[removed.id]) return;
+        if (state.meals.some(m => m.id === removed.id)) return;   // restored via Undo
         delete state.history[removed.id];
+        delete state.cooklog[removed.id];
+        state.cookQueue = state.cookQueue.filter(q => q.mealId !== removed.id);
         idbSet(IDB_KEYS.history, state.history);
+        idbSet(IDB_KEYS.cooklog, state.cooklog);
+        idbSet(IDB_KEYS.cookQueue, state.cookQueue);
       }, UNDO_MS + 500);
     });
     controls.append(editBtn, del);
@@ -2130,55 +2180,6 @@ document.addEventListener("click", (e) => {
 });
 
 /* =====================================================
-   COOK MODE
-   ===================================================== */
-function populateCookSelect(){
-  const dd = $("#cook-meal");
-  if (!dd) return;
-  if (!state.meals.length){
-    dd.innerHTML = "";
-    $("#cook-meta").textContent = "";
-    $("#cook-steps").innerHTML = `<div class="empty">No meals saved yet.</div>`;
-    return;
-  }
-  dd.innerHTML = state.meals
-    .slice()
-    .sort((a, b) => (a.title || "").localeCompare(b.title || "", "en-GB", { sensitivity:"base" }))
-    .map(m => `<option value="${m.id}">${escapeHtml(m.title)}</option>`)
-    .join("");
-  const last = localStorage.getItem(COOK_LAST_KEY);
-  const exists = last && state.meals.some(m => m.id === last);
-  dd.value = exists ? last : dd.value;
-  renderCook(dd.value);
-}
-function renderCook(id){
-  const meal = state.meals.find(m => m.id === id);
-  if (!meal) return;
-  localStorage.setItem(COOK_LAST_KEY, meal.id);
-
-  const meta = $("#cook-meta");
-  const stepsWrap = $("#cook-steps");
-  const bits = [];
-  if (typeof meal.cookMins === "number") bits.push(`⏱ ${meal.cookMins} min`);
-  if (Array.isArray(meal.ingredients) && meal.ingredients.length) bits.push(`🥕 ${meal.ingredients.length} ingredient${meal.ingredients.length === 1 ? "" : "s"}`);
-  if (meal.notes && meal.notes.trim()) bits.push(`📝 ${meal.notes.trim()}`);
-  meta.textContent = bits.join("  •  ");
-
-  const steps = Array.isArray(meal.steps) ? meal.steps : [];
-  if (!steps.length){
-    stepsWrap.innerHTML = `<div class="empty">No steps saved for this meal.</div>`;
-    return;
-  }
-  stepsWrap.innerHTML = steps.map((s, i) => `
-    <label>
-      <input type="checkbox" />
-      <div><b>${i + 1}.</b> ${escapeHtml(s)}</div>
-    </label>
-  `).join("");
-}
-$("#cook-meal")?.addEventListener("change", (e) => renderCook(e.target.value));
-
-/* =====================================================
    EXPORT / IMPORT / CLEAR
    ===================================================== */
 $("#export")?.addEventListener("click", () => {
@@ -2190,7 +2191,8 @@ $("#export")?.addEventListener("click", () => {
     unitDefaults: state.unitDefaults,
     prefs: state.prefs,
     pantry: Array.from(state.pantry),
-    history: state.history
+    history: state.history,
+    cooklog: state.cooklog
   }, null, 2);
 
   const blob = new Blob([data], { type: "application/json" });
@@ -2241,7 +2243,9 @@ function migrateImport(json){
     prefs: (json.prefs && typeof json.prefs === "object") ? json.prefs : state.prefs,
     // schema 11+: absent in older exports
     pantry: Array.isArray(json.pantry) ? json.pantry.map(String) : [],
-    history: (json.history && typeof json.history === "object") ? json.history : {}
+    history: (json.history && typeof json.history === "object") ? json.history : {},
+    // schema 12+
+    cooklog: (json.cooklog && typeof json.cooklog === "object") ? json.cooklog : {}
   };
 }
 $("#import")?.addEventListener("change", async (e) => {
@@ -2261,6 +2265,9 @@ $("#import")?.addEventListener("change", async (e) => {
     state.prefs = { ...state.prefs, ...(migrated.prefs || {}) };
     state.pantry = new Set(migrated.pantry);
     state.history = migrated.history;
+    state.cooklog = migrated.cooklog;
+    const ids = new Set(state.meals.map(m => m.id));
+    state.cookQueue = state.cookQueue.filter(q => ids.has(q.mealId));
     clearShopState();
 
     await saveAll();
@@ -2281,6 +2288,8 @@ $("#clear-all")?.addEventListener("click", async () => {
   if (!confirm("Delete ALL saved meals? This cannot be undone (export first if needed).")) return;
   state.meals = [];
   state.history = {};
+  state.cooklog = {};
+  state.cookQueue = [];
   clearShopState();
   await saveAll();
   renderMeals(); renderShopping(); populateCookSelect();
@@ -2451,8 +2460,18 @@ function renderHistory(){
   const cutoff = new Date(Date.now() - HISTORY_STALE_DAYS * 864e5).toISOString().slice(0, 10);
   const stale = chosen.filter(x => x.last < cutoff).sort((a, b) => a.last.localeCompare(b.last));
 
+  // Cook log (times actually cooked, ratings)
+  const cooked = state.meals.map(m => ({ m, c: cookStats(m.id) })).filter(x => x.c.count);
+  const cookRow = x => `<li><span>${escapeHtml(x.m.title)}</span> <span class="muted">🍳 ×${x.c.count}${x.c.avg != null ? ` · ★${formatNumber(Math.round(x.c.avg * 10) / 10)}` : ""}</span></li>`;
+  const mostCooked = cooked.slice().sort((a, b) => b.c.count - a.c.count || a.m.title.localeCompare(b.m.title)).slice(0, 5);
+  const topRated = cooked.filter(x => x.c.avg != null).sort((a, b) => b.c.avg - a.c.avg || b.c.count - a.c.count).slice(0, 5);
+  const cookHtml = cooked.length ? `
+    <h5 class="tidy-h">Most cooked</h5><ol class="hist-list">${mostCooked.map(cookRow).join("")}</ol>
+    ${topRated.length ? `<h5 class="tidy-h">Top rated</h5><ol class="hist-list">${topRated.map(cookRow).join("")}</ol>` : ""}`
+    : `<p class="muted small">Nothing cooked yet — finish a meal in cook mode and tap "Mark as cooked".</p>`;
+
   if (!chosen.length){
-    wrap.innerHTML = `<p class="muted small">No history yet. A meal counts once per shop when you use Ocado, Share, Copy as TSV or Print.</p>`;
+    wrap.innerHTML = `<p class="muted small">No shop history yet. A meal counts once per shop when you use Ocado, Share, Copy as TSV or Print.</p>${cookHtml}`;
     return;
   }
   const row = x => `<li><span>${escapeHtml(x.m.title)}</span>
@@ -2465,7 +2484,8 @@ function renderHistory(){
     ${stale.length ? `<ul class="hist-list">${stale.map(row).join("")}</ul>` : `<p class="muted small">None.</p>`}
     <h5 class="tidy-h">Never chosen (${never.length})</h5>
     <p class="small">${never.map(x => escapeHtml(x.m.title)).join(" · ") || "<span class='muted'>None.</span>"}</p>
-    <button class="btn mini danger" id="history-reset">Reset history</button>`;
+    ${cookHtml}
+    <button class="btn mini danger" id="history-reset">Reset shop history</button>`;
   $$("[data-hist-dec]", wrap).forEach(b => b.addEventListener("click", async () => {
     const id = b.dataset.histDec;
     const h = state.history[id];
@@ -2548,5 +2568,8 @@ $("#unit-add")?.addEventListener("click", async () => {
 
   renderMeals();
   renderShopping();
-  populateCookSelect();
+
+  // cook.js renders the Cook tab once data is loaded (see its init)
+  window.appReady = true;
+  document.dispatchEvent(new Event("app:ready"));
 })();

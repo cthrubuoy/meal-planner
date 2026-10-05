@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v12
+   Meal Planner & Shopping List — v13
    ===================================================== */
 
 :root{
@@ -536,12 +536,6 @@ body.modal-open{ overflow:hidden; }
 
 /* ============== COOK MODE ============== */
 .cook-meta{ margin:6px 0 10px; color:var(--muted); }
-.cook-steps label{
-  display:flex; gap:10px; align-items:flex-start;
-  padding:10px 0;
-  border-bottom:1px dashed var(--border);
-}
-.cook-steps input{ accent-color: var(--accent); margin-top:3px; }
 
 /* ============== BOTTOM NAV ============== */
 .bottom-nav{ display:none; }
@@ -624,7 +618,7 @@ body.modal-open{ overflow:hidden; }
 
 /* ============== PRINT ============== */
 @media print{
-  header, .bottom-nav, #left-panel, #toast, .modal,
+  header, .bottom-nav, #left-panel, #toast, .modal, .cook-overlay, .timer-tray,
   .shop-actions, #shop-help-toggle, #shop-help, .staples{
     display:none !important;
   }
@@ -1105,4 +1099,120 @@ body.modal-open{ overflow:hidden; }
   .meals-toolbar{ flex-wrap:wrap; }
   .meals-toolbar #search{ flex-basis:100%; }
   .meals-toolbar #meal-sort{ flex:1 1 auto; max-width:none; }
+}
+
+/* =====================================================
+   v13 — COOK TAB, GUIDED COOK MODE, TIMERS (assets/cook.js)
+   ===================================================== */
+.units-label{ display:flex; gap:8px; align-items:center; margin-left:auto; }
+.units-label select, #co-units{ width:auto; }
+.cook-queue{ display:grid; gap:10px; margin:8px 0 18px; }
+.queue-card{
+  display:grid; grid-template-columns:64px minmax(0,1fr) auto auto; gap:10px; align-items:center;
+  padding:8px; background: var(--card);
+  border:1px solid var(--border); border-radius: var(--radius-sm);
+}
+.queue-card img{ width:64px; height:64px; object-fit:cover; border-radius:10px; display:block; }
+.queue-title{
+  background:none; border:none; padding:0; color: var(--text); font:inherit; font-weight:600;
+  text-align:left; cursor:pointer; overflow-wrap:anywhere;
+}
+.queue-body .chips{ margin:4px 0 0; }
+.cook-else{ margin-top:6px; }
+.cook-pick select{ flex:1 1 240px; width:auto; min-width:0; }
+.cook-overview{ margin-top:12px; }
+.last-cook{
+  background: var(--accent-glow); border:1px solid var(--accent-border);
+  padding:8px 12px; border-radius: var(--radius-sm);
+}
+.overview-cols{ display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1.6fr); gap:18px; }
+@media (max-width:1100px){ .overview-cols{ grid-template-columns: minmax(0,1fr); } }
+.ov-ings{ list-style:none; margin:0; padding:0; }
+.ov-ings li{ display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-bottom:1px dashed var(--border); }
+.ov-steps{ margin:0; padding-left:22px; }
+.ov-steps li{ padding:5px 0; }
+.no-steps{ border:1px dashed var(--border-strong); border-radius: var(--radius-sm); padding:12px; text-align:center; }
+.conv{ color: var(--accent); font-size:.85em; white-space:nowrap; }
+
+/* Guided cook mode: full screen */
+.cook-overlay{
+  position:fixed; inset:0; z-index:70;
+  display:flex; flex-direction:column;
+  background: var(--bg); color: var(--text);
+}
+.cook-overlay[hidden]{ display:none; }
+.co-head{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px; padding-top:calc(10px + env(safe-area-inset-top, 0px));
+  background: var(--panel); border-bottom:1px solid var(--border);
+}
+.co-titles{ flex:1; min-width:0; }
+.co-title{ font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.co-progress{ height:4px; background: var(--chip); }
+#co-progress-bar{ height:100%; width:0; background: var(--accent); transition: width .2s ease; }
+.co-body{ flex:1; min-height:0; display:grid; grid-template-columns: minmax(0,1fr); }
+.co-ings{ display:none; overflow:auto; padding:14px 16px; background: var(--panel); border-right:1px solid var(--border); }
+.co-page{ overflow:auto; padding:20px clamp(16px, 4vw, 48px); touch-action: pan-y; }
+.co-kicker{ text-transform:uppercase; letter-spacing:.08em; color: var(--accent); font-weight:700; font-size:.85rem; margin-bottom:8px; }
+.co-step{ font-size: clamp(1.35rem, 1rem + 1.6vw, 2.1rem); line-height:1.45; margin:0 0 16px; }
+.co-chips{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+.co-chip{ font-size:.95rem !important; padding:6px 12px !important; }
+.co-timer{ font-size:1.05rem; padding:12px 18px; border-color: var(--accent-border); }
+.co-temps{ font-size:1.05rem; }
+.co-hint{ margin-top:14px; }
+.co-nav{
+  display:flex; gap:12px;
+  padding:12px 14px calc(12px + var(--safe-bottom));
+  background: var(--panel); border-top:1px solid var(--border);
+}
+.co-navbtn{ flex:1; font-size:1.15rem; padding:16px; }
+.co-navbtn[hidden]{ display:none; }
+.co-checklist{ list-style:none; margin:0; padding:0; }
+.co-checklist label{
+  display:flex; gap:10px; align-items:center; padding:9px 0;
+  border-bottom:1px dashed var(--border); color: var(--text); font-size:1rem; cursor:pointer;
+}
+.co-checklist input{ width:22px; height:22px; accent-color: var(--accent); flex:0 0 auto; }
+.co-ing-name{ flex:1; }
+.co-ing-amt{ color: var(--muted); white-space:nowrap; }
+.co-checklist label:has(input:checked) .co-ing-name{ text-decoration: line-through; opacity:.6; }
+.co-stars{ display:flex; gap:4px; margin:6px 0 10px; }
+.co-star{ font-size:2.4rem; line-height:1; background:none; border:none; color: var(--border-strong); cursor:pointer; padding:0 4px; }
+.co-star.on{ color: var(--gold); }
+
+/* Landscape tablet: ingredient checklist always visible on the left */
+@media (min-width:840px) and (orientation:landscape){
+  .co-body{ grid-template-columns: minmax(260px, 30%) minmax(0,1fr); }
+  .co-ings{ display:block; }
+  .co-ing-toggle, .co-inline-ings{ display:none; }
+}
+/* Portrait / phone: "Ingredients" button swaps the step for the checklist */
+@media not all and (min-width:840px) and (orientation:landscape){
+  .cook-overlay.show-ings .co-ings{ display:block; border-right:none; }
+  .cook-overlay.show-ings .co-page{ display:none; }
+  .co-head #co-units{ max-width:96px; }
+}
+
+/* Running timers */
+.timer-tray{
+  position:fixed; left:12px; bottom:calc(84px + var(--safe-bottom)); z-index:100000;
+  display:grid; gap:6px; width:min(420px, calc(100vw - 24px));
+}
+.timer-tray[hidden]{ display:none; }
+@media (min-width:840px){ .timer-tray{ bottom:16px; } }
+body.modal-open .timer-tray{ bottom:auto; top:calc(72px + env(safe-area-inset-top, 0px)); left:auto; right:12px; }
+.timer{
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  background: var(--panel); border:1px solid var(--accent-border);
+  border-radius:12px; box-shadow: var(--shadow);
+}
+.timer-left{ font-variant-numeric: tabular-nums; font-weight:800; font-size:1.15rem; min-width:58px; }
+.timer-label{ flex:1; min-width:0; font-size:.8rem; color: var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.timer.done{ border-color: var(--gold); animation: timerPulse 1s ease-in-out infinite; }
+@keyframes timerPulse{ 50%{ box-shadow: 0 0 0 6px color-mix(in oklab, var(--gold) 35%, transparent); } }
+/* Cook mode: keep toasts clear of the Back/Next bar; free up header room on phones */
+body.modal-open .toast{ bottom: calc(100px + var(--safe-bottom)); }
+@media (max-width:600px){
+  .co-head #co-units{ display:none; }   /* units are also set in the Cook tab */
+  .co-head{ gap:8px; }
 }
