@@ -21,9 +21,10 @@ const IDB_KEYS = {
   cooklog: "cooklog",   // { mealId: [{ date, rating, note }] } — times actually cooked
   cookQueue: "cookQueue", // [{ mealId, added, x? }] — "This week" meals to cook (not exported)
   thumbs: "thumbs",       // { mealId: { src, of } } — grid thumbnails, rebuildable (not exported)
-  plan: "plan"            // { "YYYY-MM-DD": [{ mealId, x? }] } — weekly planner (exported)
+  plan: "plan",           // { "YYYY-MM-DD": [{ mealId, x?, pin?, skipped? }] } — planner (exported)
+  pins: "pins"            // { "0".."6": [mealId] } — meals pinned to a weekday, every week (exported)
 };
-const EXPORT_SCHEMA_VERSION = 13;
+const EXPORT_SCHEMA_VERSION = 14;
 const DEFAULT_PREFS = {
   theme: "auto",
   gridMin: "cozy",
@@ -35,7 +36,9 @@ const DEFAULT_PREFS = {
   textSize: "normal",      // normal | large | xlarge
   settingsTab: "appearance",
   avoid: [],               // ingredient keys: meals containing any are hidden and never suggested
-  planDays: [1,2,3,4,5,6,0] // days auto-fill plans for (0 = Sun … 6 = Sat)
+  planDays: [1,2,3,4,5,6,0], // days auto-fill plans for (0 = Sun … 6 = Sat)
+  planSpan: 7,             // planner shows 7 or 14 days
+  planLayout: "list"       // planner layout: "list" | "calendar"
 };
 const HISTORY_MAX_DATES = 50;
 const COOKLOG_MAX = 30;
@@ -62,6 +65,7 @@ const state = {
   cookQueue: [],
   thumbs: {},
   plan: {},
+  pins: {},
   haveIt: new Set(),        // shopping rows ticked as "have it" (row keys)
   pantryUse: new Set(),     // staples pulled back into the list for this shop
   countedIds: new Set(),    // meals already counted in history for this shop
@@ -455,6 +459,7 @@ async function saveAll(){
     idbSet(IDB_KEYS.cooklog, state.cooklog),
     idbSet(IDB_KEYS.cookQueue, state.cookQueue),
     idbSet(IDB_KEYS.plan, state.plan),
+    idbSet(IDB_KEYS.pins, state.pins),
     saveSession()
   ]);
 }
@@ -465,8 +470,25 @@ function cleanPlan(plan, ids){
   const cutoff = new Date(Date.now() - 84 * 864e5).toISOString().slice(0, 10);
   for (const [day, items] of Object.entries(plan)){
     if (!/^\d{4}-\d\d-\d\d$/.test(day) || day < cutoff || !Array.isArray(items)) continue;
-    const keep = items.filter(e => e && ids.has(e.mealId)).map(e => e.x === 2 ? { mealId:e.mealId, x:2 } : { mealId:e.mealId });
+    const keep = items.filter(e => e && ids.has(e.mealId)).map(e => {
+      const o = { mealId: e.mealId };
+      if (e.x === 2) o.x = 2;
+      if (e.pin) o.pin = true;           // came from a weekday pin
+      if (e.skipped) o.skipped = true;   // pin skipped this week (kept so it isn't re-added)
+      return o;
+    });
     if (keep.length) out[day] = keep;
+  }
+  return out;
+}
+/* Pins: { weekday: [mealId] } with known meals only */
+function cleanPins(pins, ids){
+  const out = {};
+  if (!pins || typeof pins !== "object") return out;
+  for (const [d, list] of Object.entries(pins)){
+    if (!/^[0-6]$/.test(d) || !Array.isArray(list)) continue;
+    const keep = [...new Set(list.filter(id => ids.has(id)))];
+    if (keep.length) out[d] = keep;
   }
   return out;
 }
@@ -483,7 +505,7 @@ function saveSession(){
   }).catch(err => console.warn("Session save failed:", err));
 }
 async function loadAll(){
-  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue, thumbs, plan] = await Promise.all([
+  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue, thumbs, plan, pins] = await Promise.all([
     idbGet(IDB_KEYS.meals),
     idbGet(IDB_KEYS.normaliser),
     idbGet(IDB_KEYS.unitDefaults),
@@ -494,7 +516,8 @@ async function loadAll(){
     idbGet(IDB_KEYS.cooklog),
     idbGet(IDB_KEYS.cookQueue),
     idbGet(IDB_KEYS.thumbs),
-    idbGet(IDB_KEYS.plan)
+    idbGet(IDB_KEYS.plan),
+    idbGet(IDB_KEYS.pins)
   ]);
   if (Array.isArray(meals)){
     state.meals = meals.map(m => ({
@@ -516,6 +539,7 @@ async function loadAll(){
   state.thumbs    = (thumbs && typeof thumbs === "object") ? thumbs : {};
   for (const id of Object.keys(state.thumbs)) if (!ids.has(id)) delete state.thumbs[id];
   state.plan      = cleanPlan(plan, ids);
+  state.pins      = cleanPins(pins, ids);
 
   const s = (session && typeof session === "object") ? session : {};
   state.selected   = new Set((s.selected || []).filter(id => ids.has(id)));
@@ -692,6 +716,46 @@ async function fileToCompressedDataURL(file){
     if (objectUrl) URL.revokeObjectURL(objectUrl);
   }
 }
+/* Crop part of a photo (File or data URL) to a compressed data URL.
+   box = [ymin, xmin, ymax, xmax] on 0–1000, as the scan server returns it. */
+async function cropImageToDataURL(src, box){
+  let objectUrl = null;
+  try {
+    const img = new Image();
+    if (src instanceof Blob){ objectUrl = URL.createObjectURL(src); img.src = objectUrl; }
+    else img.src = src;
+    await img.decode();
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const [y0, x0, y1, x1] = box;
+    const sx = Math.round(x0 / 1000 * W), sy = Math.round(y0 / 1000 * H);
+    const sw = Math.max(1, Math.round((x1 - x0) / 1000 * W)), sh = Math.max(1, Math.round((y1 - y0) / 1000 * H));
+    const scale = Math.min(1, 1400 / Math.max(sw, sh));
+    const c = document.createElement("canvas");
+    c.width = Math.round(sw * scale); c.height = Math.round(sh * scale);
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    const mime = canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg";
+    return c.toDataURL(mime, 0.86);
+  } catch (err){
+    console.warn("Crop failed:", err);
+    return null;
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/* Edit form: a photo waiting to be saved (from "Take dish photo from a recipe card") */
+let editPendingImage = null;
+function setEditPendingImage(dataUrl){
+  editPendingImage = dataUrl || null;
+  const box = document.getElementById("edit-photo-pending");
+  if (!box) return;
+  box.hidden = !editPendingImage;
+  const img = box.querySelector("img");
+  if (img) img.src = editPendingImage || "";
+}
+
 function placeholderSvg(text){
   const t = (text || "Meal").slice(0, 24).replace(/&/g,"&amp;").replace(/</g,"&lt;");
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 360' preserveAspectRatio='xMidYMid slice'>
@@ -1209,6 +1273,7 @@ function closeEdit(){
   editModal.classList.remove("open");
   editModal.setAttribute("aria-hidden", "true");
   state.editingId = null;
+  setEditPendingImage(null);
   $("#edit-form").reset();
   editIng.innerHTML = "";
   editSteps = [];
@@ -1240,6 +1305,7 @@ $("#edit-form")?.addEventListener("submit", async (e) => {
 
   meal.title = $("#edit-title").value.trim() || meal.title;
 
+  if (editPendingImage) meal.image = { type:"data", src: editPendingImage };
   const f = $("#edit-image-file").files[0];
   if (f){
     const data = await fileToCompressedDataURL(f);
@@ -1761,6 +1827,11 @@ async function deleteMeal(id){
     delete state.history[removed.id];
     delete state.cooklog[removed.id];
     delete state.thumbs[removed.id];
+    for (const d of Object.keys(state.pins)){
+      state.pins[d] = state.pins[d].filter(x => x !== removed.id);
+      if (!state.pins[d].length) delete state.pins[d];
+    }
+    idbSet(IDB_KEYS.pins, state.pins);
     state.cookQueue = state.cookQueue.filter(q => q.mealId !== removed.id);
     idbSet(IDB_KEYS.history, state.history);
     idbSet(IDB_KEYS.cooklog, state.cooklog);
@@ -2669,7 +2740,8 @@ $("#export")?.addEventListener("click", () => {
     pantry: Array.from(state.pantry),
     history: state.history,
     cooklog: state.cooklog,
-    plan: state.plan
+    plan: state.plan,
+    pins: state.pins
   }, null, 2);
 
   const blob = new Blob([data], { type: "application/json" });
@@ -2726,7 +2798,9 @@ function migrateImport(json){
     // schema 12+
     cooklog: (json.cooklog && typeof json.cooklog === "object") ? json.cooklog : {},
     // schema 13+
-    plan: (json.plan && typeof json.plan === "object") ? json.plan : {}
+    plan: (json.plan && typeof json.plan === "object") ? json.plan : {},
+    // schema 14+
+    pins: (json.pins && typeof json.pins === "object") ? json.pins : {}
   };
 }
 $("#import")?.addEventListener("change", async (e) => {
@@ -2749,6 +2823,7 @@ $("#import")?.addEventListener("change", async (e) => {
     state.cooklog = migrated.cooklog;
     const ids = new Set(state.meals.map(m => m.id));
     state.plan = cleanPlan(migrated.plan, ids);
+    state.pins = cleanPins(migrated.pins, ids);
     state.cookQueue = state.cookQueue.filter(q => ids.has(q.mealId));
     clearShopState();
 
@@ -2773,6 +2848,7 @@ $("#clear-all")?.addEventListener("click", async () => {
   state.cooklog = {};
   state.cookQueue = [];
   state.plan = {};
+  state.pins = {};
   clearShopState();
   await saveAll();
   renderMeals(); renderShopping(); populateCookSelect();

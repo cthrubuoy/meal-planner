@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v14
+   Meal Planner & Shopping List — v16
    ===================================================== */
 
 :root{
@@ -1292,3 +1292,55 @@ html[data-text-size="xlarge"]{ font-size:125%; }
 :where(button, summary, a, .card, [role="tab"], [tabindex]):focus-visible{
   outline:2px solid var(--accent-text); outline-offset:2px;
 }
+
+/* =====================================================
+   v16 — PLANNER PINS, 7/14 DAYS, CALENDAR LAYOUT
+   ===================================================== */
+.plan-view-opts{ gap:8px; margin-bottom:8px; }
+.seg{ display:inline-flex; border:1px solid var(--border-strong); border-radius:999px; overflow:hidden; }
+.segbtn{ border:none; background: var(--card); color: var(--muted); padding:6px 12px; font:inherit; font-size:.85rem; cursor:pointer; }
+.segbtn + .segbtn{ border-left:1px solid var(--border-strong); }
+.segbtn.on{ background: var(--accent-glow); color: var(--text); font-weight:600; }
+@media (max-width:839px){ .tablet-only{ display:none !important; } }
+.pin-btn{ opacity:.45; filter: grayscale(1); }
+.pin-btn.on{ opacity:1; filter:none; background: var(--accent-glow); border-color: var(--accent-border); }
+
+/* Calendar grid: Mon–Sun columns, one row per week */
+.plan-body.calendar{ grid-template-columns: repeat(7, minmax(0,1fr)); gap:6px; }
+.cal-head{ text-align:center; font-size:.8rem; font-weight:700; color: var(--muted); padding:2px 0; }
+.cal-cell{
+  display:flex; flex-direction:column; gap:6px; min-height:150px; min-width:0;
+  padding:6px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--card);
+}
+.cal-cell.today{ border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+.cal-cell.off{ opacity:.55; }
+.cal-cell.past{ opacity:.7; }
+.cal-date{ font-weight:700; font-size:.9rem; }
+.cal-item{
+  position:relative; display:flex; flex-direction:column; gap:4px; padding:0; text-align:left; cursor:pointer;
+  background:none; border:1px solid var(--border); border-radius:10px; overflow:hidden; color: var(--text); font:inherit;
+}
+.cal-item:hover{ border-color: var(--accent-border); }
+.cal-item img{ width:100%; aspect-ratio: 4 / 3; object-fit:cover; display:block; background: var(--chip); }
+.cal-title{
+  padding:0 6px 6px; font-size:.78rem; font-weight:600; line-height:1.2;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere;
+}
+.cal-x2{ position:absolute; top:4px; right:4px; font-size:.7rem !important; padding:1px 6px !important; }
+.cal-add{
+  margin-top:auto; border:1px dashed var(--border-strong); background:none; color: var(--muted);
+  border-radius:10px; padding:4px; cursor:pointer; font:inherit;
+}
+.cal-add:hover{ color: var(--text); border-color: var(--accent-border); }
+
+/* Meal photo choice (scan / import review) and pending photo in Edit */
+.scan-photo{ display:grid; gap:8px; }
+.scan-photo img{ width:100%; max-height:260px; object-fit:cover; border-radius: var(--radius-sm); background: var(--chip); }
+.scan-photo img[hidden]{ display:none; }
+.photo-pending{
+  display:flex; align-items:center; gap:10px; padding:6px;
+  border:1px dashed var(--accent-border); border-radius: var(--radius-sm); background: var(--accent-glow);
+}
+.photo-pending[hidden]{ display:none; }
+.photo-pending img{ width:72px; height:54px; object-fit:cover; border-radius:8px; }
+.photo-pending span{ flex:1; }

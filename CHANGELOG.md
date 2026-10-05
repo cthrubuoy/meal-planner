@@ -3,6 +3,26 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v16 — Pins, 14-day calendar, dish photos from cards (2026-10-06)
+Cache `meal-planner-v18` · assets `?v=16` · export schema 14
+
+### Added
+- **📌 Pin a meal to a weekday**, e.g. "fish & chips every Friday".
+  - Pinned meals appear on that day every week (from today on), and auto-fill plans around them.
+  - Removing a pinned meal for one week only skips it that week; the pin stays.
+  - Unpin with 📌 again.
+- **7 or 14 days** in the planner (the "7 days / 14 days" switch). Auto-fill, Add to list and Clear work on all the days shown.
+- **Calendar layout** (tablet and desktop): a Mon–Sun grid with one row per week. Tap a meal for Open, ×2, Swap, Pin, Remove.
+- **Meal photo when scanning a recipe card:** the review screen offers **🍽️ Dish photo** (cropped from the card automatically), **🃏 Whole card**, **No photo** or **📁 Choose…**.
+  - The automatic crop needs the updated scan server; until then you can use the whole card or choose a photo.
+- **Imported recipes** offer the page's photo, or no photo.
+- **"📷 Take dish photo from a recipe card"** in Edit: photograph a card, and the dish photo is cut out and saved when you press Save. It falls back to the whole photo if the dish can't be found.
+- **Export schema 14:** adds `pins`. Older backups still import.
+
+### Changed
+- **Clear week** keeps pinned meals.
+- Swapping a pinned meal skips the pin for that week only.
+
 ## v15 — Wave 2: planner, import from links, avoid list (2026-10-06)
 Cache `meal-planner-v17` · assets `?v=15` · export schema 13
 

@@ -23,7 +23,7 @@
   let scanLastFile = null;          // remember for retry
   let scanSteps = [];
   let scanTagEditor = null;
-  let scanImage = null;             // photo that came with an imported recipe (data URL)
+  let scanImage = null;             // the meal photo chosen on the review screen (data URL)
   let scanSource = "";              // link it was imported from
 
   /* ---- Show/hide modal sections ---- */
@@ -40,6 +40,9 @@
     scanLastFile = null;
     scanImage = null;
     scanSource = "";
+    photoChoices = [];
+    const row = $("#scan-photo-row");
+    if (row) row.hidden = true;
   }
   function showSection(which) {
     scanLoading.hidden = which !== "loading";
@@ -73,6 +76,65 @@
   $("#scan-cancel")?.addEventListener("click", closeScan);
 
   /* ---- Run a scan ---- */
+  /* ============== Meal photo on the review screen ==============
+     Scan: the dish photo cropped from the card (when the server finds one),
+     the whole card, or none. Import: the page's photo, or none. Or choose a file. */
+  let photoChoices = [];          // [{ key, label, src }]
+  function setPhotoChoices(list, pick){
+    photoChoices = list.filter(c => c.key === "none" || c.src);
+    choosePhoto(pick && photoChoices.some(c => c.key === pick) ? pick : "none");
+  }
+  function choosePhoto(key){
+    const c = photoChoices.find(x => x.key === key) || { key:"none", src:null };
+    scanImage = c.src || null;
+    const row = $("#scan-photo-row");
+    row.hidden = false;
+    const img = $("#scan-photo-preview");
+    img.hidden = !scanImage;
+    if (scanImage) img.src = scanImage;
+    $("#scan-photo-opts").innerHTML = photoChoices.map(x =>
+      `<button type="button" class="btn mini ${x.key === c.key ? "primary" : ""}" data-photo="${x.key}">${escapeHtml(x.label)}</button>`).join("")
+      + `<button type="button" class="btn mini" data-photo="__file">📁 Choose…</button>`;
+    $$("[data-photo]", $("#scan-photo-opts")).forEach(b => b.addEventListener("click", () => {
+      if (b.dataset.photo === "__file") $("#scan-photo-file").click();
+      else choosePhoto(b.dataset.photo);
+    }));
+  }
+  $("#scan-photo-file")?.addEventListener("change", async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const src = await fileToCompressedDataURL(f);
+    if (!src) return;
+    photoChoices = photoChoices.filter(c => c.key !== "custom").concat({ key:"custom", label:"Your photo", src });
+    choosePhoto("custom");
+  });
+
+  /* ============== Edit › "Take dish photo from a recipe card" (photo_only) ============== */
+  $("#edit-card-photo")?.addEventListener("click", () => $("#edit-card-photo-file").click());
+  $("#edit-card-photo-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    status("📷 Finding the dish photo…", 30000);
+    const card = await fileToCompressedDataURL(file);
+    if (!card){ status("Couldn't read that photo.", 4000); return; }
+    let box = null;
+    try {
+      const resp = await fetch(SCAN_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: card, mode: "photo_only" })
+      });
+      const data = await resp.json();
+      box = Array.isArray(data?.dishPhoto) ? data.dishPhoto : null;
+    } catch { /* offline: fall back to the whole photo */ }
+    const src = box ? (await cropImageToDataURL(file, box)) || card : card;
+    setEditPendingImage(src);
+    status(box ? "✓ Dish photo found — press Save changes to keep it." : "Couldn't pick out the dish, so the whole photo is ready — press Save changes to keep it.", 6000);
+  });
+  $("#edit-photo-undo")?.addEventListener("click", () => setEditPendingImage(null));
+
   /* ============== Import from a link (website, TikTok, Instagram…) ==============
      Needs the scan server's POST /import (Worker v2). The box only appears once
      /health lists it, so an older server simply hides the feature. */
@@ -110,13 +172,14 @@
     }
     populateScanForm(data);
     scanSource = data.source || url;
-    scanImage = null;
+    let pagePhoto = null;
     if (typeof data.image === "string" && data.image.startsWith("data:image/")) {
       try {
         const blob = await (await fetch(data.image)).blob();
-        scanImage = await fileToCompressedDataURL(new File([blob], "recipe", { type: blob.type }));
-      } catch { scanImage = null; }
+        pagePhoto = await fileToCompressedDataURL(new File([blob], "recipe", { type: blob.type }));
+      } catch { pagePhoto = null; }
     }
+    setPhotoChoices([{ key:"page", label:"🖼️ Photo from the page", src: pagePhoto }, { key:"none", label:"No photo" }], "page");
     showSection("form");
   }
   window.importRecipeFromUrl = runImport;
@@ -189,6 +252,13 @@
     }
 
     populateScanForm(data);
+    let dish = null;
+    if (Array.isArray(data.dishPhoto)) dish = await cropImageToDataURL(file, data.dishPhoto);
+    setPhotoChoices([
+      { key:"dish", label:"🍽️ Dish photo", src: dish },
+      { key:"card", label:"🃏 Whole card", src: dataUrl },
+      { key:"none", label:"No photo" }
+    ], dish ? "dish" : "none");
     showSection("form");
   }
 

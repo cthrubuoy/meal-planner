@@ -1,6 +1,9 @@
 /* =====================================================
-   Meal Planner — Planner (v15)
-   - Weekly plan (Mon–Sun), stored in state.plan { "YYYY-MM-DD": [{ mealId, x? }] }
+   Meal Planner — Planner (v15; pins, 7/14 days and calendar in v16)
+   - Plan stored in state.plan { "YYYY-MM-DD": [{ mealId, x?, pin?, skipped? }] }
+   - Pins: state.pins { weekday: [mealId] } — a meal on that weekday every week;
+     removing it for one week leaves a "skipped" marker so it isn't re-added
+   - 7 or 14 days, as a list or (tablet/desktop) a calendar grid
    - Auto-fill from your own meals: no repeats (this week or the last two),
      favours favourites, good ratings and meals not had for a while; unlimited swaps
    - Swipe picker: yes / no through suggestions to fill the week
@@ -27,9 +30,68 @@
     return Array.from({ length: 7 }, (_, i) => { const x = new Date(d); x.setDate(d.getDate() + i); return x; });
   }
   const dayLabel = d => `${DAY[d.getDay()]} ${d.getDate()} ${d.toLocaleDateString("en-GB", { month: "short" })}`;
-  const planned = iso => state.plan[iso] || [];
-  async function savePlan(){ await idbSet(IDB_KEYS.plan, state.plan); }
-  function setDay(iso, items){ if (items.length) state.plan[iso] = items; else delete state.plan[iso]; }
+  const rawDay = iso => state.plan[iso] || [];
+  const planned = iso => rawDay(iso).filter(e => !e.skipped);
+  async function savePlan(){ await Promise.all([idbSet(IDB_KEYS.plan, state.plan), idbSet(IDB_KEYS.pins, state.pins)]); }
+  /* Replace a day's visible meals, keeping its "skipped pin" markers */
+  function setDay(iso, items){
+    const tomb = rawDay(iso).filter(e => e.skipped && !items.some(i => i.mealId === e.mealId));
+    const all = [...items, ...tomb];
+    if (all.length) state.plan[iso] = all; else delete state.plan[iso];
+  }
+  /* The days on screen: 7 or 14 from Monday of the chosen week */
+  function visibleDates(){
+    const span = Number(state.prefs.planSpan) === 14 ? 14 : 7;
+    return weekDates(weekOffset).concat(span === 14 ? weekDates(weekOffset + 1) : []);
+  }
+
+  /* ============== Pins: a meal on a weekday, every week ============== */
+  const pinnedOn = wd => state.pins[String(wd)] || [];
+  const isPinned = (id, wd) => pinnedOn(wd).includes(id);
+  /* Put pinned meals onto today-or-later days that don't have them yet */
+  function applyPins(dates){
+    const today = localISO(new Date());
+    let changed = false;
+    for (const d of dates){
+      const iso = localISO(d);
+      if (iso < today) continue;                       // never rewrite the past
+      for (const id of pinnedOn(d.getDay())){
+        if (!mealById(id) || rawDay(iso).some(e => e.mealId === id)) continue;
+        state.plan[iso] = [...rawDay(iso), { mealId: id, pin: true }];
+        changed = true;
+      }
+    }
+    return changed;
+  }
+  async function togglePin(iso, idx){
+    const d = new Date(iso + "T12:00:00"), wd = String(d.getDay());
+    const e = planned(iso)[idx];
+    if (!e) return;
+    const before = { plan: JSON.stringify(state.plan), pins: JSON.stringify(state.pins) };
+    const title = mealById(e.mealId)?.title || "meal";
+    if (isPinned(e.mealId, wd)){
+      state.pins[wd] = pinnedOn(wd).filter(id => id !== e.mealId);
+      if (!state.pins[wd].length) delete state.pins[wd];
+      // drop the copies the pin put on later days (this one stays as a normal meal)
+      const today = localISO(new Date());
+      for (const [day, items] of Object.entries(state.plan)){
+        if (day <= iso || day < today || new Date(day + "T12:00:00").getDay() !== d.getDay()) continue;
+        const keep = items.filter(x => !(x.mealId === e.mealId && x.pin));
+        if (keep.length) state.plan[day] = keep; else delete state.plan[day];
+      }
+      setDay(iso, planned(iso).map((x, i) => i === idx ? { mealId: x.mealId, ...(x.x === 2 ? { x: 2 } : {}) } : x));
+      status(`Unpinned "${title}" from ${DAY[d.getDay()]}s`);
+    } else {
+      state.pins[wd] = [...pinnedOn(wd), e.mealId];
+      setDay(iso, planned(iso).map((x, i) => i === idx ? { ...x, pin: true } : x));
+      applyPins(visibleDates());
+      showUndoToast(`📌 "${title}" every ${DAY[d.getDay()]}`, async () => {
+        state.plan = JSON.parse(before.plan); state.pins = JSON.parse(before.pins); await savePlan(); renderPlan();
+      });
+    }
+    await savePlan();
+    renderPlan();
+  }
 
   /* ============== Suggestions ============== */
   /* Main protein: the title first ("Pork Belly…"), then ingredients — ignoring
@@ -45,7 +107,7 @@
     const start = new Date(dates[0]); start.setDate(start.getDate() - 14);
     const from = localISO(start), to = localISO(dates[0]);
     const out = new Set();
-    for (const [day, items] of Object.entries(state.plan)) if (day >= from && day < to) items.forEach(e => out.add(e.mealId));
+    for (const [day, items] of Object.entries(state.plan)) if (day >= from && day < to) items.forEach(e => { if (!e.skipped) out.add(e.mealId); });
     for (const [id, h] of Object.entries(state.history)){
       const last = (h.dates || [])[h.dates.length - 1];
       if (last && last >= from) out.add(id);
@@ -85,7 +147,8 @@
   }
 
   async function autoFill(){
-    const dates = weekDates();
+    const dates = visibleDates();
+    applyPins(dates);
     const ctx = weekContext(dates);
     const before = JSON.stringify(state.plan);
     let added = 0;
@@ -107,7 +170,7 @@
   }
 
   async function swap(iso, idx){
-    const dates = weekDates();
+    const dates = visibleDates();
     const d = dates.find(x => localISO(x) === iso) || new Date(iso + "T12:00:00");
     const key = `${iso}|${idx}`;
     const seen = swapSeen.get(key) || new Set();
@@ -120,6 +183,7 @@
     seen.add(m.id);
     swapSeen.set(key, seen);
     const items = planned(iso).slice();
+    if (items[idx]?.pin) items.push({ mealId: items[idx].mealId, pin: true, skipped: true });   // swapping a pinned meal skips it this week
     items[idx] = { mealId: m.id };
     setDay(iso, items);
     await savePlan();
@@ -134,11 +198,15 @@
   async function removeFrom(iso, idx){
     const items = planned(iso).slice();
     const [gone] = items.splice(idx, 1);
+    if (gone?.pin) items.push({ mealId: gone.mealId, pin: true, skipped: true });   // skip the pin this week only
     setDay(iso, items);
     await savePlan();
     renderPlan();
-    showUndoToast(`Removed "${mealById(gone?.mealId)?.title || "meal"}"`, async () => {
-      const back = planned(iso).slice(); back.splice(idx, 0, gone); setDay(iso, back); await savePlan(); renderPlan();
+    const title = mealById(gone?.mealId)?.title || "meal";
+    showUndoToast(gone?.pin ? `Skipped "${title}" this week (still pinned)` : `Removed "${title}"`, async () => {
+      const back = planned(iso).slice(); back.splice(idx, 0, gone);
+      state.plan[iso] = [...back, ...rawDay(iso).filter(x => x.skipped && x.mealId !== gone.mealId)];
+      await savePlan(); renderPlan();
     });
   }
   async function toggleX2(iso, idx){
@@ -161,16 +229,21 @@
     await savePlan(); renderPlan();
     showUndoToast(`Copied ${n} meal${n === 1 ? "" : "s"} from last week`, async () => { state.plan = JSON.parse(before); await savePlan(); renderPlan(); });
   }
+  /* Clears the visible days; pinned meals stay (unpin them to remove) */
   async function clearWeek(){
     const before = JSON.stringify(state.plan);
-    weekDates().forEach(d => delete state.plan[localISO(d)]);
+    visibleDates().forEach(d => {
+      const iso = localISO(d);
+      const keep = rawDay(iso).filter(e => e.pin);
+      if (keep.length) state.plan[iso] = keep; else delete state.plan[iso];
+    });
     await savePlan(); renderPlan();
-    showUndoToast("Week cleared", async () => { state.plan = JSON.parse(before); await savePlan(); renderPlan(); });
+    showUndoToast("Cleared (pinned meals kept)", async () => { state.plan = JSON.parse(before); await savePlan(); renderPlan(); });
   }
   /* Put the week's meals on the shopping list (adds to what's already selected) */
   function shopWeek(){
     let n = 0;
-    weekDates().forEach(d => planned(localISO(d)).forEach(e => {
+    visibleDates().forEach(d => planned(localISO(d)).forEach(e => {
       if (!mealById(e.mealId)) return;
       if (!state.selected.has(e.mealId)) n++;
       state.selected.add(e.mealId);
@@ -178,7 +251,7 @@
     }));
     saveSession();
     renderMeals(); renderShopping();
-    status(n ? `Added ${n} meal${n === 1 ? "" : "s"} to the shopping list` : "This week's meals are already on the shopping list.");
+    status(n ? `Added ${n} meal${n === 1 ? "" : "s"} to the shopping list` : "These meals are already on the shopping list.");
     if (n && isMobile()) setView("shopping");
   }
 
@@ -186,26 +259,81 @@
   function mealRow(e, iso, idx){
     const m = mealById(e.mealId);
     if (!m) return "";
+    const wd = new Date(iso + "T12:00:00").getDay();
+    const pinned = isPinned(m.id, wd);
+    const pinLabel = `${pinned ? "Unpin from" : "Pin to every"} ${DAY[wd]}`;
     return `<div class="plan-meal" data-iso="${iso}" data-idx="${idx}">
       <img alt="" data-img="${escapeHtml(m.id)}" />
-      <button type="button" class="plan-title" data-open="${escapeHtml(m.id)}">${escapeHtml(m.title)}</button>
+      <button type="button" class="plan-title" data-open="${escapeHtml(m.id)}">${pinned ? "📌 " : ""}${escapeHtml(m.title)}</button>
       <span class="plan-btns">
+        <button type="button" class="btn mini pin-btn ${pinned ? "on" : ""}" data-act="pin" aria-pressed="${pinned}" title="${pinLabel}" aria-label="${pinLabel}">📌</button>
         <button type="button" class="chip x2 ${e.x === 2 ? "on" : ""}" data-act="x2" aria-pressed="${e.x === 2}" title="Cook once, eat twice">×2</button>
         <button type="button" class="btn mini" data-act="swap" title="Swap for another suggestion" aria-label="Swap">⇄</button>
         <button type="button" class="btn mini" data-act="remove" title="Remove" aria-label="Remove">✕</button>
       </span>
     </div>`;
   }
+  /* Calendar cell item: compact; its actions are in a menu */
+  function calItem(e, iso, idx){
+    const m = mealById(e.mealId);
+    if (!m) return "";
+    const pinned = isPinned(m.id, new Date(iso + "T12:00:00").getDay());
+    return `<button type="button" class="cal-item" data-iso="${iso}" data-idx="${idx}" title="${escapeHtml(m.title)}">
+      <img alt="" data-img="${escapeHtml(m.id)}" />
+      <span class="cal-title">${pinned ? "📌 " : ""}${escapeHtml(m.title)}</span>
+      ${e.x === 2 ? `<span class="chip chip-x2 cal-x2">×2</span>` : ""}
+    </button>`;
+  }
+  function calMenu(anchor, iso, idx){
+    const e = planned(iso)[idx];
+    const m = e && mealById(e.mealId);
+    if (!m) return;
+    const wd = new Date(iso + "T12:00:00").getDay();
+    const pinned = isPinned(m.id, wd);
+    openMenu(anchor, [
+      { label: "🍽️ Open meal", run: () => openMealView(m.id) },
+      { label: e.x === 2 ? "×2 off" : "×2 Cook once, eat twice", run: () => toggleX2(iso, idx) },
+      { label: "⇄ Swap", run: () => swap(iso, idx) },
+      { label: pinned ? `📌 Unpin from ${DAY[wd]}s` : `📌 Pin to every ${DAY[wd]}`, run: () => togglePin(iso, idx) },
+      { label: e.pin ? "✕ Skip this week" : "✕ Remove", danger: true, run: () => removeFrom(iso, idx) }
+    ]);
+  }
+
   function renderPlan(){
     const wrap = $("#plan-body");
     if (!wrap) return;
-    const dates = weekDates();
+    const dates = visibleDates();
+    if (applyPins(dates)) savePlan();
     const today = localISO(new Date());
+    const span = dates.length;
+    const calendar = state.prefs.planLayout === "calendar" && !isMobile();
     const n = dates.reduce((s, d) => s + planned(localISO(d)).length, 0);
-    $("#plan-week").textContent = weekOffset === 0 ? "This week" : weekOffset === 1 ? "Next week" : weekOffset === -1 ? "Last week"
+    const wk = weekOffset === 0 ? "This week" : weekOffset === 1 ? "Next week" : weekOffset === -1 ? "Last week"
       : `Week of ${dates[0].getDate()} ${dates[0].toLocaleDateString("en-GB", { month: "short" })}`;
-    $("#plan-range").textContent = `${dayLabel(dates[0])} – ${dayLabel(dates[6])} · ${n} meal${n === 1 ? "" : "s"}`;
+    $("#plan-week").textContent = span === 14 ? `${wk} + next` : wk;
+    $("#plan-range").textContent = `${dayLabel(dates[0])} – ${dayLabel(dates[span - 1])} · ${n} meal${n === 1 ? "" : "s"}`;
     $$("[data-cookday]").forEach(b => b.classList.toggle("on", (state.prefs.planDays || []).includes(Number(b.dataset.cookday))));
+    $$("[data-span]").forEach(b => b.classList.toggle("on", Number(b.dataset.span) === span));
+    $$("[data-layout]").forEach(b => b.classList.toggle("on", b.dataset.layout === (calendar ? "calendar" : "list")));
+    wrap.classList.toggle("calendar", calendar);
+
+    if (calendar){
+      const heads = DAY.slice(1).concat(DAY[0]).map(dn => `<div class="cal-head">${dn}</div>`).join("");
+      wrap.innerHTML = heads + dates.map(d => {
+        const iso = localISO(d);
+        const cooking = (state.prefs.planDays || []).includes(d.getDay());
+        return `<div class="cal-cell ${iso === today ? "today" : ""} ${cooking ? "" : "off"} ${iso < today ? "past" : ""}">
+          <div class="cal-date">${d.getDate()} <span class="muted small">${d.toLocaleDateString("en-GB", { month: "short" })}</span></div>
+          ${planned(iso).map((e, i) => calItem(e, iso, i)).join("")}
+          <button type="button" class="cal-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">＋</button>
+        </div>`;
+      }).join("");
+      $$("img[data-img]", wrap).forEach(img => { img.src = gridImageSrc(mealById(img.dataset.img)); });
+      $$("[data-add]", wrap).forEach(b => b.addEventListener("click", () => openPicker(b.dataset.add)));
+      $$(".cal-item", wrap).forEach(b => b.addEventListener("click", (ev) => { ev.stopPropagation(); calMenu(b, b.dataset.iso, Number(b.dataset.idx)); }));
+      return;
+    }
+
     wrap.innerHTML = dates.map(d => {
       const iso = localISO(d);
       const items = planned(iso);
@@ -224,6 +352,7 @@
       row.querySelector('[data-act="x2"]').addEventListener("click", () => toggleX2(iso, idx));
       row.querySelector('[data-act="swap"]').addEventListener("click", () => swap(iso, idx));
       row.querySelector('[data-act="remove"]').addEventListener("click", () => removeFrom(iso, idx));
+      row.querySelector('[data-act="pin"]').addEventListener("click", () => togglePin(iso, idx));
     });
   }
 
@@ -235,6 +364,16 @@
   $("#plan-copy")?.addEventListener("click", copyLastWeek);
   $("#plan-shop")?.addEventListener("click", shopWeek);
   $("#plan-clear")?.addEventListener("click", clearWeek);
+  $$("[data-span]").forEach(b => b.addEventListener("click", async () => {
+    state.prefs.planSpan = Number(b.dataset.span);
+    renderPlan();
+    await idbSet(IDB_KEYS.prefs, state.prefs);
+  }));
+  $$("[data-layout]").forEach(b => b.addEventListener("click", async () => {
+    state.prefs.planLayout = b.dataset.layout;
+    renderPlan();
+    await idbSet(IDB_KEYS.prefs, state.prefs);
+  }));
   $$("[data-cookday]").forEach(b => b.addEventListener("click", async () => {
     const d = Number(b.dataset.cookday);
     const days = new Set(state.prefs.planDays || []);
@@ -265,7 +404,7 @@
   function renderPicker(){
     const q = ($("#pp-search").value || "").trim().toLowerCase();
     const d = new Date(pickIso + "T12:00:00");
-    const dates = weekDates();
+    const dates = visibleDates();
     const ctx = weekContext(dates);
     const list = state.meals.filter(m => !mealAvoided(m))
       .filter(m => !q || m.title.toLowerCase().includes(q) || (m.ingredients || []).some(i => i.name.includes(q)))
@@ -291,7 +430,8 @@
     return sw.dates.find(d => (state.prefs.planDays || []).includes(d.getDay()) && !planned(localISO(d)).length);
   }
   function openSwiper(){
-    const dates = weekDates();
+    const dates = visibleDates();
+    if (applyPins(dates)) savePlan();
     sw = { dates, ctx: weekContext(dates), skipped: new Set(), current: null };
     swiper.classList.add("open");
     swiper.setAttribute("aria-hidden", "false");
@@ -417,7 +557,7 @@
 
   window.renderPlan = renderPlan;
   window.planMenuItems = planMenuItems;
-  window.planHelpers = { weekDates, localISO, autoFill, swap, shopWeek, copyLastWeek, mainProtein, openWcim };
+  window.planHelpers = { weekDates, visibleDates, localISO, autoFill, swap, shopWeek, copyLastWeek, mainProtein, openWcim, togglePin, removeFrom, clearWeek };
 
   function init(){ renderPlan(); }
   if (window.appReady) init();

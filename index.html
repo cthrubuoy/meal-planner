@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="assets/styles.css?v=15" />
+  <link rel="stylesheet" href="assets/styles.css?v=16" />
 </head>
 <body>
 
@@ -23,7 +23,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v15</span>
+      <span class="pill">v16</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal">＋ Add</button>
@@ -113,6 +113,10 @@
           <button id="plan-shop" class="btn">🛒 Add week to list</button>
           <button id="plan-copy" class="btn mini">⧉ Copy last week</button>
           <button id="plan-clear" class="btn mini">Clear week</button>
+        </div>
+        <div class="group plan-view-opts">
+          <span class="seg" role="group" aria-label="Days shown"><button class="segbtn" data-span="7">7 days</button><button class="segbtn" data-span="14">14 days</button></span>
+          <span class="seg tablet-only" role="group" aria-label="Layout"><button class="segbtn" data-layout="list">☰ List</button><button class="segbtn" data-layout="calendar">▦ Calendar</button></span>
         </div>
         <div class="group plan-cookdays" aria-label="Days to plan meals for">
           <span class="muted small">Cook on:</span>
@@ -410,6 +414,15 @@
           <input id="scan-title" type="text" required />
         </div>
 
+        <div class="form-row" id="scan-photo-row" hidden>
+          <label>Meal photo</label>
+          <div class="scan-photo">
+            <img id="scan-photo-preview" alt="Meal photo preview" hidden />
+            <div id="scan-photo-opts" class="group"></div>
+          </div>
+          <input id="scan-photo-file" type="file" accept="image/*" hidden />
+        </div>
+
         <div class="form-row">
           <label for="scan-cook-mins">Time to cook (minutes)</label>
           <input id="scan-cook-mins" type="number" min="0" max="600" />
@@ -469,6 +482,15 @@
       <div class="form-row">
         <label for="edit-image-file">Replace photo (optional)</label>
         <input id="edit-image-file" type="file" accept="image/*" />
+        <div class="group">
+          <button type="button" id="edit-card-photo" class="btn mini">📷 Take dish photo from a recipe card</button>
+          <input id="edit-card-photo-file" type="file" accept="image/*" capture="environment" hidden />
+        </div>
+        <div id="edit-photo-pending" class="photo-pending" hidden>
+          <img alt="New meal photo" />
+          <span class="small">New photo ready — it's saved when you press <b>Save changes</b>.</span>
+          <button type="button" id="edit-photo-undo" class="btn mini">Undo</button>
+        </div>
       </div>
 
       <div class="form-row">
@@ -742,10 +764,10 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/app.js?v=15" defer></script>
-<script src="assets/cook.js?v=15" defer></script>
-<script src="assets/plan.js?v=15" defer></script>
-<script src="assets/scan.js?v=15" defer></script>
-<script src="assets/pwa.js?v=15" defer></script>
+<script src="assets/app.js?v=16" defer></script>
+<script src="assets/cook.js?v=16" defer></script>
+<script src="assets/plan.js?v=16" defer></script>
+<script src="assets/scan.js?v=16" defer></script>
+<script src="assets/pwa.js?v=16" defer></script>
 </body>
 </html>
