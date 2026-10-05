@@ -1525,18 +1525,52 @@ async function logCooked(id, rating, note){
 /* ============== Meal actions (cards, meal page, menus) ============== */
 async function setSelected(id, on){
   if (on) state.selected.add(id);
-  else { state.selected.delete(id); state.doubled.delete(id); }
+  else { state.selected.delete(id); state.doubled.delete(id); syncQueueBatch(id); }
   saveSession();
-  renderMeals(); renderShopping();
+  updateCard(id); renderShopping();
   refreshMealView();
 }
 /* "Cook once, eat twice": only for meals in the current shop */
 function toggleDoubled(id){
   if (!state.selected.has(id)) return;
   if (state.doubled.has(id)) state.doubled.delete(id); else state.doubled.add(id);
+  syncQueueBatch(id);
   saveSession();
-  renderMeals(); renderShopping();
+  updateCard(id); renderShopping();
   refreshMealView();
+}
+/* If this shop was already exported, keep its "This week" entry's ×2 in step. */
+function syncQueueBatch(id){
+  if (!state.countedIds.has(id)) return;
+  const q = state.cookQueue.find(e => e.mealId === id);
+  if (!q) return;
+  if (state.doubled.has(id)) q.x = 2; else delete q.x;
+  idbSet(IDB_KEYS.cookQueue, state.cookQueue);
+  window.renderCookTab?.();
+}
+/* Refresh one card in place (tick, ×2) — no full grid rebuild. */
+function updateCard(id){
+  const card = grid.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  const meal = state.meals.find(m => m.id === id);
+  if (!card || !meal){ renderMeals(); return; }
+  const sel = state.selected.has(id), dbl = state.doubled.has(id);
+  card.classList.toggle("selected", sel);
+  const pick = card.querySelector(".pick");
+  pick.textContent = sel ? "✓" : "+";
+  pick.setAttribute("aria-pressed", String(sel));
+  pick.setAttribute("aria-label", `${sel ? "Remove from" : "Add to"} shop: ${meal.title}`);
+  let x2 = card.querySelector(".x2");
+  if (sel && !x2){
+    x2 = document.createElement("button");
+    x2.type = "button";
+    x2.className = "chip x2";
+    x2.title = "Cook once, eat twice: buy double for leftovers";
+    x2.textContent = "×2";
+    x2.addEventListener("click", (e) => { e.stopPropagation(); toggleDoubled(id); });
+    card.querySelector(".more").before(x2);
+  }
+  if (!sel && x2) x2.remove();
+  if (sel && x2){ x2.classList.toggle("on", dbl); x2.setAttribute("aria-pressed", String(dbl)); }
 }
 async function toggleFav(id){
   const m = state.meals.find(x => x.id === id);
@@ -1681,7 +1715,6 @@ function renderMeals(){
         </div>
       </div>`;
     const img = card.querySelector("img");
-    img.addEventListener("load", () => img.classList.add("ready"));
     img.src = gridImageSrc(meal);   // set directly: data URLs are large, keep them out of the HTML string
     card.querySelector(".pick").addEventListener("click", (e) => { e.stopPropagation(); setSelected(meal.id, !state.selected.has(meal.id)); });
     card.querySelector(".star").addEventListener("click", (e) => { e.stopPropagation(); toggleFav(meal.id); });
