@@ -17,6 +17,7 @@
   --accent:#22c55e;
   --accent-glow:rgba(34,197,94,.18);
   --accent-border:rgba(34,197,94,.5);
+  --accent-text:#22c55e;     /* accent used as text: contrast-checked per theme */
   --gold:#facc15;
   --radius:18px;
   --radius-sm:12px;
@@ -40,6 +41,7 @@
   --accent:#16a34a;
   --accent-glow:rgba(22,163,74,.14);
   --accent-border:rgba(22,163,74,.5);
+  --accent-text:#15803d;     /* 5:1 on white (the light accent is 3.3:1) */
   --gold:#b45309;
   --shadow:0 6px 22px rgba(15,23,42,.08);
   --shadow-soft:0 4px 14px rgba(15,23,42,.06);
@@ -174,7 +176,7 @@ input[type=file]{ padding:8px; }
 .btn:active{ transform: translateY(1px); }
 .btn.mini{ padding:7px 10px; font-size:.85rem; border-radius:10px; }
 .btn.primary{
-  background: linear-gradient(180deg, #1f8e54, #1b7b49);
+  background: linear-gradient(180deg, #1b7f4c, #176c41);   /* white text ≥ 5:1 */
   border-color: var(--accent-border);
   color:#f0fdf4;
 }
@@ -661,12 +663,12 @@ body.modal-open{ overflow:hidden; }
     grid-template-columns: minmax(0,1.2fr) minmax(0,.9fr) minmax(0,1fr) 40px;
     grid-template-areas:
       "name name name remove"
-      "type amount amount amount";
+      "type amount amount handle";
   }
   .ingredient-row.is-qty{
     grid-template-areas:
       "name name name remove"
-      "type amount unit unit";
+      "type amount unit handle";
   }
   .ingredient-row:not(.is-qty) > input:nth-child(4){ display:none; }
   .ingredient-row > input:nth-child(1){ grid-area:name; }
@@ -978,7 +980,7 @@ body.modal-open{ overflow:hidden; }
 .ov-steps{ margin:0; padding-left:22px; }
 .ov-steps li{ padding:5px 0; }
 .no-steps{ border:1px dashed var(--border-strong); border-radius: var(--radius-sm); padding:12px; text-align:center; }
-.conv{ color: var(--accent); font-size:.85em; white-space:nowrap; }
+.conv{ color: var(--accent-text); font-size:.85em; white-space:nowrap; }
 
 /* Guided cook mode: full screen */
 .cook-overlay{
@@ -999,7 +1001,7 @@ body.modal-open{ overflow:hidden; }
 .co-body{ flex:1; min-height:0; display:grid; grid-template-columns: minmax(0,1fr); }
 .co-ings{ display:none; overflow:auto; padding:14px 16px; background: var(--panel); border-right:1px solid var(--border); }
 .co-page{ overflow:auto; padding:20px clamp(16px, 4vw, 48px); touch-action: pan-y; }
-.co-kicker{ text-transform:uppercase; letter-spacing:.08em; color: var(--accent); font-weight:700; font-size:.85rem; margin-bottom:8px; }
+.co-kicker{ text-transform:uppercase; letter-spacing:.08em; color: var(--accent-text); font-weight:700; font-size:.85rem; margin-bottom:8px; }
 .co-step{ font-size: clamp(1.35rem, 1rem + 1.6vw, 2.1rem); line-height:1.45; margin:0 0 16px; }
 .co-chips{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
 .co-chip{ font-size:.95rem !important; padding:6px 12px !important; }
@@ -1129,14 +1131,14 @@ body.cooking .toast{ top:calc(70px + env(safe-area-inset-top, 0px)); bottom:auto
 .mv-hero img{ display:block; width:100%; max-height:min(52vh, 460px); object-fit:cover; }
 .mv-top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:space-between; }
 .mv-top .chips{ margin:0; }
-.mv-star.on{ color:#facc15; border-color: color-mix(in oklab, #facc15 55%, transparent); }
+.mv-star.on{ color: var(--gold); border-color: color-mix(in oklab, var(--gold) 55%, transparent); }
 .mv-actions{ margin:12px 0 4px; }
 .mv-cols{ display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1.5fr); gap:20px; }
 @media (max-width:839px){ .mv-cols{ grid-template-columns: minmax(0,1fr); } }
 .mv-notes{ white-space:pre-wrap; }
 .mv-log{ list-style:none; margin:0; padding:0; }
 .mv-log li{ padding:6px 0; border-bottom:1px dashed var(--border); }
-.mv-stars{ color:#facc15; letter-spacing:1px; }
+.mv-stars{ color: var(--gold); letter-spacing:1px; }
 
 /* Settings tabs */
 .settings-bar{ display:flex; flex-direction:column; gap:8px; }
@@ -1183,4 +1185,110 @@ html[data-text-size="xlarge"]{ font-size:125%; }
 /* Toasts in split view: over the meals pane, clear of the shopping list */
 @media (min-width:840px){
   body:not(.cooking) .toast{ left:24px; right:auto; }
+}
+
+/* =====================================================
+   v15 — PLANNER, SWIPE PICKER, WHAT CAN I MAKE, FIRST RUN, AVOID
+   ===================================================== */
+.plan-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.plan-nav{ flex-wrap:nowrap; }
+.plan-week-btn{ background:none; border:none; color: var(--text); font:inherit; text-align:center; cursor:pointer; min-width:190px; }
+.plan-actions{ margin-bottom:8px; }
+.plan-cookdays{ gap:6px; margin-bottom:12px; }
+.cookday{
+  padding:5px 10px; border-radius:999px; cursor:pointer; font:inherit; font-size:.85rem;
+  border:1px solid var(--border-strong); background: var(--card); color: var(--muted);
+}
+.cookday.on{ background: var(--accent-glow); border-color: var(--accent-border); color: var(--text); font-weight:600; }
+.plan-body{ display:grid; gap:8px; margin-bottom:10px; }
+.plan-day{
+  display:grid; grid-template-columns: 96px minmax(0,1fr) auto; gap:10px; align-items:center;
+  padding:8px 10px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--card);
+}
+.plan-day.today{ border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+.plan-day.off{ opacity:.6; }
+.plan-date{ font-weight:600; font-size:.92rem; }
+.plan-items{ display:grid; gap:6px; min-width:0; }
+.plan-meal{ display:grid; grid-template-columns: 52px minmax(0,1fr) auto; gap:10px; align-items:center; min-width:0; }
+.plan-meal img{ width:52px; height:52px; object-fit:cover; border-radius:10px; display:block; background: var(--chip); }
+.plan-title{
+  background:none; border:none; padding:0; color: var(--text); font:inherit; font-weight:600; text-align:left;
+  cursor:pointer; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere;
+}
+.plan-btns{ display:flex; gap:4px; align-items:center; }
+.plan-add{ font-size:1.1rem; padding:6px 12px; }
+@media (max-width:600px){
+  .plan-day{ grid-template-columns: minmax(0,1fr) auto; }
+  .plan-date{ grid-column: 1 / -1; }
+  .plan-items{ grid-column: 1; }
+  .plan-week-btn{ min-width:0; }
+}
+
+/* Day picker + What can I make */
+.picker-dialog{ width:min(640px, 96vw); }
+.pp-list{ display:grid; gap:6px; margin-top:8px; }
+.pp-item{
+  display:grid; grid-template-columns: 52px minmax(0,1fr) auto; gap:10px; align-items:center; text-align:left;
+  padding:6px; border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--card);
+  color: var(--text); font:inherit; cursor:pointer;
+}
+.pp-item:hover{ border-color: var(--accent-border); }
+.pp-item img{ width:52px; height:52px; object-fit:cover; border-radius:10px; display:block; background: var(--chip); }
+.pp-name{ display:flex; flex-direction:column; gap:2px; min-width:0; font-weight:600; overflow-wrap:anywhere; }
+.wcim-miss{ font-weight:400; }
+
+/* Swipe picker */
+.swipe-dialog{ width:min(520px, 96vw); }
+.sw-card{
+  border-radius: var(--radius); overflow:hidden; background: var(--card); border:1px solid var(--border);
+  touch-action: pan-y; user-select:none; transition: transform .15s ease; cursor:grab; min-height:120px;
+}
+.sw-card img{ display:block; width:100%; height:min(46vh, 340px); object-fit:cover; pointer-events:none; }
+.sw-info{ padding:12px 14px; }
+.sw-info .chips{ margin:6px 0 0; }
+.sw-actions{ justify-content:center; margin:14px 0 6px; }
+.sw-btn{ flex:1 1 0; font-size:1.15rem; padding:14px; }
+.sw-actions[hidden]{ display:none; }
+
+/* First run + avoid note */
+.first-run{
+  grid-column: 1 / -1; padding:20px; text-align:left;
+  border:1px dashed var(--accent-border); border-radius: var(--radius); background: var(--accent-glow);
+}
+.first-run p{ max-width:60ch; }
+.avoid-note{ margin:0 0 8px; }
+.avoid-note[hidden]{ display:none; }
+#avoid-editor{ margin-bottom:6px; }
+
+/* Bottom nav has five buttons now */
+@media (max-width:839px){
+  .bottom-nav{ gap:6px; padding-left:8px; padding-right:8px; }
+  .navbtn{ padding:8px 4px; }
+}
+
+/* Ingredient rows: drag handle (⋮⋮) */
+.drag-handle{
+  cursor:grab; touch-action:none; user-select:none; color: var(--muted);
+  display:flex; align-items:center; justify-content:center; width:28px; height:36px; font-size:1.05rem; letter-spacing:-2px;
+}
+.ingredient-row.dragging{ opacity:.6; outline:2px dashed var(--accent-border); border-radius: var(--radius-sm); }
+@media (min-width:840px){
+  .ingredient-row{ grid-template-columns: 2fr 1.1fr 1fr 1fr auto auto; }
+}
+@media (max-width:839px){
+  .ingredient-row{ grid-template-columns: minmax(0,1.2fr) minmax(0,.9fr) minmax(0,1fr) 40px; }
+  .ingredient-row > .drag-handle{ grid-area:handle; justify-self:center; }
+}
+
+/* Import from a link (Add sheet) */
+.link-import{ display:flex; gap:8px; margin-top:6px; }
+.link-import[hidden]{ display:none; }
+.link-import input{ flex:1 1 auto; min-width:0; }
+.link-import .btn{ flex:0 0 auto; }
+
+/* =====================================================
+   v15 — ACCESSIBILITY: visible keyboard focus everywhere
+   ===================================================== */
+:where(button, summary, a, .card, [role="tab"], [tabindex]):focus-visible{
+  outline:2px solid var(--accent-text); outline-offset:2px;
 }

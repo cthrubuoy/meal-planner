@@ -3,7 +3,40 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
-## v14 — Wave 1 UI improvements (built 2026-10-05)
+## v15 — Wave 2: planner, import from links, avoid list (2026-10-06)
+Cache `meal-planner-v17` · assets `?v=15` · export schema 13
+
+### Added
+- **Weekly planner:** a 📅 Plan tab, next to Meals and Cook on tablet and in the bottom bar on phone.
+  - Meals go on Mon–Sun, with ‹ › to change week.
+  - Per meal: ×2, ⇄ swap and ✕ remove.
+  - "Cook on" day toggles.
+- **Auto-fill:** fills the week from your own meals.
+  - Favourites and well-rated meals come first.
+  - Nothing you've planned or shopped for in the last two weeks, and no repeats within the week.
+  - Quicker meals on Mon–Thu, and the main protein varies from day to day.
+  - ⇄ **Swap** gives the next suggestion, as many times as you like.
+- **Swipe to pick:** go through suggestions one card at a time; swipe right to add to the next free day, left to skip.
+- **Add week to list** puts the week's meals, including ×2, on the shopping list.
+- **Copy last week** and **Clear week**, both with Undo.
+- **"📅 Add to plan…"** in every meal's ⋯ menu.
+- **🧺 What can I make?** Enter ingredients you have and see meals ranked by how few you're missing. Pantry staples can count as "have".
+- **Avoid ingredients** (Settings → Ingredients): meals containing them are hidden and never suggested; a note shows how many are hidden.
+- **Import from a link:** paste a recipe website, TikTok or Instagram link in Add a meal, or share a link to the app from another app.
+  - The recipe is filled in for review, with its photo and a "Source:" line in the notes.
+  - It needs the updated scan server (Worker v2) and only appears once that's deployed.
+  - Recipe websites work best. Social posts depend on the caption being public; if not, take a screenshot and use Scan.
+- **📋 Paste list** in Add and Edit: paste one ingredient per line ("200g chicken thigh", "2 tbsp soy sauce", "3 cloves garlic") and the rows are filled in.
+- **Drag to reorder** ingredients with the ⋮⋮ handle.
+- **First-run screen** on a device with no meals: Import a backup, Scan a recipe card, or Add a meal.
+- **Export schema 13:** adds `plan`. Older backups still import.
+
+### Changed
+- The **tag bar** shows real tags (cuisine, quick…) first; ingredient-name tags come after, and only if switched on.
+- **Light theme contrast:** accent text, the primary button and favourite stars now meet the 4.5:1 minimum.
+- **Keyboard focus** is clearly outlined everywhere.
+
+## v14 — Wave 1 UI improvements (2026-10-05)
 Cache `meal-planner-v16` · assets `?v=14` · export schema 12 (unchanged)
 
 ### Added

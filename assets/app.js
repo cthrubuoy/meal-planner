@@ -20,9 +20,10 @@ const IDB_KEYS = {
   session: "session",   // current shop: selected meals, ticks (not exported)
   cooklog: "cooklog",   // { mealId: [{ date, rating, note }] } — times actually cooked
   cookQueue: "cookQueue", // [{ mealId, added, x? }] — "This week" meals to cook (not exported)
-  thumbs: "thumbs"        // { mealId: { src, of } } — grid thumbnails, rebuildable (not exported)
+  thumbs: "thumbs",       // { mealId: { src, of } } — grid thumbnails, rebuildable (not exported)
+  plan: "plan"            // { "YYYY-MM-DD": [{ mealId, x? }] } — weekly planner (exported)
 };
-const EXPORT_SCHEMA_VERSION = 12;
+const EXPORT_SCHEMA_VERSION = 13;
 const DEFAULT_PREFS = {
   theme: "auto",
   gridMin: "cozy",
@@ -32,7 +33,9 @@ const DEFAULT_PREFS = {
   cookUnits: "asWritten",  // cook mode: asWritten | metric | us
   mealView: "",            // "grid" | "list"; "" = grid on tablet/desktop, list on phone
   textSize: "normal",      // normal | large | xlarge
-  settingsTab: "appearance"
+  settingsTab: "appearance",
+  avoid: [],               // ingredient keys: meals containing any are hidden and never suggested
+  planDays: [1,2,3,4,5,6,0] // days auto-fill plans for (0 = Sun … 6 = Sat)
 };
 const HISTORY_MAX_DATES = 50;
 const COOKLOG_MAX = 30;
@@ -58,6 +61,7 @@ const state = {
   cooklog: {},
   cookQueue: [],
   thumbs: {},
+  plan: {},
   haveIt: new Set(),        // shopping rows ticked as "have it" (row keys)
   pantryUse: new Set(),     // staples pulled back into the list for this shop
   countedIds: new Set(),    // meals already counted in history for this shop
@@ -450,9 +454,23 @@ async function saveAll(){
     idbSet(IDB_KEYS.history, state.history),
     idbSet(IDB_KEYS.cooklog, state.cooklog),
     idbSet(IDB_KEYS.cookQueue, state.cookQueue),
+    idbSet(IDB_KEYS.plan, state.plan),
     saveSession()
   ]);
 }
+/* Plan: drop unknown meals and anything older than 12 weeks */
+function cleanPlan(plan, ids){
+  const out = {};
+  if (!plan || typeof plan !== "object") return out;
+  const cutoff = new Date(Date.now() - 84 * 864e5).toISOString().slice(0, 10);
+  for (const [day, items] of Object.entries(plan)){
+    if (!/^\d{4}-\d\d-\d\d$/.test(day) || day < cutoff || !Array.isArray(items)) continue;
+    const keep = items.filter(e => e && ids.has(e.mealId)).map(e => e.x === 2 ? { mealId:e.mealId, x:2 } : { mealId:e.mealId });
+    if (keep.length) out[day] = keep;
+  }
+  return out;
+}
+
 /* Small, frequent writes: the current shop (selection + ticks). Keeps the
    shopping list alive if Android kills the app mid-shop. */
 function saveSession(){
@@ -465,7 +483,7 @@ function saveSession(){
   }).catch(err => console.warn("Session save failed:", err));
 }
 async function loadAll(){
-  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue, thumbs] = await Promise.all([
+  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue, thumbs, plan] = await Promise.all([
     idbGet(IDB_KEYS.meals),
     idbGet(IDB_KEYS.normaliser),
     idbGet(IDB_KEYS.unitDefaults),
@@ -475,7 +493,8 @@ async function loadAll(){
     idbGet(IDB_KEYS.session),
     idbGet(IDB_KEYS.cooklog),
     idbGet(IDB_KEYS.cookQueue),
-    idbGet(IDB_KEYS.thumbs)
+    idbGet(IDB_KEYS.thumbs),
+    idbGet(IDB_KEYS.plan)
   ]);
   if (Array.isArray(meals)){
     state.meals = meals.map(m => ({
@@ -496,6 +515,7 @@ async function loadAll(){
   state.cookQueue = (Array.isArray(cookQueue) ? cookQueue : []).filter(q => ids.has(q.mealId));
   state.thumbs    = (thumbs && typeof thumbs === "object") ? thumbs : {};
   for (const id of Object.keys(state.thumbs)) if (!ids.has(id)) delete state.thumbs[id];
+  state.plan      = cleanPlan(plan, ids);
 
   const s = (session && typeof session === "object") ? session : {};
   state.selected   = new Set((s.selected || []).filter(id => ids.has(id)));
@@ -537,7 +557,7 @@ window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change"
    At or above: split view — Meals/Cook on the left, Shopping list on the right.
    Keep in sync with the 839px / 840px media queries in styles.css. */
 const SPLIT_MIN_PX = 840;
-const VIEWS = ["meals", "shopping", "cook"];
+const VIEWS = ["meals", "plan", "shopping", "cook"];
 function isMobile(){ return window.matchMedia(`(max-width:${SPLIT_MIN_PX - 1}px)`).matches; }
 
 function setView(view){
@@ -550,9 +570,11 @@ function setView(view){
   document.body.dataset.view = view;
   $("#view-meals")?.classList.toggle("active", state.leftView === "meals");
   $("#view-cook")?.classList.toggle("active", state.leftView === "cook");
+  $("#view-plan")?.classList.toggle("active", state.leftView === "plan");
   $$("#pane-tabs .tab").forEach(b => b.classList.toggle("active", b.dataset.view === state.leftView));
   $$("#bottom-nav .navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === view));
   if (state.leftView === "cook") populateCookSelect();
+  if (state.leftView === "plan") window.renderPlan?.();
 }
 $$("#bottom-nav .navbtn, #pane-tabs .tab").forEach(b => b.addEventListener("click", () => {
   setView(b.dataset.view);
@@ -829,6 +851,116 @@ function maybeApplyUnitDefault(row, existing = false){
   unitEl.title = typeEl.title;
   syncIngredientRowType(row);
 }
+
+/* ============== Paste a block of ingredients ==============
+   "200g chicken thigh", "2 tbsp soy sauce", "1½ tsp cumin", "3 cloves garlic",
+   "1 red onion, chopped", "salt" → rows (amount, type, unit, name). */
+const FRACTION_CHARS = { "½":0.5, "¼":0.25, "¾":0.75, "⅓":1/3, "⅔":2/3, "⅛":0.125 };
+const PASTE_UNITS = [
+  [/^(kg|kilos?|kilograms?)$/, "grams", 1000], [/^(g|grams?|gr)$/, "grams", 1],
+  [/^(l|litres?|liters?)$/, "ml", 1000], [/^(ml|millilitres?|milliliters?)$/, "ml", 1],
+  [/^(tsps?|teaspoons?)$/, "tsp", 1], [/^(tbsps?|tablespoons?|tbs)$/, "tbsp", 1],
+  [/^(cups?)$/, "cup", 1]
+];
+const PASTE_QTY_UNITS = ["clove", "tin", "can", "pack", "packet", "bunch", "sprig", "slice", "piece", "handful",
+  "pinch", "stalk", "sheet", "jar", "bag", "punnet", "fillet", "rasher", "cube", "ball", "pod", "knob", "head"];
+function parseAmount(s){
+  s = s.trim();
+  let m = s.match(/^(\d+)\s+(\d+)\/(\d+)$/);                 // 1 1/2
+  if (m) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+  m = s.match(/^(\d+)\/(\d+)$/);                              // 1/2
+  if (m) return Number(m[1]) / Number(m[2]);
+  m = s.match(/^(\d*)([½¼¾⅓⅔⅛])$/);                           // 1½, ½
+  if (m) return (Number(m[1]) || 0) + FRACTION_CHARS[m[2]];
+  const n = Number(s.replace(",", "."));
+  return isFinite(n) ? n : null;
+}
+function parseIngredientLine(line){
+  let s = String(line).replace(/^[\s\-•*·–]+/, "").replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
+  if (!s) return null;
+  s = s.split(/,| - /)[0].trim();                             // drop ", chopped"
+  const m = s.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d*[½¼¾⅓⅔⅛]|\d+(?:[.,]\d+)?)\s*(?:x\s*)?([a-zA-Z]+\.?)?\s*(?:of\s+)?(.*)$/);
+  if (!m) return { name: normaliseRaw(s), type:"qty", amount:1, unit:"piece" };   // "salt"
+  const amount = parseAmount(m[1]) ?? 1;
+  const word = (m[2] || "").replace(/\.$/, "").toLowerCase();
+  const rest = (m[3] || "").trim();
+  for (const [re, type, mult] of PASTE_UNITS){
+    if (re.test(word)) return { name: normaliseRaw(rest), type, amount: Math.round(amount * mult * 100) / 100, unit:"" };
+  }
+  const qtyUnit = singulariseWord(word);
+  if (word && PASTE_QTY_UNITS.includes(qtyUnit)) return { name: normaliseRaw(rest), type:"qty", amount: Math.max(1, Math.round(amount)), unit: qtyUnit };
+  // no unit up front ("1 red onion"): the word is part of the name…
+  const words = normaliseRaw(`${word} ${rest}`.trim()).split(" ");
+  // …unless the name ends with one ("2 garlic cloves" → 2 clove garlic)
+  const tail = singulariseWord(words[words.length - 1]);
+  if (words.length > 1 && PASTE_QTY_UNITS.includes(tail)){
+    return { name: words.slice(0, -1).join(" "), type:"qty", amount: Math.max(1, Math.round(amount)), unit: tail };
+  }
+  return { name: words.join(" "), type:"qty", amount: Math.max(1, Math.round(amount)), unit:"piece" };
+}
+let pasteTarget = null;
+function openPaste(containerId){
+  pasteTarget = document.getElementById(containerId);
+  $("#paste-text").value = "";
+  $("#paste-preview").innerHTML = "";
+  $("#paste-modal").classList.add("open");
+  $("#paste-modal").setAttribute("aria-hidden", "false");
+  lockBodyScroll(true);
+  setTimeout(() => $("#paste-text")?.focus(), 50);
+}
+function closePaste(){
+  $("#paste-modal").classList.remove("open");
+  $("#paste-modal").setAttribute("aria-hidden", "true");
+  lockBodyScroll(false);
+}
+function pasteParsed(){
+  return ($("#paste-text").value || "").split(/\r?\n/).map(parseIngredientLine).filter(r => r && r.name);
+}
+$$("[data-paste-into]").forEach(b => b.addEventListener("click", () => openPaste(b.dataset.pasteInto)));
+$("#paste-text")?.addEventListener("input", () => {
+  const rows = pasteParsed();
+  $("#paste-preview").innerHTML = rows.length
+    ? `<ul class="ov-ings">${rows.map(r => `<li><span>${escapeHtml(titleCase(r.name))}</span><span class="muted">${formatNumber(r.amount)} ${escapeHtml(r.type === "qty" ? r.unit : r.type === "grams" ? "g" : r.type)}</span></li>`).join("")}</ul>`
+    : "";
+});
+$("#paste-add")?.addEventListener("click", () => {
+  const rows = pasteParsed();
+  if (!rows.length || !pasteTarget){ closePaste(); return; }
+  // replace blank rows first, then append
+  $$(".ingredient-row", pasteTarget).forEach(r => { if (!r.children[0].value.trim()) r.remove(); });
+  rows.forEach(r => addIngredientRow(pasteTarget, { ...r, name: canonicalName(r.name) }, { focus:false }));
+  closePaste();
+  status(`Added ${rows.length} ingredient${rows.length === 1 ? "" : "s"} — check the amounts.`);
+});
+$("#paste-close")?.addEventListener("click", closePaste);
+$("#paste-cancel")?.addEventListener("click", closePaste);
+
+/* ============== Drag to reorder ingredient rows (⋮⋮ handle) ============== */
+document.addEventListener("pointerdown", (e) => {
+  const handle = e.target.closest(".drag-handle");
+  if (!handle) return;
+  const row = handle.closest(".ingredient-row");
+  const list = row?.parentElement;
+  if (!row || !list) return;
+  e.preventDefault();
+  row.classList.add("dragging");
+  try { handle.setPointerCapture(e.pointerId); } catch { /* ok */ }
+  const move = (ev) => {
+    const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest(".ingredient-row");
+    if (!over || over === row || over.parentElement !== list) return;
+    const r = over.getBoundingClientRect();
+    list.insertBefore(row, ev.clientY < r.top + r.height / 2 ? over : over.nextSibling);
+  };
+  const up = () => {
+    row.classList.remove("dragging");
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", up);
+    handle.removeEventListener("pointercancel", up);
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", up);
+  handle.addEventListener("pointercancel", up);
+});
 
 function addIngredientRow(container, pref = {}, opts = {}){
   const row = $("#ingredient-template").content.firstElementChild.cloneNode(true);
@@ -1219,10 +1351,9 @@ function buildTagBar(){
       list.push({ tag:t, label: r?.label || t, count: r?.count || 0 });
     }
   });
-  rows.forEach(r => {
-    if (!includeIng && r.isIngredient) return;
-    if (!list.find(x => x.tag === r.tag)) list.push(r);
-  });
+  // Real tags (cuisine, "quick"…) first; ingredient-name tags only if switched on, after them
+  rows.filter(r => !r.isIngredient).forEach(r => { if (!list.find(x => x.tag === r.tag)) list.push(r); });
+  if (includeIng) rows.filter(r => r.isIngredient).forEach(r => { if (!list.find(x => x.tag === r.tag)) list.push(r); });
 
   const show = list.slice(0, max);
 
@@ -1416,8 +1547,19 @@ $("#m-favs")?.addEventListener("click", () => {
    ===================================================== */
 const grid = $("#meal-grid");
 
+/* Avoid list (Settings › Ingredients): meals containing any of these are hidden
+   and never suggested. Matches whole words, so "nut" catches "cashew nut". */
+function mealAvoided(m){
+  const avoid = state.prefs.avoid || [];
+  if (!avoid.length) return false;
+  return (m.ingredients || []).some(i => {
+    const k = ` ${ingredientKey(canonicalName(i.name))} `;
+    return avoid.some(a => k.includes(` ${a} `));
+  });
+}
+
 function visibleMeals(){
-  let items = [...state.meals];
+  let items = state.meals.filter(m => !mealAvoided(m));
   if (state.showFavsOnly) items = items.filter(m => m.fav);
 
   // Search now matches title OR any ingredient name
@@ -1657,8 +1799,9 @@ function openMenu(anchor, items){
   m.addEventListener("click", e => e.stopPropagation());
   setTimeout(() => document.addEventListener("click", closeMenu), 0);
 }
-function mealMenuItems(id){
+function mealMenuItems(id, anchor){
   return [
+    { label: "📅 Add to plan…", run: () => openMenu(anchor, window.planMenuItems?.(id) || []) },
     { label: "✏️ Edit", run: () => { closeMealView(); openEdit(id); } },
     { label: "⧉ Duplicate", run: () => duplicateMeal(id) },
     { label: "🗑 Delete", danger: true, run: async () => { if (await deleteMeal(id)) closeMealView(); } }
@@ -1684,10 +1827,15 @@ function renderMeals(){
   grid.classList.toggle("list", effectiveMealView() === "list");
   const items = visibleMeals();
 
+  const hiddenN = state.meals.filter(mealAvoided).length;
+  $("#avoid-note")?.toggleAttribute("hidden", !hiddenN);
+  if ($("#avoid-note")) $("#avoid-note").textContent = `${hiddenN} meal${hiddenN === 1 ? "" : "s"} hidden by your avoid list (Settings › Ingredients)`;
+
+  if (!state.meals.length){ grid.appendChild(firstRunPanel()); return; }
   if (!items.length){
     const d = document.createElement("div");
     d.className = "empty";
-    d.textContent = state.meals.length ? "No meals match your filters." : "No meals yet — tap ＋ Add to add one.";
+    d.textContent = "No meals match your filters.";
     grid.appendChild(d);
     return;
   }
@@ -1719,13 +1867,46 @@ function renderMeals(){
     card.querySelector(".pick").addEventListener("click", (e) => { e.stopPropagation(); setSelected(meal.id, !state.selected.has(meal.id)); });
     card.querySelector(".star").addEventListener("click", (e) => { e.stopPropagation(); toggleFav(meal.id); });
     card.querySelector(".x2")?.addEventListener("click", (e) => { e.stopPropagation(); toggleDoubled(meal.id); });
-    card.querySelector(".more").addEventListener("click", (e) => { e.stopPropagation(); openMenu(e.currentTarget, mealMenuItems(meal.id)); });
+    card.querySelector(".more").addEventListener("click", (e) => { e.stopPropagation(); openMenu(e.currentTarget, mealMenuItems(meal.id, e.currentTarget)); });
     card.addEventListener("click", () => openMealView(meal.id));
     card.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === card) openMealView(meal.id); });
     frag.appendChild(card);
   });
   grid.appendChild(frag);
   queueThumbs();
+}
+
+/* ============== First run (no meals on this device yet) ============== */
+function firstRunPanel(){
+  const d = document.createElement("div");
+  d.className = "first-run";
+  d.innerHTML = `
+    <h3 class="h3">Welcome 👋</h3>
+    <p>Your meals are stored in this browser on this device. If you use Meal Planner on another device,
+       export a backup there (Settings › Data) and import it here to bring everything across.</p>
+    <div class="group">
+      <button type="button" class="btn primary" data-fr="import">📥 Import a backup</button>
+      <button type="button" class="btn" data-fr="scan">📷 Scan a recipe card</button>
+      <button type="button" class="btn" data-fr="add">＋ Add a meal</button>
+    </div>`;
+  d.querySelector('[data-fr="import"]').addEventListener("click", () => $("#import")?.click());
+  d.querySelector('[data-fr="scan"]').addEventListener("click", () => { openAddSheet(); $("#scan-card-btn")?.click(); });
+  d.querySelector('[data-fr="add"]').addEventListener("click", openAddSheet);
+  return d;
+}
+
+/* ============== Avoid ingredients (Settings › Ingredients) ============== */
+const avoidEditor = $("#avoid-editor") ? tokenEditor($("#avoid-editor"), $("#avoid-input"), []) : null;
+function syncAvoidEditor(){ avoidEditor?.set(state.prefs.avoid || []); }
+if (avoidEditor){
+  new MutationObserver(async () => {
+    const next = avoidEditor.get().map(ingredientKey).filter(Boolean);
+    if (JSON.stringify(next) === JSON.stringify(state.prefs.avoid || [])) return;
+    state.prefs.avoid = next;
+    renderMeals();
+    window.renderPlan?.();
+    await idbSet(IDB_KEYS.prefs, state.prefs);
+  }).observe($("#avoid-editor"), { childList: true });
 }
 
 /* ============== Grid thumbnails ==============
@@ -1871,7 +2052,7 @@ function closeMealView(){
 function refreshMealView(){ if (viewingId) renderMealView(); }
 $("#mv-close")?.addEventListener("click", closeMealView);
 mealViewModal?.addEventListener("click", (e) => { if (e.target === mealViewModal) closeMealView(); });
-$("#mv-more")?.addEventListener("click", (e) => { e.stopPropagation(); if (viewingId) openMenu(e.currentTarget, mealMenuItems(viewingId)); });
+$("#mv-more")?.addEventListener("click", (e) => { e.stopPropagation(); if (viewingId) openMenu(e.currentTarget, mealMenuItems(viewingId, e.currentTarget)); });
 
 function renderMealView(){
   const meal = state.meals.find(m => m.id === viewingId);
@@ -2487,7 +2668,8 @@ $("#export")?.addEventListener("click", () => {
     prefs: state.prefs,
     pantry: Array.from(state.pantry),
     history: state.history,
-    cooklog: state.cooklog
+    cooklog: state.cooklog,
+    plan: state.plan
   }, null, 2);
 
   const blob = new Blob([data], { type: "application/json" });
@@ -2542,7 +2724,9 @@ function migrateImport(json){
     pantry: Array.isArray(json.pantry) ? json.pantry.map(String) : [],
     history: (json.history && typeof json.history === "object") ? json.history : {},
     // schema 12+
-    cooklog: (json.cooklog && typeof json.cooklog === "object") ? json.cooklog : {}
+    cooklog: (json.cooklog && typeof json.cooklog === "object") ? json.cooklog : {},
+    // schema 13+
+    plan: (json.plan && typeof json.plan === "object") ? json.plan : {}
   };
 }
 $("#import")?.addEventListener("change", async (e) => {
@@ -2564,6 +2748,7 @@ $("#import")?.addEventListener("change", async (e) => {
     state.history = migrated.history;
     state.cooklog = migrated.cooklog;
     const ids = new Set(state.meals.map(m => m.id));
+    state.plan = cleanPlan(migrated.plan, ids);
     state.cookQueue = state.cookQueue.filter(q => ids.has(q.mealId));
     clearShopState();
 
@@ -2587,6 +2772,7 @@ $("#clear-all")?.addEventListener("click", async () => {
   state.history = {};
   state.cooklog = {};
   state.cookQueue = [];
+  state.plan = {};
   clearShopState();
   await saveAll();
   renderMeals(); renderShopping(); populateCookSelect();
@@ -2601,6 +2787,7 @@ const settingsModal = $("#settings-modal");
 function openSettings(){
   renderSettings();
   showSettingsTab(state.prefs.settingsTab || "appearance");
+  syncAvoidEditor();
   renderBackupBanner();   // fills the Data tab's "last backup" line
   settingsModal.classList.add("open");
   settingsModal.setAttribute("aria-hidden", "false");

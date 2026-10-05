@@ -1,21 +1,22 @@
-/* Service Worker — Meal Planner v14
+/* Service Worker — Meal Planner v15
    Strategy:
    - Network-first for HTML (so updates land quickly)
    - Cache-first for static assets (CSS/JS/icons)
    - Same-origin only
 */
-const CACHE_NAME = "meal-planner-v16";
+const CACHE_NAME = "meal-planner-v17";
 // Asset URLs carry ?v=N to match index.html: a new index.html then never gets
 // old JS/CSS from a previous version's cache-first entries. Bump N with CACHE_NAME.
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./assets/styles.css?v=14",
-  "./assets/app.js?v=14",
-  "./assets/cook.js?v=14",
-  "./assets/scan.js?v=14",
-  "./assets/pwa.js?v=14",
+  "./assets/styles.css?v=15",
+  "./assets/app.js?v=15",
+  "./assets/cook.js?v=15",
+  "./assets/plan.js?v=15",
+  "./assets/scan.js?v=15",
+  "./assets/pwa.js?v=15",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-180.png",

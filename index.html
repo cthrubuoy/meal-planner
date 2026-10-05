@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="assets/styles.css?v=14" />
+  <link rel="stylesheet" href="assets/styles.css?v=15" />
 </head>
 <body>
 
@@ -23,7 +23,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v14</span>
+      <span class="pill">v15</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal">＋ Add</button>
@@ -40,8 +40,9 @@
   <!-- ================== LEFT: MEALS / COOK ================== -->
   <section class="panel" id="left-panel">
     <div class="inner">
-      <nav id="pane-tabs" class="pane-tabs" aria-label="Meals or cook mode">
+      <nav id="pane-tabs" class="pane-tabs" aria-label="Meals, plan or cook">
         <button class="tab active" data-view="meals">🍽️ Meals</button>
+        <button class="tab" data-view="plan">📅 Plan</button>
         <button class="tab" data-view="cook">🔥 Cook</button>
       </nav>
 
@@ -73,6 +74,7 @@
           <div id="tag-bar" class="tagbar" aria-label="Tag filter"></div>
           <button id="tag-filter" class="btn mini" title="Filter by tag">Tags ▾</button>
           <button id="contains-toggle" class="btn mini" title="Filter by ingredients">🥬 Contains ▾</button>
+          <button id="wcim-open" class="btn mini" title="Find meals you can make with what you have">🧺 What can I make?</button>
           <span id="tag-active" class="muted small"></span>
         </div>
 
@@ -85,12 +87,39 @@
           <small class="muted">Shows meals containing <strong>all</strong> selected ingredients (matches partial words).</small>
         </div>
 
+        <p id="avoid-note" class="muted small avoid-note" hidden></p>
+
         <div id="sel-bar" class="sel-bar" hidden>
           <span id="sel-count"></span>
           <button id="clear-selection" class="btn mini" title="Untick all meals and start a new shop">Clear selection</button>
         </div>
 
         <div id="meal-grid" class="grid" aria-live="polite"></div>
+      </section>
+
+      <!-- ============ PLAN VIEW (rendered by assets/plan.js) ============ -->
+      <section id="view-plan" class="view" aria-label="Plan">
+        <div class="plan-head">
+          <h2 class="h2 phone-only">📅 Plan</h2>
+          <div class="group plan-nav">
+            <button id="plan-prev" class="btn mini" aria-label="Previous week">‹</button>
+            <button id="plan-today" class="plan-week-btn" title="Back to this week"><b id="plan-week">This week</b><br><span id="plan-range" class="muted small"></span></button>
+            <button id="plan-next" class="btn mini" aria-label="Next week">›</button>
+          </div>
+        </div>
+        <div class="group plan-actions">
+          <button id="plan-autofill" class="btn primary">✨ Auto-fill</button>
+          <button id="plan-swipe" class="btn">🃏 Swipe to pick</button>
+          <button id="plan-shop" class="btn">🛒 Add week to list</button>
+          <button id="plan-copy" class="btn mini">⧉ Copy last week</button>
+          <button id="plan-clear" class="btn mini">Clear week</button>
+        </div>
+        <div class="group plan-cookdays" aria-label="Days to plan meals for">
+          <span class="muted small">Cook on:</span>
+          <button class="cookday" data-cookday="1">Mon</button><button class="cookday" data-cookday="2">Tue</button><button class="cookday" data-cookday="3">Wed</button><button class="cookday" data-cookday="4">Thu</button><button class="cookday" data-cookday="5">Fri</button><button class="cookday" data-cookday="6">Sat</button><button class="cookday" data-cookday="0">Sun</button>
+        </div>
+        <div id="plan-body" class="plan-body"></div>
+        <p class="muted small">Auto-fill uses your own meals: favourites and good ratings first, nothing you've had in the last two weeks, quicker meals Mon–Thu. ⇄ swaps for the next suggestion — as many times as you like.</p>
       </section>
 
       <!-- ============ COOK VIEW (rendered by assets/cook.js) ============ -->
@@ -158,6 +187,7 @@
 <!-- ================== BOTTOM NAV (phone) ================== -->
 <nav id="bottom-nav" class="bottom-nav" aria-label="Primary">
   <button class="navbtn active" data-view="meals">🍽️<br><small>Meals</small></button>
+  <button class="navbtn" data-view="plan">📅<br><small>Plan</small></button>
   <button class="navbtn" data-view="shopping">🛒<span id="nav-shop-count" class="nav-badge" hidden></span><br><small>Shopping</small></button>
   <button class="navbtn" data-view="add">➕<br><small>Add</small></button>
   <button class="navbtn" data-view="cook">🔥<br><small>Cook</small></button>
@@ -212,6 +242,10 @@
         </button>
         <input id="scan-file" type="file" accept="image/*" capture="environment" hidden />
         <small class="muted">Take a photo of a recipe card to auto-fill the form below.</small>
+        <div id="link-import" class="link-import" hidden>
+          <input id="link-url" type="url" inputmode="url" placeholder="…or paste a recipe link (website, TikTok, Instagram)" autocomplete="off" />
+          <button type="button" id="link-go" class="btn">🔗 Import</button>
+        </div>
       </div>
 
       <div class="form-row">
@@ -235,6 +269,7 @@
         <div id="ingredients" class="ingredients" aria-label="Ingredient list"></div>
         <div class="group">
           <button type="button" id="add-ingredient" class="btn">+ Add ingredient</button>
+          <button type="button" class="btn" data-paste-into="ingredients">📋 Paste list</button>
           <button type="button" id="duplicate-last" class="btn" title="Duplicate the most recently added meal">Duplicate last</button>
         </div>
       </div>
@@ -279,6 +314,65 @@
       </div>
     </div>
     <div id="mv-body"></div>
+  </div>
+</div>
+
+<!-- ================== PASTE INGREDIENTS ================== -->
+<div id="paste-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="paste-title">
+  <div class="dialog picker-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="paste-title" class="h3">📋 Paste ingredients</h3>
+      <button id="paste-close" class="btn" aria-label="Close">✕</button>
+    </div>
+    <p class="muted small">One ingredient per line, e.g. "200g chicken thigh", "2 tbsp soy sauce", "1 red onion", "3 cloves garlic". Amounts and units are worked out for you — check them before saving.</p>
+    <textarea id="paste-text" rows="8" placeholder="200g basmati rice&#10;2 tbsp soy sauce&#10;1 red onion"></textarea>
+    <div id="paste-preview" class="small mt8"></div>
+    <div class="group" style="justify-content:flex-end; margin-top:8px;">
+      <button type="button" id="paste-cancel" class="btn">Cancel</button>
+      <button type="button" id="paste-add" class="btn primary">Add rows</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================== PLANNER SHEETS (assets/plan.js) ================== -->
+<div id="plan-picker" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pp-title">
+  <div class="dialog picker-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="pp-title" class="h3">Add a meal</h3>
+      <button id="pp-close" class="btn" aria-label="Close">✕</button>
+    </div>
+    <input id="pp-search" type="search" placeholder="Search meals or ingredients…" autocomplete="off" />
+    <p class="muted small">Best suggestions for this day first.</p>
+    <div id="pp-list" class="pp-list"></div>
+  </div>
+</div>
+
+<div id="swipe-picker" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="sw-day">
+  <div class="dialog swipe-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="sw-day" class="h3">Pick your week</h3>
+      <button id="sw-close" class="btn" aria-label="Done">Done</button>
+    </div>
+    <div id="sw-card" class="sw-card"></div>
+    <div id="sw-actions" class="group sw-actions">
+      <button id="sw-no" class="btn sw-btn" aria-label="Skip">✕ Skip</button>
+      <button id="sw-yes" class="btn primary sw-btn" aria-label="Add to this day">✓ Add</button>
+    </div>
+    <p class="muted small" style="text-align:center">Swipe right to add, left to skip.</p>
+  </div>
+</div>
+
+<div id="wcim" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="wcim-title">
+  <div class="dialog picker-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="wcim-title" class="h3">🧺 What can I make?</h3>
+      <button id="wcim-close" class="btn" aria-label="Close">✕</button>
+    </div>
+    <label for="wcim-input">Ingredients you have</label>
+    <div id="wcim-editor" class="token-editor"></div>
+    <input id="wcim-input" type="text" list="ingredient-suggestions" placeholder="Type an ingredient and press Enter" />
+    <label class="group mt8" style="gap:8px"><input id="wcim-staples" type="checkbox" checked /> <span>Count my pantry staples as "have"</span></label>
+    <div id="wcim-list" class="pp-list mt8"></div>
   </div>
 </div>
 
@@ -387,6 +481,7 @@
         <div id="edit-ingredients" class="ingredients"></div>
         <div class="group">
           <button type="button" id="edit-add-ingredient" class="btn">+ Add ingredient</button>
+          <button type="button" class="btn" data-paste-into="edit-ingredients">📋 Paste list</button>
         </div>
       </div>
 
@@ -552,6 +647,11 @@
       <div id="tidy-results" class="small mt8 tidy-results" hidden></div>
   
       <hr class="sep" />
+      <h4 class="h4">Avoid ingredients</h4>
+      <p class="muted small">Meals containing any of these are hidden and never suggested by the planner (e.g. "mushroom", "nut").</p>
+      <div id="avoid-editor" class="token-editor"></div>
+      <input id="avoid-input" type="text" list="ingredient-suggestions" placeholder="Type an ingredient and press Enter" />
+      <hr class="sep" />
       <h4 class="h4">Tags from ingredients</h4>
       <p class="muted small">Add each meal's ingredient names to its tags.</p>
       <button id="backfill-tags" class="btn">Backfill tags</button>
@@ -635,15 +735,17 @@
     <input type="number" inputmode="decimal" min="0" step="any" placeholder="Amount" />
     <input type="text" placeholder="Unit label (e.g. piece)" />
     <button type="button" class="remove" aria-label="Remove">×</button>
+    <span class="drag-handle" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
   </div>
 </template>
 
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/app.js?v=14" defer></script>
-<script src="assets/cook.js?v=14" defer></script>
-<script src="assets/scan.js?v=14" defer></script>
-<script src="assets/pwa.js?v=14" defer></script>
+<script src="assets/app.js?v=15" defer></script>
+<script src="assets/cook.js?v=15" defer></script>
+<script src="assets/plan.js?v=15" defer></script>
+<script src="assets/scan.js?v=15" defer></script>
+<script src="assets/pwa.js?v=15" defer></script>
 </body>
 </html>

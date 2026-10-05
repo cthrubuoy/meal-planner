@@ -23,6 +23,8 @@
   let scanLastFile = null;          // remember for retry
   let scanSteps = [];
   let scanTagEditor = null;
+  let scanImage = null;             // photo that came with an imported recipe (data URL)
+  let scanSource = "";              // link it was imported from
 
   /* ---- Show/hide modal sections ---- */
   function openScan() {
@@ -36,6 +38,8 @@
     lockBodyScroll(false);   // stays locked if the Add sheet is still open
     showSection(null);
     scanLastFile = null;
+    scanImage = null;
+    scanSource = "";
   }
   function showSection(which) {
     scanLoading.hidden = which !== "loading";
@@ -69,6 +73,76 @@
   $("#scan-cancel")?.addEventListener("click", closeScan);
 
   /* ---- Run a scan ---- */
+  /* ============== Import from a link (website, TikTok, Instagram…) ==============
+     Needs the scan server's POST /import (Worker v2). The box only appears once
+     /health lists it, so an older server simply hides the feature. */
+  const SCAN_BASE = SCAN_ENDPOINT.replace(/\/scan$/, "");
+  const importReady = fetch(`${SCAN_BASE}/health`)
+    .then(r => r.json())
+    .then(j => Array.isArray(j.endpoints) && j.endpoints.includes("POST /import"))
+    .catch(() => false);
+  importReady.then(ok => { const row = $("#link-import"); if (row) row.hidden = !ok; });
+
+  const firstUrl = text => (String(text || "").match(/https?:\/\/[^\s<>"']+/) || [])[0] || "";
+
+  async function runImport(url) {
+    openScan();
+    $("#scan-loading p").textContent = "Fetching the recipe from that link…";
+    showSection("loading");
+    scanLastFile = null;
+    let resp, data;
+    try {
+      resp = await fetch(`${SCAN_BASE}/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+      data = await resp.json();
+    } catch {
+      showError("Couldn't reach the import server. Check your internet connection and try again.");
+      return;
+    } finally {
+      $("#scan-loading p").textContent = "Scanning the recipe card…";
+    }
+    if (!resp.ok || data.error) {
+      showError(data?.reason || `Import failed (${resp.status}). Try a screenshot and Scan instead.`);
+      return;
+    }
+    populateScanForm(data);
+    scanSource = data.source || url;
+    scanImage = null;
+    if (typeof data.image === "string" && data.image.startsWith("data:image/")) {
+      try {
+        const blob = await (await fetch(data.image)).blob();
+        scanImage = await fileToCompressedDataURL(new File([blob], "recipe", { type: blob.type }));
+      } catch { scanImage = null; }
+    }
+    showSection("form");
+  }
+  window.importRecipeFromUrl = runImport;
+
+  $("#link-go")?.addEventListener("click", () => {
+    const url = firstUrl($("#link-url").value);
+    if (!url) { status("Paste a link starting with http…"); $("#link-url").focus(); return; }
+    $("#link-url").value = "";
+    runImport(url);
+  });
+  $("#link-url")?.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#link-go").click(); } });
+
+  /* Android share sheet → Meal Planner (manifest share_target, GET ./?share_url=…) */
+  (function handleShare() {
+    const p = new URLSearchParams(location.search);
+    if (!p.has("share_url") && !p.has("share_text") && !p.has("share_title")) return;
+    const url = firstUrl(p.get("share_url")) || firstUrl(p.get("share_text")) || firstUrl(p.get("share_title"));
+    history.replaceState(null, "", location.pathname);
+    if (!url) { status("Nothing to import in what was shared."); return; }
+    importReady.then(ok => {
+      if (!ok) { status("Importing from links isn't switched on yet (the scan server needs updating).", 6000); return; }
+      openAddSheet();
+      runImport(url);
+    });
+  })();
+
   async function runScan(file) {
     openScan();
     showSection("loading");
@@ -226,13 +300,13 @@
     const meal = {
       id: uid(),
       title,
-      image: null,
+      image: scanImage ? { type:"data", src: scanImage } : null,
       fav: false,
       tags,
       ingredients,
       cookMins,
       steps: scanSteps.slice(),
-      notes: ($("#scan-notes").value || "").trim()
+      notes: [($("#scan-notes").value || "").trim(), scanSource ? `Source: ${scanSource}` : ""].filter(Boolean).join("\n")
     };
 
     // push to global state and save
