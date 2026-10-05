@@ -19,7 +19,8 @@ const IDB_KEYS = {
   history: "history",   // { mealId: { count, dates[] } } — times chosen for a shop
   session: "session",   // current shop: selected meals, ticks (not exported)
   cooklog: "cooklog",   // { mealId: [{ date, rating, note }] } — times actually cooked
-  cookQueue: "cookQueue" // [{ mealId, added }] — "This week" meals to cook (not exported)
+  cookQueue: "cookQueue", // [{ mealId, added, x? }] — "This week" meals to cook (not exported)
+  thumbs: "thumbs"        // { mealId: { src, of } } — grid thumbnails, rebuildable (not exported)
 };
 const EXPORT_SCHEMA_VERSION = 12;
 const DEFAULT_PREFS = {
@@ -28,7 +29,10 @@ const DEFAULT_PREFS = {
   includeIngredientTags: false,
   tagStripMax: 12,
   mealSort: "az",
-  cookUnits: "asWritten"   // cook mode: asWritten | metric | us
+  cookUnits: "asWritten",  // cook mode: asWritten | metric | us
+  mealView: "",            // "grid" | "list"; "" = grid on tablet/desktop, list on phone
+  textSize: "normal",      // normal | large | xlarge
+  settingsTab: "appearance"
 };
 const HISTORY_MAX_DATES = 50;
 const COOKLOG_MAX = 30;
@@ -53,9 +57,11 @@ const state = {
   history: {},
   cooklog: {},
   cookQueue: [],
+  thumbs: {},
   haveIt: new Set(),        // shopping rows ticked as "have it" (row keys)
   pantryUse: new Set(),     // staples pulled back into the list for this shop
   countedIds: new Set(),    // meals already counted in history for this shop
+  doubled: new Set(),       // "cook once, eat twice": selected meals bought ×2 this shop
 
   timeFilter: { min: 0, max: 120 },
   view: "meals",            // phone: the one visible view
@@ -454,11 +460,12 @@ function saveSession(){
     selected: Array.from(state.selected),
     haveIt: Array.from(state.haveIt),
     pantryUse: Array.from(state.pantryUse),
-    countedIds: Array.from(state.countedIds)
+    countedIds: Array.from(state.countedIds),
+    doubled: Array.from(state.doubled)
   }).catch(err => console.warn("Session save failed:", err));
 }
 async function loadAll(){
-  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue] = await Promise.all([
+  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue, thumbs] = await Promise.all([
     idbGet(IDB_KEYS.meals),
     idbGet(IDB_KEYS.normaliser),
     idbGet(IDB_KEYS.unitDefaults),
@@ -467,7 +474,8 @@ async function loadAll(){
     idbGet(IDB_KEYS.history),
     idbGet(IDB_KEYS.session),
     idbGet(IDB_KEYS.cooklog),
-    idbGet(IDB_KEYS.cookQueue)
+    idbGet(IDB_KEYS.cookQueue),
+    idbGet(IDB_KEYS.thumbs)
   ]);
   if (Array.isArray(meals)){
     state.meals = meals.map(m => ({
@@ -486,12 +494,15 @@ async function loadAll(){
   state.cooklog   = (cooklog && typeof cooklog === "object") ? cooklog : {};
   for (const id of Object.keys(state.cooklog)) if (!ids.has(id)) delete state.cooklog[id];
   state.cookQueue = (Array.isArray(cookQueue) ? cookQueue : []).filter(q => ids.has(q.mealId));
+  state.thumbs    = (thumbs && typeof thumbs === "object") ? thumbs : {};
+  for (const id of Object.keys(state.thumbs)) if (!ids.has(id)) delete state.thumbs[id];
 
   const s = (session && typeof session === "object") ? session : {};
   state.selected   = new Set((s.selected || []).filter(id => ids.has(id)));
   state.haveIt     = new Set(s.haveIt || []);
   state.pantryUse  = new Set(s.pantryUse || []);
   state.countedIds = new Set((s.countedIds || []).filter(id => ids.has(id)));
+  state.doubled    = new Set((s.doubled || []).filter(id => ids.has(id)));
 }
 
 /* ============== Theme ============== */
@@ -504,6 +515,7 @@ function applyTheme(){
   document.documentElement.setAttribute("data-theme", mode === "light" ? "light" : "dark");
   const t = $("#theme-toggle");
   if (t) t.textContent = mode === "light" ? "☀️" : "🌙";
+  $$("[data-theme-set]").forEach(b => b.classList.toggle("active", b.dataset.themeSet === state.prefs.theme));
 }
 $("#theme-toggle")?.addEventListener("click", async () => {
   const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
@@ -1073,6 +1085,10 @@ function closeEdit(){
   lockBodyScroll(false);
 }
 $("#edit-close")?.addEventListener("click", closeEdit);
+$("#edit-delete")?.addEventListener("click", async () => {
+  const id = state.editingId;
+  if (id && await deleteMeal(id)){ closeEdit(); closeMealView(); }
+});
 $("#edit-cancel")?.addEventListener("click", closeEdit);
 
 $("#edit-tags-from-ingredients")?.addEventListener("click", () => {
@@ -1125,6 +1141,7 @@ $("#edit-form")?.addEventListener("submit", async (e) => {
   renderMeals(); renderShopping(); populateCookSelect();
   updateIngredientSuggestions(); refreshTagSuggestions();
   closeEdit();
+  refreshMealView();
   status("Meal updated.");
 });
 
@@ -1134,6 +1151,7 @@ window.addEventListener("keydown", (e) => {
   if ($("#filters-modal")?.classList.contains("open")) closeFilters();
   if ($("#settings-modal")?.classList.contains("open")) closeSettings();
   if (editModal?.classList.contains("open")) closeEdit();
+  else if (viewingId && !$("#scan-modal")?.classList.contains("open")) closeMealView();
   if (addModal?.classList.contains("open") && !$("#scan-modal")?.classList.contains("open")) closeAddSheet();
   if (popEl) closePopover();
 });
@@ -1474,7 +1492,9 @@ async function recordShopUse(){
     h.dates = [...(h.dates || []), today].slice(-HISTORY_MAX_DATES);
     state.history[id] = h;
     state.countedIds.add(id);
-    if (!state.cookQueue.some(q => q.mealId === id)) state.cookQueue.push({ mealId:id, added:today });
+    if (!state.cookQueue.some(q => q.mealId === id)){
+      state.cookQueue.push(state.doubled.has(id) ? { mealId:id, added:today, x:2 } : { mealId:id, added:today });
+    }
     n++;
   }
   if (!n) return;
@@ -1502,9 +1522,132 @@ async function logCooked(id, rating, note){
   renderMeals();
 }
 
+/* ============== Meal actions (cards, meal page, menus) ============== */
+async function setSelected(id, on){
+  if (on) state.selected.add(id);
+  else { state.selected.delete(id); state.doubled.delete(id); }
+  saveSession();
+  renderMeals(); renderShopping();
+  refreshMealView();
+}
+/* "Cook once, eat twice": only for meals in the current shop */
+function toggleDoubled(id){
+  if (!state.selected.has(id)) return;
+  if (state.doubled.has(id)) state.doubled.delete(id); else state.doubled.add(id);
+  saveSession();
+  renderMeals(); renderShopping();
+  refreshMealView();
+}
+async function toggleFav(id){
+  const m = state.meals.find(x => x.id === id);
+  if (!m) return;
+  m.fav = !m.fav;
+  await saveAll();
+  renderMeals();
+  refreshMealView();
+}
+async function duplicateMeal(id){
+  const idx = state.meals.findIndex(m => m.id === id);
+  if (idx === -1) return;
+  const copy = JSON.parse(JSON.stringify(state.meals[idx]));
+  copy.id = uid();
+  copy.title = `${copy.title} (copy)`;
+  state.meals.splice(idx + 1, 0, copy);
+  await saveAll();
+  renderMeals(); populateCookSelect();
+  status(`Duplicated "${state.meals[idx].title}".`);
+  return copy.id;
+}
+/* Delete with confirm + Undo. Used by the card menu, the meal page and Edit. */
+async function deleteMeal(id){
+  const idx = state.meals.findIndex(m => m.id === id);
+  if (idx === -1) return false;
+  const removed = state.meals[idx];
+  if (!confirm(`Delete "${removed.title}"?`)) return false;
+  state.meals.splice(idx, 1);
+  state.selected.delete(id);
+  state.doubled.delete(id);
+  state.countedIds.delete(id);
+  await saveAll();
+  renderMeals(); renderShopping(); populateCookSelect();
+  updateIngredientSuggestions(); refreshTagSuggestions();
+  const UNDO_MS = 6000;
+  showUndoToast(`"${removed.title}" deleted`, async () => {
+    state.meals.splice(Math.min(idx, state.meals.length), 0, removed);   // same position
+    await saveAll();
+    renderMeals(); renderShopping(); populateCookSelect();
+    updateIngredientSuggestions(); refreshTagSuggestions();
+    status(`"${removed.title}" restored`);
+  }, UNDO_MS);
+  // Drop its history once Undo is no longer possible (loadAll also prunes orphans)
+  setTimeout(() => {
+    if (state.meals.some(m => m.id === removed.id)) return;   // restored via Undo
+    delete state.history[removed.id];
+    delete state.cooklog[removed.id];
+    delete state.thumbs[removed.id];
+    state.cookQueue = state.cookQueue.filter(q => q.mealId !== removed.id);
+    idbSet(IDB_KEYS.history, state.history);
+    idbSet(IDB_KEYS.cooklog, state.cooklog);
+    idbSet(IDB_KEYS.cookQueue, state.cookQueue);
+    idbSet(IDB_KEYS.thumbs, state.thumbs);
+  }, UNDO_MS + 500);
+  return true;
+}
+
+/* Small pop-up menu (⋯) anchored to a button. items: [{label, danger?, run}] */
+let menuEl = null;
+function closeMenu(){
+  menuEl?.remove(); menuEl = null;
+  document.removeEventListener("click", closeMenu);
+}
+function openMenu(anchor, items){
+  closeMenu();
+  const r = anchor.getBoundingClientRect();
+  const m = document.createElement("div");
+  m.className = "menu-list floating-menu";
+  m.setAttribute("role", "menu");
+  for (const it of items){
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn" + (it.danger ? " danger" : "");
+    b.textContent = it.label;
+    b.setAttribute("role", "menuitem");
+    b.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); it.run(); });
+    m.appendChild(b);
+  }
+  document.body.appendChild(m);
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w))}px`;
+  m.style.top = `${r.bottom + 6 + h > window.innerHeight ? Math.max(8, r.top - h - 6) : r.bottom + 6}px`;
+  menuEl = m;
+  m.addEventListener("click", e => e.stopPropagation());
+  setTimeout(() => document.addEventListener("click", closeMenu), 0);
+}
+function mealMenuItems(id){
+  return [
+    { label: "✏️ Edit", run: () => { closeMealView(); openEdit(id); } },
+    { label: "⧉ Duplicate", run: () => duplicateMeal(id) },
+    { label: "🗑 Delete", danger: true, run: async () => { if (await deleteMeal(id)) closeMealView(); } }
+  ];
+}
+
+function mealChips(meal, { withDoubled = true } = {}){
+  const out = [];
+  if (typeof meal.cookMins === "number") out.push(`<span class="chip">⏱ ${meal.cookMins} min</span>`);
+  if (meal.steps?.length) out.push(`<span class="chip">🧾 ${meal.steps.length} step${meal.steps.length === 1 ? "" : "s"}</span>`);
+  const hist = state.history[meal.id];
+  if (hist?.count) out.push(`<span class="chip chip-history" title="Chosen for ${hist.count} shop${hist.count === 1 ? "" : "s"}">🛒 ×${hist.count} · ${escapeHtml(formatShortDate(lastChosen(meal.id)))}</span>`);
+  const cs = cookStats(meal.id);
+  if (cs.count) out.push(`<span class="chip chip-history" title="Cooked ${cs.count} time${cs.count === 1 ? "" : "s"}">🍳 ×${cs.count}${cs.avg != null ? ` · ★${formatNumber(Math.round(cs.avg * 10) / 10)}` : ""}</span>`);
+  if (withDoubled && state.doubled.has(meal.id) && state.selected.has(meal.id)) out.push(`<span class="chip chip-x2">×2 leftovers</span>`);
+  return out.join("");
+}
+
 function renderMeals(){
   buildTagBar();
+  renderBackupBanner();
   grid.innerHTML = "";
+  grid.classList.toggle("list", effectiveMealView() === "list");
   const items = visibleMeals();
 
   if (!items.length){
@@ -1515,171 +1658,234 @@ function renderMeals(){
     return;
   }
 
+  const frag = document.createDocumentFragment();
   items.forEach(meal => {
+    const sel = state.selected.has(meal.id);
     const card = document.createElement("article");
-    card.className = "card" + (state.selected.has(meal.id) ? " selected" : "");
-
-    // ---- media ----
-    const media = document.createElement("div");
-    media.className = "media";
-
-    const img = document.createElement("img");
-    img.alt = meal.title;
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.src = meal.image?.src || placeholderSvg(meal.title);
+    card.className = "card" + (sel ? " selected" : "");
+    card.tabIndex = 0;
+    card.dataset.id = meal.id;
+    card.setAttribute("aria-label", `${meal.title} — open`);
+    card.innerHTML = `
+      <div class="media">
+        <img alt="" loading="lazy" decoding="async" />
+        <button type="button" class="pick" aria-pressed="${sel}" aria-label="${sel ? "Remove from" : "Add to"} shop: ${escapeHtml(meal.title)}">${sel ? "✓" : "+"}</button>
+        <button type="button" class="star ${meal.fav ? "on" : ""}" aria-pressed="${!!meal.fav}" aria-label="${meal.fav ? "Unfavourite" : "Favourite"}">${meal.fav ? "★" : "☆"}</button>
+      </div>
+      <div class="card-body">
+        <h3>${escapeHtml(meal.title)}</h3>
+        <div class="card-foot">
+          <div class="chips">${mealChips(meal, { withDoubled:false })}</div>
+          ${sel ? `<button type="button" class="chip x2 ${state.doubled.has(meal.id) ? "on" : ""}" aria-pressed="${state.doubled.has(meal.id)}" title="Cook once, eat twice: buy double for leftovers">×2</button>` : ""}
+          <button type="button" class="btn mini more" aria-label="More actions for ${escapeHtml(meal.title)}">⋯</button>
+        </div>
+      </div>`;
+    const img = card.querySelector("img");
     img.addEventListener("load", () => img.classList.add("ready"));
-
-    const sel = document.createElement("label");
-    sel.className = "select";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = state.selected.has(meal.id);
-    cb.setAttribute("aria-label", `Include ${meal.title}`);
-    cb.addEventListener("change", () => {
-      if (cb.checked) state.selected.add(meal.id); else state.selected.delete(meal.id);
-      card.classList.toggle("selected", cb.checked);
-      saveSession();
-      renderShopping();
-    });
-    sel.append(cb, document.createTextNode("Include"));
-
-    const fav = document.createElement("button");
-    fav.type = "button";
-    fav.className = "fav";
-    fav.dataset.on = meal.fav ? "true" : "false";
-    fav.setAttribute("aria-pressed", meal.fav ? "true" : "false");
-    fav.setAttribute("aria-label", meal.fav ? "Unfavourite" : "Favourite");
-    const star = document.createElement("span");
-    star.textContent = meal.fav ? "★" : "☆";
-    const ft = document.createElement("span");
-    ft.textContent = meal.fav ? "Favourited" : "Favourite";
-    fav.append(star, ft);
-    fav.addEventListener("click", async (ev) => {
-      ev.stopPropagation();
-      const m = state.meals.find(x => x.id === meal.id);
-      if (!m) return;
-      m.fav = !m.fav;
-      await saveAll();
-      renderMeals();
-    });
-
-    function toggleSelected(){
-      cb.checked = !cb.checked;
-      cb.dispatchEvent(new Event("change", { bubbles:true }));
-    }
-    media.addEventListener("click", (ev) => {
-      if (ev.target.closest(".fav")) return;
-      if (ev.target.tagName === "INPUT") return;
-      toggleSelected();
-    });
-    media.append(img, sel, fav);
-
-    // ---- body ----
-    const body = document.createElement("div");
-
-    const title = document.createElement("h3");
-    title.textContent = meal.title;
-    title.style.cursor = "pointer";
-    title.addEventListener("click", toggleSelected);
-    body.append(title);
-
-    const chips = document.createElement("div");
-    chips.className = "chips";
-    if (typeof meal.cookMins === "number"){
-      const t = document.createElement("span");
-      t.className = "chip"; t.textContent = `⏱ ${meal.cookMins} min`;
-      chips.appendChild(t);
-    }
-    if (Array.isArray(meal.steps) && meal.steps.length){
-      const s = document.createElement("span");
-      s.className = "chip"; s.textContent = `🧾 ${meal.steps.length} step${meal.steps.length === 1 ? "" : "s"}`;
-      chips.appendChild(s);
-    }
-    if (meal.notes && meal.notes.trim()){
-      const n = document.createElement("span");
-      n.className = "chip"; n.textContent = "📝 notes";
-      chips.appendChild(n);
-    }
-    const hist = state.history[meal.id];
-    if (hist?.count){
-      const h = document.createElement("span");
-      h.className = "chip chip-history";
-      h.textContent = `🛒 ×${hist.count} · ${formatShortDate(lastChosen(meal.id))}`;
-      h.title = `Chosen for ${hist.count} shop${hist.count === 1 ? "" : "s"}`;
-      chips.appendChild(h);
-    }
-    const cs = cookStats(meal.id);
-    if (cs.count){
-      const k = document.createElement("span");
-      k.className = "chip chip-history";
-      k.textContent = `🍳 ×${cs.count}${cs.avg != null ? ` · ★${formatNumber(Math.round(cs.avg * 10) / 10)}` : ""}`;
-      k.title = `Cooked ${cs.count} time${cs.count === 1 ? "" : "s"}`;
-      chips.appendChild(k);
-    }
-    if (chips.childElementCount) body.append(chips);
-
-    if (!meal.tags || !meal.tags.length){
-      const nt = document.createElement("div");
-      nt.className = "no-tags";
-      nt.textContent = "no tags — click to add";
-      nt.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        openEdit(meal.id);
-        setTimeout(() => $("#edit-tags-input")?.focus(), 80);
-      });
-      body.appendChild(nt);
-    }
-
-    const controls = document.createElement("div");
-    controls.className = "controls";
-    const editBtn = document.createElement("button");
-    editBtn.type = "button"; editBtn.className = "btn"; editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); openEdit(meal.id); });
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "btn danger card-del";
-    del.innerHTML = "🗑";
-    del.title = "Delete meal";
-    del.setAttribute("aria-label", `Delete ${meal.title}`);
-    del.addEventListener("click", async (ev) => {
-      ev.stopPropagation();
-      if (!confirm(`Delete "${meal.title}"?`)) return;
-      const idx = state.meals.findIndex(m => m.id === meal.id);
-      if (idx === -1) return;
-      const removed = state.meals[idx];
-      state.meals.splice(idx, 1);
-      state.selected.delete(meal.id);
-      state.countedIds.delete(meal.id);
-      await saveAll();
-      renderMeals(); renderShopping(); populateCookSelect();
-      updateIngredientSuggestions(); refreshTagSuggestions();
-      const UNDO_MS = 6000;
-      showUndoToast(`"${removed.title}" deleted`, async () => {
-        // restore at the same index
-        state.meals.splice(Math.min(idx, state.meals.length), 0, removed);
-        await saveAll();
-        renderMeals(); renderShopping(); populateCookSelect();
-        updateIngredientSuggestions(); refreshTagSuggestions();
-        status(`"${removed.title}" restored`);
-      }, UNDO_MS);
-      // Drop its history once Undo is no longer possible (loadAll also prunes orphans)
-      setTimeout(() => {
-        if (state.meals.some(m => m.id === removed.id)) return;   // restored via Undo
-        delete state.history[removed.id];
-        delete state.cooklog[removed.id];
-        state.cookQueue = state.cookQueue.filter(q => q.mealId !== removed.id);
-        idbSet(IDB_KEYS.history, state.history);
-        idbSet(IDB_KEYS.cooklog, state.cooklog);
-        idbSet(IDB_KEYS.cookQueue, state.cookQueue);
-      }, UNDO_MS + 500);
-    });
-    controls.append(editBtn, del);
-    body.appendChild(controls);
-
-    card.append(media, body);
-    grid.appendChild(card);
+    img.src = gridImageSrc(meal);   // set directly: data URLs are large, keep them out of the HTML string
+    card.querySelector(".pick").addEventListener("click", (e) => { e.stopPropagation(); setSelected(meal.id, !state.selected.has(meal.id)); });
+    card.querySelector(".star").addEventListener("click", (e) => { e.stopPropagation(); toggleFav(meal.id); });
+    card.querySelector(".x2")?.addEventListener("click", (e) => { e.stopPropagation(); toggleDoubled(meal.id); });
+    card.querySelector(".more").addEventListener("click", (e) => { e.stopPropagation(); openMenu(e.currentTarget, mealMenuItems(meal.id)); });
+    card.addEventListener("click", () => openMealView(meal.id));
+    card.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === card) openMealView(meal.id); });
+    frag.appendChild(card);
   });
+  grid.appendChild(frag);
+  queueThumbs();
+}
+
+/* ============== Grid thumbnails ==============
+   Originals are never modified — the meal page and Export use them. The grid
+   shows a copy with a 960px long edge (sharp at 2× on the widest card),
+   made in the background and kept in IDB "thumbs" (not exported). */
+const THUMB_MAX = 960;
+const THUMB_MIME = canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg";
+const thumbFingerprint = src => `${src.length}:${src.slice(-48)}`;
+function gridImageSrc(meal){
+  const src = meal.image?.src;
+  if (!src) return placeholderSvg(meal.title);
+  const t = state.thumbs[meal.id];
+  return (t && t.of === thumbFingerprint(src) && t.src) ? t.src : src;
+}
+const needsThumb = m => !!m.image?.src && state.thumbs[m.id]?.of !== thumbFingerprint(m.image.src);
+let thumbBusy = false, thumbSaveTimer = null;
+function queueThumbs(){
+  if (thumbBusy) return;
+  const next = state.meals.find(needsThumb);
+  if (!next) return;
+  thumbBusy = true;
+  const idle = window.requestIdleCallback || (cb => setTimeout(cb, 150));
+  idle(async () => {
+    try { await makeThumb(next); }
+    catch (e){
+      console.warn("Thumbnail failed:", e);
+      state.thumbs[next.id] = { src: null, of: thumbFingerprint(next.image.src) };   // use the original
+    }
+    thumbBusy = false;
+    clearTimeout(thumbSaveTimer);
+    thumbSaveTimer = setTimeout(() => idbSet(IDB_KEYS.thumbs, state.thumbs).catch(() => {}), 800);
+    queueThumbs();
+  }, { timeout: 2000 });
+}
+async function makeThumb(meal){
+  const src = meal.image.src, of = thumbFingerprint(src);
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  let thumb = null;
+  // Only worth it when it's meaningfully smaller than the original
+  if (Math.max(img.naturalWidth, img.naturalHeight) > THUMB_MAX * 1.1){
+    const data = await drawToDataURL(img, THUMB_MAX, THUMB_MAX, THUMB_MIME, 0.88);
+    if (data && data.length < src.length * 0.85) thumb = data;
+  }
+  state.thumbs[meal.id] = { src: thumb, of };
+  if (thumb){
+    const el = grid.querySelector(`.card[data-id="${CSS.escape(meal.id)}"] img`);
+    if (el) el.src = thumb;
+  }
+}
+
+/* ============== Grid / list view ============== */
+function effectiveMealView(){ return state.prefs.mealView || (isMobile() ? "list" : "grid"); }
+function syncViewToggle(){
+  const list = effectiveMealView() === "list";
+  const b = $("#view-toggle");
+  if (b){
+    b.textContent = list ? "▦" : "☰";
+    b.title = list ? "Show as grid" : "Show as list";
+    b.setAttribute("aria-label", b.title);
+  }
+  const sel = $("#pref-meal-view");
+  if (sel) sel.value = state.prefs.mealView || "";
+}
+async function setMealView(v){
+  state.prefs.mealView = v;
+  syncViewToggle();
+  renderMeals();
+  await idbSet(IDB_KEYS.prefs, state.prefs);
+}
+$("#view-toggle")?.addEventListener("click", () => setMealView(effectiveMealView() === "list" ? "grid" : "list"));
+$("#pref-meal-view")?.addEventListener("change", e => setMealView(e.target.value));
+window.matchMedia(`(max-width:${SPLIT_MIN_PX - 1}px)`).addEventListener?.("change", () => {
+  if (!state.prefs.mealView){ syncViewToggle(); renderMeals(); }
+});
+
+/* ============== Text size ============== */
+function applyTextSize(){
+  const v = state.prefs.textSize || "normal";
+  document.documentElement.dataset.textSize = v;
+  $$("[data-text-size-set]").forEach(b => b.classList.toggle("active", b.dataset.textSizeSet === v));
+  syncHeaderHeight();
+}
+$$("[data-text-size-set]").forEach(b => b.addEventListener("click", async () => {
+  state.prefs.textSize = b.dataset.textSizeSet;
+  applyTextSize();
+  await idbSet(IDB_KEYS.prefs, state.prefs);
+}));
+
+/* ============== Backup reminder ==============
+   Per device on purpose: each device has its own data. */
+const BACKUP_LAST_KEY = "backup-last-v14";
+const BACKUP_SNOOZE_KEY = "backup-snooze-v14";
+const BACKUP_DUE_DAYS = 30;
+const local = {
+  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v){ try { localStorage.setItem(k, v); } catch { /* private mode */ } }
+};
+function lastBackupDate(){ const v = local.get(BACKUP_LAST_KEY); return v ? new Date(v) : null; }
+function renderBackupBanner(){
+  const last = lastBackupDate();
+  const info = $("#backup-last");
+  if (info) info.textContent = last
+    ? `Last backup on this device: ${last.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" })}`
+    : "No backup made on this device yet.";
+  const el = $("#backup-banner");
+  if (!el) return;
+  const days = last ? Math.floor((Date.now() - last) / 864e5) : null;
+  const snoozed = Date.now() < Number(local.get(BACKUP_SNOOZE_KEY) || 0);
+  const due = state.meals.length > 0 && (days === null || days > BACKUP_DUE_DAYS) && !snoozed;
+  el.hidden = !due;
+  if (due) $(".backup-text", el).textContent = days === null
+    ? "💾 No backup on this device yet."
+    : `💾 Last backup on this device: ${days} days ago.`;
+}
+$("#backup-now")?.addEventListener("click", () => $("#export")?.click());
+$("#backup-later")?.addEventListener("click", () => {
+  local.set(BACKUP_SNOOZE_KEY, String(Date.now() + 7 * 864e5));
+  renderBackupBanner();
+});
+
+/* ============== Meal page (tap a card) ============== */
+const mealViewModal = $("#meal-view");
+let viewingId = null;
+function openMealView(id){
+  viewingId = id;
+  renderMealView();
+  mealViewModal.classList.add("open");
+  mealViewModal.setAttribute("aria-hidden", "false");
+  lockBodyScroll(true);
+  $("#mv-body").scrollTop = 0;
+  mealViewModal.querySelector(".dialog").scrollTop = 0;
+}
+function closeMealView(){
+  if (!viewingId) return;
+  viewingId = null;
+  mealViewModal.classList.remove("open");
+  mealViewModal.setAttribute("aria-hidden", "true");
+  lockBodyScroll(false);
+}
+function refreshMealView(){ if (viewingId) renderMealView(); }
+$("#mv-close")?.addEventListener("click", closeMealView);
+mealViewModal?.addEventListener("click", (e) => { if (e.target === mealViewModal) closeMealView(); });
+$("#mv-more")?.addEventListener("click", (e) => { e.stopPropagation(); if (viewingId) openMenu(e.currentTarget, mealMenuItems(viewingId)); });
+
+function renderMealView(){
+  const meal = state.meals.find(m => m.id === viewingId);
+  if (!meal){ closeMealView(); return; }
+  const sel = state.selected.has(meal.id), dbl = state.doubled.has(meal.id);
+  const amount = i => window.cookHelpers ? window.cookHelpers.ingAmount(i) : `${formatNumber(i.amount)} ${i.unit || i.type}`;
+  const steps = meal.steps || [];
+  const log = (state.cooklog[meal.id] || []).slice().reverse();
+  $("#mv-title").textContent = meal.title;
+  $("#mv-body").innerHTML = `
+    ${meal.image?.src ? `<div class="mv-hero"><img alt="${escapeHtml(meal.title)}" /></div>` : ""}
+    <div class="mv-top">
+      <div class="chips">${mealChips(meal)}</div>
+      <button type="button" id="mv-star" class="btn mv-star ${meal.fav ? "on" : ""}" aria-pressed="${!!meal.fav}">${meal.fav ? "★ Favourite" : "☆ Favourite"}</button>
+    </div>
+    <div class="group mv-actions">
+      <button type="button" id="mv-pick" class="btn ${sel ? "primary" : ""}" aria-pressed="${sel}">${sel ? "✓ In this shop" : "＋ Add to shop"}</button>
+      ${sel ? `<button type="button" id="mv-x2" class="btn x2 ${dbl ? "on" : ""}" aria-pressed="${dbl}" title="Buy double for leftovers">×2 Cook once, eat twice</button>` : ""}
+      <button type="button" id="mv-cook" class="btn">▶ Cook</button>
+      <button type="button" id="mv-edit" class="btn">✏️ Edit</button>
+    </div>
+    <div class="mv-cols">
+      <section>
+        <h4 class="h4">Ingredients</h4>
+        <ul class="ov-ings">${(meal.ingredients || []).map(i => `<li><span>${escapeHtml(titleCase(i.name))}</span><span class="muted">${escapeHtml(amount(i))}</span></li>`).join("")}</ul>
+      </section>
+      <section>
+        <h4 class="h4">Steps</h4>
+        ${steps.length
+          ? `<ol class="ov-steps">${steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`
+          : `<div class="no-steps"><p>No steps yet.</p><button type="button" class="btn" id="mv-scan">📷 Scan back of card</button></div>`}
+      </section>
+    </div>
+    ${meal.notes ? `<h4 class="h4">Notes</h4><p class="mv-notes">${escapeHtml(meal.notes)}</p>` : ""}
+    ${meal.tags?.length ? `<h4 class="h4">Tags</h4><div class="token-list">${meal.tags.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+    <h4 class="h4">Cook log</h4>
+    ${log.length
+      ? `<ul class="mv-log">${log.map(e => `<li><span class="muted">${escapeHtml(formatShortDate(e.date))}</span> ${e.rating ? `<span class="mv-stars">${"★".repeat(e.rating)}</span>` : ""} ${e.note ? escapeHtml(e.note) : ""}</li>`).join("")}</ul>`
+      : `<p class="muted small">Not cooked in cook mode yet.</p>`}`;
+  const hero = $("#mv-body .mv-hero img");
+  if (hero) hero.src = meal.image.src;   // full-size original
+  $("#mv-star")?.addEventListener("click", () => toggleFav(meal.id));
+  $("#mv-pick")?.addEventListener("click", () => setSelected(meal.id, !state.selected.has(meal.id)));
+  $("#mv-x2")?.addEventListener("click", () => toggleDoubled(meal.id));
+  $("#mv-cook")?.addEventListener("click", () => { closeMealView(); window.openGuided?.(meal.id); });
+  $("#mv-edit")?.addEventListener("click", () => openEdit(meal.id));
+  $("#mv-scan")?.addEventListener("click", () => window.scanStepsFor?.(meal.id));
 }
 
 /* Density buttons */
@@ -1702,7 +1908,7 @@ function syncSortUI(){
 }
 /* Forget the current shop entirely (import / clear all). */
 function clearShopState(){
-  state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear();
+  state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear(); state.doubled.clear();
 }
 
 /* ===== Contains filter (search by ingredient) ===== */
@@ -1763,9 +1969,9 @@ $("#clear-selection")?.addEventListener("click", () => {
   if (!state.selected.size) return;
   const before = {
     selected: new Set(state.selected), haveIt: new Set(state.haveIt),
-    pantryUse: new Set(state.pantryUse), countedIds: new Set(state.countedIds)
+    pantryUse: new Set(state.pantryUse), countedIds: new Set(state.countedIds), doubled: new Set(state.doubled)
   };
-  state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear();
+  state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear(); state.doubled.clear();
   saveSession(); renderMeals(); renderShopping();
   showUndoToast("Selection cleared — new shop", () => {
     Object.assign(state, before);
@@ -1814,6 +2020,7 @@ function aggregate(){
   const map = new Map();
   for (const m of state.meals){
     if (!state.selected.has(m.id)) continue;
+    const mult = state.doubled.has(m.id) ? 2 : 1;   // cook once, eat twice
     for (const i of (m.ingredients || [])){
       const name = canonicalName(i.name);
       const key = ingredientKey(name);
@@ -1822,7 +2029,7 @@ function aggregate(){
       if (!row){ row = { key, spellings:new Map(), parts:new Map() }; map.set(key, row); }
       row.spellings.set(name, (row.spellings.get(name) || 0) + 1);
       const pk = partKey(i);
-      const amt = (Number(i.amount) || 0) * (pk === "spoon" ? SPOON_TSP[i.type] : 1);
+      const amt = (Number(i.amount) || 0) * (pk === "spoon" ? SPOON_TSP[i.type] : 1) * mult;
       row.parts.set(pk, (row.parts.get(pk) || 0) + amt);
     }
   }
@@ -1856,6 +2063,48 @@ async function togglePantry(key, on){
   renderShopping();
 }
 
+/* Tick = "got it / have it". Ticked rows sink into the "✓ Got" group. */
+function setGot(key, on){
+  if (on) state.haveIt.add(key); else state.haveIt.delete(key);
+  if (on && !state.prefs.swipeHintSeen){ state.prefs.swipeHintSeen = true; idbSet(IDB_KEYS.prefs, state.prefs); }
+  saveSession();
+  renderShopping();
+}
+/* Swipe a row right to tick, left to untick. Horizontal only, so vertical
+   scrolling still works (rows use touch-action: pan-y). */
+function attachRowSwipe(tr, key){
+  let start = null;
+  tr.addEventListener("pointerdown", (e) => {
+    if (e.button > 0 || e.target.closest("button, input")) return;
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId, swiping: false };
+  });
+  tr.addEventListener("pointermove", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    if (!start.swiping){
+      if (Math.abs(dy) > 12){ start = null; return; }          // a scroll, not a swipe
+      if (Math.abs(dx) > 12){ start.swiping = true; try { tr.setPointerCapture(e.pointerId); } catch { /* ok */ } }
+    }
+    if (start?.swiping){
+      tr.style.transform = `translateX(${Math.max(-90, Math.min(90, dx))}px)`;
+      tr.classList.toggle("swipe-got", dx > 60);
+      tr.classList.toggle("swipe-undo", dx < -60);
+    }
+  });
+  const end = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y, was = start.swiping;
+    start = null;
+    tr.style.transform = "";
+    tr.classList.remove("swipe-got", "swipe-undo");
+    if (!was || Math.abs(dy) > 30) return;
+    if (dx > 60 && !state.haveIt.has(key)) setGot(key, true);
+    else if (dx < -60 && state.haveIt.has(key)) setGot(key, false);
+  };
+  tr.addEventListener("pointerup", end);
+  tr.addEventListener("pointercancel", () => { start = null; tr.style.transform = ""; tr.classList.remove("swipe-got", "swipe-undo"); });
+}
+
 function shoppingRow(r, opts){
   const tr = document.createElement("tr");
   const ticked = state.haveIt.has(r.key);
@@ -1868,13 +2117,9 @@ function shoppingRow(r, opts){
     cb.type = "checkbox";
     cb.checked = ticked;
     cb.setAttribute("aria-label", `I have ${r.name}`);
-    cb.addEventListener("change", () => {
-      if (cb.checked) state.haveIt.add(r.key); else state.haveIt.delete(r.key);
-      tr.classList.toggle("ticked", cb.checked);
-      saveSession();
-      updateShoppingActions();
-    });
+    cb.addEventListener("change", () => setGot(r.key, cb.checked));
     tdTick.appendChild(cb);
+    attachRowSwipe(tr, r.key);
   }
 
   const tdName = document.createElement("td");
@@ -1934,21 +2179,37 @@ function renderShopping(){
   for (const k of Array.from(state.haveIt)) if (!live.has(k)) state.haveIt.delete(k);
   for (const k of Array.from(state.pantryUse)) if (!live.has(k)) state.pantryUse.delete(k);
 
-  const main = rows.filter(r => !isStapleRow(r));
+  const listed = rows.filter(r => !isStapleRow(r));
+  const main = listed.filter(r => !state.haveIt.has(r.key));
+  const got = listed.filter(r => state.haveIt.has(r.key));
   const staples = rows.filter(isStapleRow);
-
-  if (main.length){
-    const table = document.createElement("table");
-    table.className = "table shopping-table";
+  const table = (items) => {
+    const t = document.createElement("table");
+    t.className = "table shopping-table";
     const tbody = document.createElement("tbody");
-    main.forEach(r => tbody.appendChild(shoppingRow(r, { staple:false })));
-    table.appendChild(tbody);
-    shoppingWrap.appendChild(table);
-  } else {
+    items.forEach(r => tbody.appendChild(shoppingRow(r, { staple:false })));
+    t.appendChild(tbody);
+    return t;
+  };
+
+  if (main.length) shoppingWrap.appendChild(table(main));
+  else {
     const d = document.createElement("div");
     d.className = "empty";
-    d.textContent = "Everything here is a cupboard staple.";
+    d.textContent = listed.length ? "All got! ✓" : "Everything here is a cupboard staple.";
     shoppingWrap.appendChild(d);
+  }
+  if (got.length){
+    const h = document.createElement("div");
+    h.className = "got-head";
+    h.textContent = `✓ Got (${got.length})`;
+    shoppingWrap.append(h, table(got));
+  }
+  if (main.length && !got.length && !state.prefs.swipeHintSeen){
+    const tip = document.createElement("p");
+    tip.className = "muted small swipe-tip";
+    tip.textContent = "Tip: swipe an item right to tick it off, left to undo.";
+    shoppingWrap.appendChild(tip);
   }
 
   if (staples.length){
@@ -1969,7 +2230,8 @@ function renderShopping(){
 
 function updateSelectedCount(){
   const n = state.selected.size;
-  const txt = n ? `${n} meal${n === 1 ? "" : "s"} selected` : "No meals selected";
+  const d = Array.from(state.doubled).filter(id => state.selected.has(id)).length;
+  const txt = n ? `${n} meal${n === 1 ? "" : "s"} selected${d ? ` · ${d} doubled` : ""}` : "No meals selected";
   $("#selected-count") && ($("#selected-count").textContent = txt);
   $("#sel-count") && ($("#sel-count").textContent = txt);
   $("#sel-bar")?.toggleAttribute("hidden", !n);
@@ -2205,6 +2467,8 @@ $("#export")?.addEventListener("click", () => {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
+  local.set(BACKUP_LAST_KEY, new Date().toISOString());
+  renderBackupBanner();
   status("Exported.");
 });
 
@@ -2303,10 +2567,28 @@ $("#clear-all")?.addEventListener("click", async () => {
 const settingsModal = $("#settings-modal");
 function openSettings(){
   renderSettings();
+  showSettingsTab(state.prefs.settingsTab || "appearance");
+  renderBackupBanner();   // fills the Data tab's "last backup" line
   settingsModal.classList.add("open");
   settingsModal.setAttribute("aria-hidden", "false");
   lockBodyScroll(true);
 }
+/* Settings tabs: Appearance | Ingredients | Pantry | History | Data (last one remembered) */
+function showSettingsTab(tab){
+  if (!$(`[data-spanel="${tab}"]`)) tab = "appearance";
+  $$("[data-stab]").forEach(b => {
+    const on = b.dataset.stab === tab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+  $$("[data-spanel]").forEach(p => { p.hidden = p.dataset.spanel !== tab; });
+  settingsModal.querySelector(".dialog").scrollTop = 0;
+}
+$$("[data-stab]").forEach(b => b.addEventListener("click", () => {
+  state.prefs.settingsTab = b.dataset.stab;
+  showSettingsTab(b.dataset.stab);
+  idbSet(IDB_KEYS.prefs, state.prefs);
+}));
 function closeSettings(){
   settingsModal.classList.remove("open");
   settingsModal.setAttribute("aria-hidden", "true");
@@ -2558,6 +2840,8 @@ $("#unit-add")?.addEventListener("click", async () => {
   await loadAll();
   applyTheme();
   applyDensity();
+  applyTextSize();
+  syncViewToggle();
   syncSortUI();
   syncHeaderHeight();
 

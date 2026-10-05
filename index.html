@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="assets/styles.css?v=13" />
+  <link rel="stylesheet" href="assets/styles.css?v=14" />
 </head>
 <body>
 
@@ -23,7 +23,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v13</span>
+      <span class="pill">v14</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal">＋ Add</button>
@@ -58,6 +58,15 @@
             <option value="rated">Top rated</option>
           </select>
           <button id="open-filters" class="btn">Filters</button>
+          <button id="view-toggle" class="btn icon-btn" title="Show as list" aria-label="Show as list">☰</button>
+        </div>
+
+        <div id="backup-banner" class="backup-banner" hidden>
+          <span class="backup-text"></span>
+          <span class="group">
+            <button id="backup-now" class="btn mini primary">Back up now</button>
+            <button id="backup-later" class="btn mini">Later</button>
+          </span>
         </div>
 
         <div class="tagbar-wrap">
@@ -259,6 +268,20 @@
   </div>
 </div>
 
+<!-- ================== MEAL PAGE (tap a card) ================== -->
+<div id="meal-view" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="mv-title">
+  <div class="dialog meal-view-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="mv-title" class="h3 mv-title"></h3>
+      <div class="group">
+        <button id="mv-more" class="btn" aria-label="More actions">⋯</button>
+        <button id="mv-close" class="btn" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div id="mv-body"></div>
+  </div>
+</div>
+
 <!-- ================== SCAN RESULT MODAL ================== -->
 <div id="scan-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="scan-modal-title">
   <div class="dialog">
@@ -394,133 +417,172 @@
         <textarea id="edit-notes" rows="2"></textarea>
       </div>
 
-      <div class="group" style="justify-content:flex-end; margin-top:8px;">
-        <button type="button" id="edit-cancel" class="btn">Cancel</button>
-        <button type="submit" class="btn primary">Save changes</button>
+      <div class="group space-between" style="margin-top:8px;">
+        <button type="button" id="edit-delete" class="btn danger">🗑 Delete meal</button>
+        <div class="group">
+          <button type="button" id="edit-cancel" class="btn">Cancel</button>
+          <button type="submit" class="btn primary">Save changes</button>
+        </div>
       </div>
     </form>
   </div>
 </div>
 
-<!-- ================== SETTINGS MODAL ================== -->
+<!-- ================== SETTINGS MODAL (tabs) ================== -->
 <div id="settings-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="dialog">
-    <div class="stickybar group space-between">
-      <h3 id="settings-title" class="h3">Settings</h3>
-      <div class="group">
-        <button id="backfill-tags" class="btn">Backfill tags</button>
+    <div class="stickybar settings-bar">
+      <div class="group space-between">
+        <h3 id="settings-title" class="h3">Settings</h3>
         <button id="settings-close" class="btn" aria-label="Close">✕</button>
       </div>
+      <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button class="stab" role="tab" data-stab="appearance">Appearance</button>
+        <button class="stab" role="tab" data-stab="ingredients">Ingredients</button>
+        <button class="stab" role="tab" data-stab="pantry">Pantry</button>
+        <button class="stab" role="tab" data-stab="history">History</button>
+        <button class="stab" role="tab" data-stab="data">Data</button>
+      </nav>
     </div>
 
-    <h4 class="h4">Theme</h4>
-    <div class="group">
-      <button class="btn" data-theme-set="auto">Auto (system)</button>
-      <button class="btn" data-theme-set="light">Light</button>
-      <button class="btn" data-theme-set="dark">Dark</button>
-    </div>
-
-    <hr class="sep" />
-
-    <h4 class="h4">Ingredient normaliser</h4>
-    <p class="muted small">Map ingredient aliases to a canonical name. The shopping list and tags use the canonical name.</p>
-    <div class="row">
-      <div>
-        <label for="norm-canonical">Canonical</label>
-        <input id="norm-canonical" type="text" placeholder="e.g. spring onion" />
+    <section class="spanel" data-spanel="appearance" role="tabpanel">
+      <h4 class="h4">Theme</h4>
+      <div class="group">
+        <button class="btn" data-theme-set="auto">Auto (system)</button>
+        <button class="btn" data-theme-set="light">Light</button>
+        <button class="btn" data-theme-set="dark">Dark</button>
       </div>
-      <div>
-        <label for="norm-aliases">Aliases (comma-separated)</label>
-        <input id="norm-aliases" type="text" placeholder="e.g. spring onions, scallion, scallions" />
+      <hr class="sep" />
+      <h4 class="h4">Text size</h4>
+      <p class="muted small">Bigger text everywhere — handy with the tablet propped up across the kitchen.</p>
+      <div class="group">
+        <button class="btn" data-text-size-set="normal">Normal</button>
+        <button class="btn" data-text-size-set="large">Large</button>
+        <button class="btn" data-text-size-set="xlarge">Extra large</button>
       </div>
-    </div>
-    <div class="group" style="margin-top:6px;">
-      <button id="norm-add" class="btn">Add</button>
-      <label class="group" style="gap:6px;">
-        <input id="norm-apply-existing" type="checkbox" checked />
-        <span class="muted">Also rename matches in existing meals</span>
-      </label>
-    </div>
-    <table id="norm-table" class="table mt8">
-      <thead><tr><th>Canonical</th><th>Aliases</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-
-    <hr class="sep" />
-
-    <h4 class="h4">Unit defaults</h4>
-    <p class="muted small">Pre-set default units per ingredient. Lock to prevent accidental changes.</p>
-    <div class="row">
-      <div>
-        <label for="unit-name">Ingredient</label>
-        <input id="unit-name" type="text" placeholder="e.g. milk" />
-      </div>
-      <div>
-        <label for="unit-type">Type</label>
-        <select id="unit-type">
-          <option value="grams">grams</option>
-          <option value="ml">ml</option>
-          <option value="tsp">tsp</option>
-          <option value="tbsp">tbsp</option>
-          <option value="cup">cup</option>
-          <option value="qty">quantity</option>
+      <hr class="sep" />
+      <h4 class="h4">Meals view</h4>
+      <div class="group">
+        <select id="pref-meal-view" aria-label="Meals view" style="width:auto">
+          <option value="">Automatic (grid on tablet, list on phone)</option>
+          <option value="grid">Grid</option>
+          <option value="list">List</option>
         </select>
       </div>
-    </div>
-    <div class="row">
-      <div>
-        <label for="unit-label">Unit label (optional, for quantity)</label>
-        <input id="unit-label" type="text" placeholder="e.g. clove, tin, pack" />
+      <h4 class="h4 mt8">Card size (grid)</h4>
+      <div class="group">
+        <button class="btn mini" data-density="compact">Compact</button>
+        <button class="btn mini" data-density="cozy">Cozy</button>
+        <button class="btn mini" data-density="comfy">Comfy</button>
       </div>
-      <div>
-        <label class="group" style="gap:8px; margin-top:24px;">
-          <input id="unit-locked" type="checkbox" />
-          <span>Locked</span>
+    </section>
+
+    <section class="spanel" data-spanel="ingredients" role="tabpanel" hidden>
+      <h4 class="h4">Ingredient normaliser</h4>
+      <p class="muted small">Map ingredient aliases to a canonical name. The shopping list and tags use the canonical name.</p>
+      <div class="row">
+        <div>
+          <label for="norm-canonical">Canonical</label>
+          <input id="norm-canonical" type="text" placeholder="e.g. spring onion" />
+        </div>
+        <div>
+          <label for="norm-aliases">Aliases (comma-separated)</label>
+          <input id="norm-aliases" type="text" placeholder="e.g. spring onions, scallion, scallions" />
+        </div>
+      </div>
+      <div class="group" style="margin-top:6px;">
+        <button id="norm-add" class="btn">Add</button>
+        <label class="group" style="gap:6px;">
+          <input id="norm-apply-existing" type="checkbox" checked />
+          <span class="muted">Also rename matches in existing meals</span>
         </label>
       </div>
-    </div>
-    <div class="group" style="margin-top:6px;">
-      <button id="unit-add" class="btn">Add / Update</button>
-    </div>
-    <table id="unit-table" class="table mt8">
-      <thead><tr><th>Ingredient</th><th>Type</th><th>Unit label</th><th>Locked</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
+      <table id="norm-table" class="table mt8">
+        <thead><tr><th>Canonical</th><th>Aliases</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+  
+      <hr class="sep" />
+      <h4 class="h4">Unit defaults</h4>
+      <p class="muted small">Pre-set default units per ingredient. Lock to prevent accidental changes.</p>
+      <div class="row">
+        <div>
+          <label for="unit-name">Ingredient</label>
+          <input id="unit-name" type="text" placeholder="e.g. milk" />
+        </div>
+        <div>
+          <label for="unit-type">Type</label>
+          <select id="unit-type">
+            <option value="grams">grams</option>
+            <option value="ml">ml</option>
+            <option value="tsp">tsp</option>
+            <option value="tbsp">tbsp</option>
+            <option value="cup">cup</option>
+            <option value="qty">quantity</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="unit-label">Unit label (optional, for quantity)</label>
+          <input id="unit-label" type="text" placeholder="e.g. clove, tin, pack" />
+        </div>
+        <div>
+          <label class="group" style="gap:8px; margin-top:24px;">
+            <input id="unit-locked" type="checkbox" />
+            <span>Locked</span>
+          </label>
+        </div>
+      </div>
+      <div class="group" style="margin-top:6px;">
+        <button id="unit-add" class="btn">Add / Update</button>
+      </div>
+      <table id="unit-table" class="table mt8">
+        <thead><tr><th>Ingredient</th><th>Type</th><th>Unit label</th><th>Locked</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+  
+      <hr class="sep" />
+      <h4 class="h4">Tidy ingredients</h4>
+      <p class="muted small">The shopping list already merges plurals (e.g. "cashew nut" and "cashew nuts"). This goes further and rewrites your saved meals: merges known spellings, makes names singular, fixes mixed units and updates unit defaults. Review first — nothing changes until you press Apply, and you can undo.</p>
+      <div class="group">
+        <button id="tidy-preview" class="btn">Review suggestions</button>
+        <button id="tidy-apply" class="btn primary" disabled>Apply ticked</button>
+      </div>
+      <div id="tidy-results" class="small mt8 tidy-results" hidden></div>
+  
+      <hr class="sep" />
+      <h4 class="h4">Tags from ingredients</h4>
+      <p class="muted small">Add each meal's ingredient names to its tags.</p>
+      <button id="backfill-tags" class="btn">Backfill tags</button>
+    </section>
 
-    <hr class="sep" />
+    <section class="spanel" data-spanel="pantry" role="tabpanel" hidden>
+      <h4 class="h4">Pantry staples</h4>
+      <p class="muted small">Items you always have. They're left out of Ocado, Share, TSV and Print, and listed under "Usually in the cupboard".</p>
+      <div id="pantry-list" class="token-list"></div>
+  
+    </section>
 
-    <h4 class="h4">Tidy ingredients</h4>
-    <p class="muted small">The shopping list already merges plurals (e.g. "cashew nut" and "cashew nuts"). This goes further and rewrites your saved meals: merges known spellings, makes names singular, fixes mixed units and updates unit defaults. Review first — nothing changes until you press Apply, and you can undo.</p>
-    <div class="group">
-      <button id="tidy-preview" class="btn">Review suggestions</button>
-      <button id="tidy-apply" class="btn primary" disabled>Apply ticked</button>
-    </div>
-    <div id="tidy-results" class="small mt8 tidy-results" hidden></div>
+    <section class="spanel" data-spanel="history" role="tabpanel" hidden>
+      <h4 class="h4">Meal history</h4>
+      <p class="muted small">How often each meal has been chosen for a shop (counts once per shop when you use Ocado, Share, Copy as TSV or Print; "Clear selection" starts a new shop), and how often it's actually been cooked and rated in cook mode.</p>
+      <div id="history-wrap"></div>
+  
+    </section>
 
-    <hr class="sep" />
-
-    <h4 class="h4">Pantry staples</h4>
-    <p class="muted small">Items you always have. They're left out of Ocado, Share, TSV and Print, and listed under "Usually in the cupboard".</p>
-    <div id="pantry-list" class="token-list"></div>
-
-    <hr class="sep" />
-
-    <h4 class="h4">Meal history</h4>
-    <p class="muted small">How often each meal has been chosen for a shop (counts once per shop when you use Ocado, Share, Copy as TSV or Print; "Clear selection" starts a new shop), and how often it's actually been cooked and rated in cook mode.</p>
-    <div id="history-wrap"></div>
-
-    <hr class="sep" />
-
-    <h4 class="h4">Data</h4>
-    <p class="muted small">Your meals live in this browser only. Export to back up or move to another device, then Import there.</p>
-    <div class="group">
-      <button type="button" id="export" class="btn">Export</button>
-      <label class="btn" for="import">Import
-        <input id="import" type="file" accept="application/json" hidden />
-      </label>
-      <button type="button" id="clear-all" class="btn danger">Clear all</button>
-    </div>
-
+    <section class="spanel" data-spanel="data" role="tabpanel" hidden>
+      <h4 class="h4">Backup</h4>
+      <p class="muted small">Your meals live in this browser only. Export to back up or move to another device, then Import there.</p>
+      <p id="backup-last" class="small"></p>
+      <div class="group">
+        <button type="button" id="export" class="btn primary">Export (back up)</button>
+        <label class="btn" for="import">Import
+          <input id="import" type="file" accept="application/json" hidden />
+        </label>
+        <button type="button" id="clear-all" class="btn danger">Clear all</button>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -555,14 +617,6 @@
       <span id="m-tag-active" class="muted small"></span>
     </div>
 
-    <hr class="sep" />
-
-    <h4 class="h4">Grid density</h4>
-    <div class="group">
-      <button class="btn mini" data-density="compact">Compact</button>
-      <button class="btn mini" data-density="cozy">Cozy</button>
-      <button class="btn mini" data-density="comfy">Comfy</button>
-    </div>
   </div>
 </div>
 
@@ -587,9 +641,9 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/app.js?v=13" defer></script>
-<script src="assets/cook.js?v=13" defer></script>
-<script src="assets/scan.js?v=13" defer></script>
-<script src="assets/pwa.js?v=13" defer></script>
+<script src="assets/app.js?v=14" defer></script>
+<script src="assets/cook.js?v=14" defer></script>
+<script src="assets/scan.js?v=14" defer></script>
+<script src="assets/pwa.js?v=14" defer></script>
 </body>
 </html>

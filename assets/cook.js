@@ -38,9 +38,9 @@
     return g >= 454 ? `${oneDp(g / 453.6)} lb` : `${oneDp(g / 28.35)} oz`;
   }
 
-  /* Amount text for one ingredient in the chosen units. */
-  function ingAmount(i, mode = state.prefs.cookUnits){
-    const v = Number(i.amount) || 0;
+  /* Amount text for one ingredient in the chosen units (factor 2 = double batch). */
+  function ingAmount(i, mode = state.prefs.cookUnits, factor = 1){
+    const v = (Number(i.amount) || 0) * factor;
     if (!v) return "";
     switch (i.type){
       case "grams": return mode === "us" ? usWeight(v) : `${formatNumber(v)} g`;
@@ -155,21 +155,27 @@
       wrap.innerHTML = `<div class="empty">Meals you shop for appear here, ready to cook.</div>`;
       return;
     }
-    wrap.innerHTML = items.map(({ m }) => {
+    wrap.innerHTML = items.map(({ q, m }) => {
       const steps = (m.steps || []).length;
       return `<div class="queue-card" data-id="${escapeHtml(m.id)}">
-        <img src="${escapeHtml(m.image?.src || placeholderSvg(m.title))}" alt="" loading="lazy" />
+        <img alt="" loading="lazy" />
         <div class="queue-body">
           <button class="queue-title" data-show="${escapeHtml(m.id)}">${escapeHtml(m.title)}</button>
           <div class="chips">
             ${typeof m.cookMins === "number" ? `<span class="chip">⏱ ${m.cookMins} min</span>` : ""}
             <span class="chip">${steps ? `🧾 ${plural(steps, "step")}` : "no steps yet"}</span>
+            ${q.x > 1 ? `<span class="chip chip-x2">×2 · leftovers</span>` : ""}
           </div>
         </div>
         <button class="btn primary" data-cook="${escapeHtml(m.id)}">▶ Cook</button>
         <button class="btn mini" data-dismiss="${escapeHtml(m.id)}" title="Remove from this week" aria-label="Remove ${escapeHtml(m.title)} from this week">✕</button>
       </div>`;
     }).join("");
+    // images set directly (large data URLs stay out of the HTML string); grid thumbnail if there is one
+    $$(".queue-card", wrap).forEach(card => {
+      const m = mealById(card.dataset.id);
+      card.querySelector("img").src = window.gridImageSrc ? gridImageSrc(m) : (m.image?.src || placeholderSvg(m.title));
+    });
     $$("[data-cook]", wrap).forEach(b => b.addEventListener("click", () => openGuided(b.dataset.cook)));
     $$("[data-show]", wrap).forEach(b => b.addEventListener("click", () => {
       $("#cook-meal").value = b.dataset.show; renderOverview();
@@ -277,7 +283,10 @@
   function openGuided(id){
     const meal = mealById(id);
     if (!meal) return;
-    guided = { id, page: 0, gathered: new Set(), rating: 0, note: "" };
+    // "Cook once, eat twice": a ×2 queue entry (or a doubled meal in the current shop)
+    const q = state.cookQueue.find(e => e.mealId === id);
+    const factor = q?.x || (state.selected.has(id) && state.doubled.has(id) ? 2 : 1);
+    guided = { id, page: 0, gathered: new Set(), rating: 0, note: "", factor };
     overlay.hidden = false;
     overlay.classList.add("open");   // counts as an open modal for lockBodyScroll
     lockBodyScroll(true);
@@ -302,7 +311,7 @@
     return `<ul class="co-checklist">${(meal.ingredients || []).map((i, idx) => `
       <li><label><input type="checkbox" data-gather="${idx}" ${guided.gathered.has(idx) ? "checked" : ""}/>
         <span class="co-ing-name">${escapeHtml(titleCase(i.name))}</span>
-        <span class="co-ing-amt">${escapeHtml(ingAmount(i))}</span></label></li>`).join("")}</ul>`;
+        <span class="co-ing-amt">${escapeHtml(ingAmount(i, undefined, guided.factor))}</span></label></li>`).join("")}</ul>`;
   }
 
   function renderGuided(){
@@ -314,7 +323,7 @@
 
     $("#co-title").textContent = meal.title;
     $("#co-progress-label").textContent =
-      p === 0 ? "Get ready" : p === total - 1 ? "Done" : `Step ${p} of ${steps.length}`;
+      (p === 0 ? "Get ready" : p === total - 1 ? "Done" : `Step ${p} of ${steps.length}`) + (guided.factor > 1 ? " · ×2 batch" : "");
     $("#co-progress-bar").style.width = `${Math.round((p / (total - 1)) * 100)}%`;
     $("#co-ings").innerHTML = `<h4 class="h4">Ingredients</h4>${ingredientChecklist(meal)}`;
 
@@ -323,6 +332,7 @@
       const temps = ovenTemps(steps);
       html = `
         <div class="co-kicker">Get ready</div>
+        ${guided.factor > 1 ? `<p class="co-double">×2 — double batch for leftovers. Ingredient amounts are doubled; the step text is as written.</p>` : ""}
         ${lastCookLine(meal.id)}
         ${temps.length ? `<p class="co-temps">🔥 Oven: ${temps.map(t => annotateStep(t)).join(" · ")}</p>` : ""}
         ${meal.notes ? `<p class="muted">📝 ${escapeHtml(meal.notes)}</p>` : ""}
@@ -350,7 +360,7 @@
       html = `
         <div class="co-kicker">Step ${p}</div>
         <p class="co-step">${annotateStep(text)}</p>
-        ${used.length ? `<div class="co-chips">${used.map(i => `<span class="chip co-chip">${escapeHtml(titleCase(i.name))}${ingAmount(i) ? ` · <b>${escapeHtml(ingAmount(i))}</b>` : ""}</span>`).join("")}</div>` : ""}
+        ${used.length ? `<div class="co-chips">${used.map(i => { const a = ingAmount(i, undefined, guided.factor); return `<span class="chip co-chip">${escapeHtml(titleCase(i.name))}${a ? ` · <b>${escapeHtml(a)}</b>` : ""}</span>`; }).join("")}</div>` : ""}
         ${timers.length ? `<div class="co-chips">${timers.map(t => `<button class="btn co-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}">⏱ Start ${escapeHtml(t.label)}</button>`).join("")}</div>` : ""}`;
     }
     const page = $("#co-page");
@@ -514,6 +524,7 @@
   window.populateCookSelect = populateCookSelect;
   window.renderCookTab = renderCookTab;
   window.openGuided = openGuided;
+  window.scanStepsFor = scanStepsFor;
   // Test hooks (pure helpers)
   window.cookHelpers = { parseDurations, ingredientsInStep, ingAmount, annotateStep, ovenTemps };
 
