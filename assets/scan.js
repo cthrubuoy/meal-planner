@@ -33,7 +33,7 @@
   function closeScan() {
     scanModal.classList.remove("open");
     scanModal.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("modal-open");
+    lockBodyScroll(false);   // stays locked if the Add sheet is still open
     showSection(null);
     scanLastFile = null;
   }
@@ -166,14 +166,8 @@
     }
 
     rmBtn.addEventListener("click", () => row.remove());
-    typeEl.addEventListener("change", () => {
-      if (typeEl.value === "qty") {
-        amtEl.step = "1";
-        if (amtEl.value) amtEl.value = String(Math.max(0, Math.round(parseFloat(amtEl.value) || 0)));
-      } else {
-        amtEl.step = "any";
-      }
-    });
+    typeEl.addEventListener("change", () => syncIngredientRowType(row));
+    syncIngredientRowType(row);
 
     scanIngContainer.appendChild(row);
   }
@@ -215,7 +209,7 @@
       if (!isFinite(amount) || amount < 0) return;
       const type = t.value;
       if (type === "qty") amount = Math.max(0, Math.round(amount));
-      const canon = normaliserLookup(name) || name.toLowerCase();
+      const canon = canonicalName(name);
       let unit = singulariseUnitLabel(u.value.trim());
       if (type === "qty" && !unit) unit = "piece";
       ingredients.push({ name: canon, type, amount, unit });
@@ -253,7 +247,8 @@
 
     status(`✓ ${meal.title} added from scan`);
     closeScan();
-    if (isMobile()) setView("meals");
+    closeAddSheet();
+    setView("meals");
   });
 
   /* ---- Esc closes modal ---- */

@@ -14,9 +14,20 @@ const IDB_KEYS = {
   meals: "meals",
   normaliser: "normaliser",
   unitDefaults: "unitDefaults",
-  prefs: "prefs"
+  prefs: "prefs",
+  pantry: "pantry",     // ingredient keys you always have
+  history: "history",   // { mealId: { count, dates[] } } — times chosen for a shop
+  session: "session"    // current shop: selected meals, ticks (not exported)
 };
-const EXPORT_SCHEMA_VERSION = 10;
+const EXPORT_SCHEMA_VERSION = 11;
+const DEFAULT_PREFS = {
+  theme: "auto",
+  gridMin: "cozy",
+  includeIngredientTags: false,
+  tagStripMax: 12,
+  mealSort: "az"
+};
+const HISTORY_MAX_DATES = 50;
 const NO_TAGS = "__NO_TAGS__";
 const COOK_LAST_KEY = "cook-last-meal-id-v10";
 
@@ -33,15 +44,17 @@ const state = {
 
   normaliser: [],
   unitDefaults: {},
-  prefs: {
-    theme: "auto",
-    gridMin: "cozy",
-    includeIngredientTags: false,
-    tagStripMax: 12
-  },
+  prefs: { ...DEFAULT_PREFS },
+
+  pantry: new Set(),        // ingredient keys
+  history: {},
+  haveIt: new Set(),        // shopping rows ticked as "have it" (row keys)
+  pantryUse: new Set(),     // staples pulled back into the list for this shop
+  countedIds: new Set(),    // meals already counted in history for this shop
 
   timeFilter: { min: 0, max: 120 },
-  view: "meals"
+  view: "meals",            // phone: the one visible view
+  leftView: "meals"         // split view: which tab the left pane shows
 };
 
 /* ============== tiny helpers ============== */
@@ -58,17 +71,47 @@ function titleCase(s){
   return String(s ?? "").toLowerCase().replace(/(^|\s|[-_])([a-z])/g, (_,p1,p2) => p1 + p2.toUpperCase());
 }
 function normaliseRaw(s){ return String(s ?? "").trim().toLowerCase(); }
+/* Legacy key — only used to find unit defaults saved by older builds. */
 function normaliseKey(s){
   return String(s ?? "").trim().toLowerCase()
     .replace(/[-_]/g," ")
     .replace(/\s+/g," ")
     .replace(/[^a-z0-9\s]/g,"");
 }
-function singularise(s){
-  if (/ies$/.test(s)) return s.replace(/ies$/, "y");
-  if (/ses$/.test(s)) return s.replace(/es$/, "");
-  if (/s$/.test(s))   return s.replace(/s$/, "");
-  return s;
+
+/* Singularise one English word. Conservative: words ending -ss/-us/-is are
+   left alone (couscous, lemongrass, hummus), as are known non-plurals. */
+const SINGULAR_IRREGULAR = { leaves:"leaf", loaves:"loaf", halves:"half", molasses:"molasses" };
+function singulariseWord(w){
+  if (SINGULAR_IRREGULAR[w]) return SINGULAR_IRREGULAR[w];
+  if (w.length <= 3 || !w.endsWith("s")) return w;
+  if (/(ss|us|is)$/.test(w)) return w;
+  if (/ies$/.test(w) && w.length > 4) return w.slice(0, -3) + "y";
+  if (/oes$/.test(w)) return w.slice(0, -2);
+  if (/(ch|sh|x|z)es$/.test(w)) return w.slice(0, -2);
+  return w.slice(0, -1);
+}
+
+/* Matching key for an ingredient (or tag) name: accents stripped, punctuation
+   dropped, last word singularised. "Cashew Nuts" and "cashew nut" share a key,
+   as do "tomato purée" / "tomato puree" and "Henderson's" / "hendersons". */
+function ingredientKey(s){
+  const base = String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/[-_]/g, " ")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!base) return "";
+  const words = base.split(" ");
+  words[words.length - 1] = singulariseWord(words[words.length - 1]);
+  return words.join(" ");
+}
+
+/* Singular form of a stored name, keeping its punctuation and accents. */
+function singularName(s){
+  const raw = normaliseRaw(s);
+  const m = raw.match(/^(.*?)([a-z]+)$/);
+  return m ? m[1] + singulariseWord(m[2]) : raw;
 }
 
 /* Singularise a unit *label* (like "cloves", "tins", "pieces").
@@ -176,72 +219,143 @@ function normaliseUnitLabel(s){
   if (!raw) return "";
   if (UNIT_LABEL_ALIASES[raw]) return UNIT_LABEL_ALIASES[raw];
   // generic plural -> singular
-  const sing = singularise(raw);
+  const sing = singulariseWord(raw);
   return UNIT_LABEL_ALIASES[sing] || sing;
 }
 
-/* Walk all meals, normalise ingredient names + unit labels, and return a
-   structured report of what changed. Used by the Settings "Clean up" button. */
-function planIngredientCleanup(){
-  const changes = [];
-  for (const m of state.meals){
-    for (const ing of (m.ingredients || [])){
-      const oldName = ing.name || "";
-      const oldUnit = ing.unit || "";
-      const oldType = ing.type;
+/* ============== Tidy ingredients (Settings) ==============
+   An opt-in rewrite of stored data. planTidy() lists suggested changes;
+   applyTidy() applies the ones ticked and returns a snapshot for Undo.
+   The shopping list already merges plurals without any of this. */
+const SUGGESTED_MERGES = [
+  ["bulgar wheat", "bulgur wheat"],
+  ["tomato purée", "tomato paste"],
+  ["garlic clove", "garlic"],
+  ["fresh root ginger", "ginger"],
+  ["mozzarella cheese", "mozzarella"],
+  ["parmesan cheese", "parmesan"],
+  ["baby leaf spinach", "baby spinach"],
+  ["chicken breast fillet", "chicken breast"],
+  ["lemongrass stalk", "lemongrass"]
+];
+const SUGGESTED_UNIT_FIXES = [
+  { id:"garlic-clove", match: k => k === "garlic", from:"piece", to:"clove",
+    note:"a “piece” might be a whole bulb — check before applying" },
+  { id:"stock-cube", match: k => k.endsWith("stock cube"), from:"cube", to:"piece" }
+];
 
-      const newName = normaliserLookup(oldName) || normaliseRaw(oldName);
-      let newUnit = oldUnit;
-      let newType = oldType;
+function planTidy(){
+  const uses = new Map();
+  state.meals.forEach(m => (m.ingredients || []).forEach(i => uses.set(i.name, (uses.get(i.name) || 0) + 1)));
+  const names = Array.from(uses.keys()).sort();
+  const items = [];
 
-      // Singularise unit labels for qty-typed ingredients
-      if (oldType === "qty" && oldUnit){
-        newUnit = normaliseUnitLabel(oldUnit);
-      }
-
-      // Special case: type=qty with no unit label is meaningless — promote to "piece"
-      if (oldType === "qty" && !oldUnit){
-        newUnit = "piece";
-      }
-
-      if (newName !== oldName || newUnit !== oldUnit || newType !== oldType){
-        changes.push({
-          mealId: m.id,
-          mealTitle: m.title,
-          oldName, newName,
-          oldUnit, newUnit,
-          oldType, newType
-        });
-      }
-    }
+  // 1. Synonym merges — only those whose alias appears in your meals
+  for (const [alias, canonical] of SUGGESTED_MERGES){
+    const ak = ingredientKey(alias);
+    if (ak === ingredientKey(canonical)) continue;
+    const hits = names.filter(n => ingredientKey(n) === ak);
+    if (!hits.length) continue;
+    items.push({
+      group:"merge", id:`merge:${ak}`, checked:true,
+      label:`${hits.join(" / ")} → ${canonical}`,
+      uses: hits.reduce((s, h) => s + uses.get(h), 0),
+      aliases: hits, canonical
+    });
   }
-  return changes;
+
+  // 2. Singular names. Ticked when both forms are in use (real duplicates);
+  //    otherwise listed unticked — purely cosmetic.
+  for (const n of names){
+    const to = singularName(n);
+    if (to === n) continue;
+    items.push({
+      group:"singular", id:`sing:${n}`, checked: names.some(o => o !== n && ingredientKey(o) === ingredientKey(n)),
+      label:`${n} → ${to}`, uses: uses.get(n), from:n, to
+    });
+  }
+
+  // 3. Unit fixes for known mixed units
+  for (const fix of SUGGESTED_UNIT_FIXES){
+    const hit = new Map();   // ingredient name -> uses
+    state.meals.forEach(m => (m.ingredients || []).forEach(i => {
+      if (i.type !== "qty" || normaliseUnitLabel(i.unit) !== fix.from) return;
+      if (!fix.match(ingredientKey(canonicalName(i.name)))) return;
+      hit.set(i.name, (hit.get(i.name) || 0) + 1);
+    }));
+    if (!hit.size) continue;
+    items.push({
+      group:"units", id:`unit:${fix.id}`, checked:false,
+      label:`${Array.from(hit.keys()).join(" / ")}: ${fix.from} → ${fix.to}`,
+      note: fix.note, uses: Array.from(hit.values()).reduce((a, b) => a + b, 0), fix
+    });
+  }
+
+  // 4. Unit labels: plural → singular, and quantity with no label → "piece"
+  const labelFix = new Map();
+  state.meals.forEach(m => (m.ingredients || []).forEach(i => {
+    if (i.type !== "qty") return;
+    const to = i.unit ? singulariseUnitLabel(i.unit) : "piece";
+    if (to !== (i.unit || "")) labelFix.set(`${i.unit || "(none)"} → ${to}`, (labelFix.get(`${i.unit || "(none)"} → ${to}`) || 0) + 1);
+  }));
+  for (const [label, n] of labelFix){
+    items.push({ group:"units", id:`label:${label}`, checked:true, label:`unit label ${label}`, uses:n, labelFix:true });
+  }
+
+  // 5. Unit defaults saved under old (plural / punctuated) keys
+  const rekey = Object.keys(state.unitDefaults).filter(k => ingredientKey(canonicalName(k)) !== k);
+  if (rekey.length){
+    items.push({
+      group:"defaults", id:"rekey", checked:true,
+      label:`Update ${rekey.length} unit default${rekey.length === 1 ? "" : "s"} to the new matching names (e.g. ${rekey.slice(0, 3).join(", ")})`,
+      uses: rekey.length, rekey:true
+    });
+  }
+  return items;
 }
-function applyIngredientCleanup(plan){
-  const byMeal = new Map();
-  for (const c of plan){
-    if (!byMeal.has(c.mealId)) byMeal.set(c.mealId, []);
-    byMeal.get(c.mealId).push(c);
+
+function applyTidy(items){
+  const snapshot = {
+    meals: new Map(state.meals.map(m => [m.id, JSON.stringify({ ingredients: m.ingredients, tags: m.tags })])),
+    normaliser: JSON.stringify(state.normaliser),
+    unitDefaults: JSON.stringify(state.unitDefaults)
+  };
+  const eachIng = fn => state.meals.forEach(m => (m.ingredients || []).forEach(i => fn(i, m)));
+
+  const merges = items.filter(x => x.group === "merge");
+  merges.forEach(x => addNormaliserAliases(x.canonical, x.aliases));
+  if (merges.length) applyNormaliserAcrossMeals();
+
+  const sing = new Map(items.filter(x => x.group === "singular").map(x => [x.from, x.to]));
+  if (sing.size) eachIng(i => { if (sing.has(i.name)) i.name = sing.get(i.name); });
+
+  items.filter(x => x.fix).forEach(({ fix }) => eachIng(i => {
+    if (i.type === "qty" && normaliseUnitLabel(i.unit) === fix.from && fix.match(ingredientKey(canonicalName(i.name)))) i.unit = fix.to;
+  }));
+
+  if (items.some(x => x.labelFix)){
+    eachIng(i => { if (i.type === "qty") i.unit = i.unit ? singulariseUnitLabel(i.unit) : "piece"; });
   }
-  let mealsTouched = 0;
-  for (const m of state.meals){
-    const ch = byMeal.get(m.id);
-    if (!ch) continue;
-    let changed = false;
-    for (const c of ch){
-      // Find the matching ingredient (best-effort by old triplet)
-      const ing = (m.ingredients || []).find(i =>
-        i.name === c.oldName && i.unit === c.oldUnit && i.type === c.oldType
-      );
-      if (!ing) continue;
-      ing.name = c.newName;
-      ing.unit = c.newUnit;
-      ing.type = c.newType;
-      changed = true;
+
+  if (items.some(x => x.rekey)){
+    const next = {};
+    for (const [k, def] of Object.entries(state.unitDefaults)){
+      const nk = ingredientKey(canonicalName(k));
+      if (!next[nk] || k === nk) next[nk] = def;
     }
-    if (changed) mealsTouched++;
+    state.unitDefaults = next;
   }
-  return mealsTouched;
+  return snapshot;
+}
+function restoreTidy(snapshot){
+  for (const m of state.meals){
+    const s = snapshot.meals.get(m.id);
+    if (!s) continue;
+    const { ingredients, tags } = JSON.parse(s);
+    m.ingredients = ingredients; m.tags = tags;
+  }
+  state.normaliser = JSON.parse(snapshot.normaliser);
+  state.unitDefaults = JSON.parse(snapshot.unitDefaults);
 }
 
 /* ============== status / toast ============== */
@@ -259,9 +373,9 @@ function status(msg, ms = 2400){
   }
 }
 
-/* Toast with an Undo action. The undo button stays for `ms` ms (default 6000)
-   then disappears. Calling status() again will replace it. */
-function showUndoToast(msg, onUndo, ms = 6000){
+/* Toast with one action button (Undo, Open Ocado…). The button stays for
+   `ms` ms then disappears. Calling status() again will replace it. */
+function showActionToast(msg, label, onAction, ms = 6000){
   const toast = $("#toast");
   if (!toast) return;
   toast.innerHTML = "";
@@ -270,16 +384,19 @@ function showUndoToast(msg, onUndo, ms = 6000){
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "toast-undo";
-  btn.textContent = "Undo";
+  btn.textContent = label;
   btn.addEventListener("click", async () => {
     clearTimeout(toastTimer);
     toast.classList.remove("show");
-    try { await onUndo(); } catch (e) { console.error("Undo failed:", e); }
+    try { await onAction(); } catch (e) { console.error(`${label} failed:`, e); }
   });
   toast.append(span, btn);
   toast.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove("show"), ms);
+}
+function showUndoToast(msg, onUndo, ms = 6000){
+  showActionToast(msg, "Undo", onUndo, ms);
 }
 
 /* ============== IndexedDB ============== */
@@ -314,15 +431,31 @@ async function saveAll(){
     idbSet(IDB_KEYS.meals, state.meals),
     idbSet(IDB_KEYS.normaliser, state.normaliser),
     idbSet(IDB_KEYS.unitDefaults, state.unitDefaults),
-    idbSet(IDB_KEYS.prefs, state.prefs)
+    idbSet(IDB_KEYS.prefs, state.prefs),
+    idbSet(IDB_KEYS.pantry, Array.from(state.pantry)),
+    idbSet(IDB_KEYS.history, state.history),
+    saveSession()
   ]);
 }
+/* Small, frequent writes: the current shop (selection + ticks). Keeps the
+   shopping list alive if Android kills the app mid-shop. */
+function saveSession(){
+  return idbSet(IDB_KEYS.session, {
+    selected: Array.from(state.selected),
+    haveIt: Array.from(state.haveIt),
+    pantryUse: Array.from(state.pantryUse),
+    countedIds: Array.from(state.countedIds)
+  }).catch(err => console.warn("Session save failed:", err));
+}
 async function loadAll(){
-  const [meals, normaliser, unitDefaults, prefs] = await Promise.all([
+  const [meals, normaliser, unitDefaults, prefs, pantry, history, session] = await Promise.all([
     idbGet(IDB_KEYS.meals),
     idbGet(IDB_KEYS.normaliser),
     idbGet(IDB_KEYS.unitDefaults),
-    idbGet(IDB_KEYS.prefs)
+    idbGet(IDB_KEYS.prefs),
+    idbGet(IDB_KEYS.pantry),
+    idbGet(IDB_KEYS.history),
+    idbGet(IDB_KEYS.session)
   ]);
   if (Array.isArray(meals)){
     state.meals = meals.map(m => ({
@@ -332,9 +465,18 @@ async function loadAll(){
   }
   state.normaliser   = Array.isArray(normaliser) ? normaliser : [];
   state.unitDefaults = (unitDefaults && typeof unitDefaults === "object") ? unitDefaults : {};
-  state.prefs        = (prefs && typeof prefs === "object")
-    ? { theme:"auto", gridMin:"cozy", includeIngredientTags:false, tagStripMax:12, ...prefs }
-    : { theme:"auto", gridMin:"cozy", includeIngredientTags:false, tagStripMax:12 };
+  state.prefs        = { ...DEFAULT_PREFS, ...((prefs && typeof prefs === "object") ? prefs : {}) };
+  state.pantry       = new Set(Array.isArray(pantry) ? pantry : []);
+  state.history      = (history && typeof history === "object") ? history : {};
+
+  const ids = new Set(state.meals.map(m => m.id));
+  for (const id of Object.keys(state.history)) if (!ids.has(id)) delete state.history[id];
+
+  const s = (session && typeof session === "object") ? session : {};
+  state.selected   = new Set((s.selected || []).filter(id => ids.has(id)));
+  state.haveIt     = new Set(s.haveIt || []);
+  state.pantryUse  = new Set(s.pantryUse || []);
+  state.countedIds = new Set((s.countedIds || []).filter(id => ids.has(id)));
 }
 
 /* ============== Theme ============== */
@@ -364,62 +506,57 @@ window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change"
 });
 
 /* ============== View switching ============== */
-const VIEWS = ["meals", "shopping", "add", "cook"];
-function isMobile(){ return window.matchMedia("(max-width:720px)").matches; }
+/* Below SPLIT_MIN_PX: phone layout, one view at a time + bottom nav.
+   At or above: split view — Meals/Cook on the left, Shopping list on the right.
+   Keep in sync with the 839px / 840px media queries in styles.css. */
+const SPLIT_MIN_PX = 840;
+const VIEWS = ["meals", "shopping", "cook"];
+function isMobile(){ return window.matchMedia(`(max-width:${SPLIT_MIN_PX - 1}px)`).matches; }
 
 function setView(view){
+  if (view === "add"){ openAddSheet(); return; }
   if (!VIEWS.includes(view)) view = "meals";
   state.view = view;
+  if (view !== "shopping") state.leftView = view;
 
-  if (isMobile()){
-    VIEWS.forEach(v => {
-      const el = document.getElementById(`view-${v}`);
-      if (el) el.classList.toggle("active", v === view);
-    });
-    const addPanel = $("#add-panel");
-    const rightPanel = $("#right-panel");
-    if (view === "add"){
-      addPanel.style.display = "";
-      rightPanel.style.display = "none";
-      addPanel.classList.add("open");
-      // Scroll to top of add panel & focus title
-      window.scrollTo({ top:0, behavior:"smooth" });
-      setTimeout(() => $("#title")?.focus(), 200);
-    } else {
-      addPanel.style.display = "none";
-      rightPanel.style.display = "";
-    }
-  } else {
-    $("#add-panel").style.display = "";
-    $("#right-panel").style.display = "";
-    VIEWS.forEach(v => {
-      const el = document.getElementById(`view-${v}`);
-      if (el){ el.classList.add("active"); el.style.display = ""; }
-    });
-  }
-
+  // body[data-view] drives which panel shows on phones (see styles.css)
+  document.body.dataset.view = view;
+  $("#view-meals")?.classList.toggle("active", state.leftView === "meals");
+  $("#view-cook")?.classList.toggle("active", state.leftView === "cook");
+  $$("#pane-tabs .tab").forEach(b => b.classList.toggle("active", b.dataset.view === state.leftView));
   $$("#bottom-nav .navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === view));
-  if (view === "cook") populateCookSelect();
+  if (state.leftView === "cook") populateCookSelect();
 }
-$$("#bottom-nav .navbtn").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
-window.addEventListener("resize", () => {
-  // re-evaluate view layout when crossing breakpoint
-  setView(state.view);
-});
+$$("#bottom-nav .navbtn, #pane-tabs .tab").forEach(b => b.addEventListener("click", () => {
+  setView(b.dataset.view);
+  if (isMobile()) window.scrollTo({ top:0 });
+}));
 
-/* ============== Mobile collapsible add panel ============== */
-function setupMobileAddPanel(){
-  const panel = $("#add-panel");
-  const header = $("#add-header");
-  if (!panel || !header) return;
-  if (isMobile()){
-    panel.classList.add("collapsible");
-    panel.classList.add("open");
-    header.addEventListener("click", () => panel.classList.toggle("open"));
-  } else {
-    panel.classList.remove("collapsible");
-  }
+/* Header height feeds the sticky shopping pane's offset. */
+function syncHeaderHeight(){
+  const h = $("header")?.offsetHeight || 0;
+  document.documentElement.style.setProperty("--header-h", `${h}px`);
 }
+window.addEventListener("resize", syncHeaderHeight);
+
+/* ============== Add-meal sheet ============== */
+const addModal = $("#add-modal");
+function openAddSheet(){
+  addModal.classList.add("open");
+  addModal.setAttribute("aria-hidden", "false");
+  lockBodyScroll(true);
+  $("#add-open")?.classList.add("active");
+  $$("#bottom-nav .navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === "add"));
+  setTimeout(() => $("#title")?.focus(), 60);
+}
+function closeAddSheet(){
+  addModal.classList.remove("open");
+  addModal.setAttribute("aria-hidden", "true");
+  lockBodyScroll(false);
+  $$("#bottom-nav .navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === state.view));
+}
+$("#add-open")?.addEventListener("click", openAddSheet);
+$("#add-close")?.addEventListener("click", closeAddSheet);
 
 /* ============== Suggestions / datalists ============== */
 function updateIngredientSuggestions(){
@@ -525,18 +662,25 @@ function placeholderSvg(text){
 
 /* ============== Normaliser lookup ============== */
 function normaliserLookup(name){
-  const key = normaliseKey(name);
+  const key = ingredientKey(name);
   if (!key) return null;
-  const singular = singularise(key);
   for (const e of state.normaliser){
-    const ck = normaliseKey(e.canonical);
-    if (key === ck || singular === ck) return normaliseRaw(e.canonical);
+    if (ingredientKey(e.canonical) === key) return normaliseRaw(e.canonical);
     for (const a of (e.aliases || [])){
-      const ak = normaliseKey(a);
-      if (key === ak || singular === ak) return normaliseRaw(e.canonical);
+      if (ingredientKey(a) === key) return normaliseRaw(e.canonical);
     }
   }
   return null;
+}
+/* Canonical name for an ingredient: normaliser match, else the name as typed. */
+function canonicalName(name){
+  return normaliserLookup(name) || normaliseRaw(name);
+}
+/* Unit default for an ingredient name. Tries the current key, then the
+   pre-v12 key (plural, punctuation-sensitive) so older entries still apply. */
+function unitDefaultFor(name){
+  const key = ingredientKey(canonicalName(name));
+  return state.unitDefaults[key] || state.unitDefaults[normaliseKey(name)] || null;
 }
 function ingredientNamesToTags(ings){
   const out = new Set();
@@ -584,32 +728,6 @@ function applyNormaliserAcrossMeals(){
   return changes;
 }
 
-/* Walk all meals, dry-run a singularise + qty-needs-unit cleanup.
-   Returns { changes: [{mealTitle, before, after}, ...], totalChanges }.
-   Pass apply=true to actually mutate state.meals. */
-function cleanupIngredientUnits(apply = false){
-  const changes = [];
-  for (const m of state.meals){
-    for (let i = 0; i < (m.ingredients || []).length; i++){
-      const ing = m.ingredients[i];
-      const oldUnit = ing.unit || "";
-      let newUnit = singulariseUnitLabel(oldUnit);
-      if (ing.type === "qty" && !newUnit) newUnit = "piece";
-      if (newUnit !== oldUnit){
-        changes.push({
-          mealTitle: m.title,
-          ingredient: ing.name,
-          type: ing.type,
-          before: oldUnit || "(empty)",
-          after: newUnit
-        });
-        if (apply) ing.unit = newUnit;
-      }
-    }
-  }
-  return { changes, totalChanges: changes.length };
-}
-
 /* ============== Token (tag) editor ============== */
 function tokenEditor(container, input, initial = []){
   const tokens = new Set((initial || []).map(t => String(t).toLowerCase()));
@@ -654,27 +772,35 @@ function tokenEditor(container, input, initial = []){
 }
 
 /* ============== Ingredient row ============== */
-function maybeApplyUnitDefault(row){
-  const [nameEl, typeEl, amtEl, unitEl] = row.children;
-  const key = normaliseKey(nameEl.value);
-  if (!key) return;
-  const def = state.unitDefaults[key];
-  if (def){
-    typeEl.value = def.type;
-    if (def.unitLabel) unitEl.value = def.unitLabel;
-  }
-  const locked = !!def?.locked;
-  typeEl.disabled = locked;
-  unitEl.disabled = locked && def?.type === "qty";
-  typeEl.title = locked ? "Locked by unit defaults (Settings)" : "";
-  unitEl.title = typeEl.title;
-
-  if (typeEl.value === "qty"){
+/* The unit label only means something for "quantity" rows; hide it otherwise. */
+function syncIngredientRowType(row){
+  const [, typeEl, amtEl] = row.children;
+  const isQty = typeEl.value === "qty";
+  row.classList.toggle("is-qty", isQty);
+  if (isQty){
     amtEl.step = "1";
     if (amtEl.value) amtEl.value = String(Math.max(0, Math.round(parseFloat(amtEl.value) || 0)));
   } else {
     amtEl.step = "any";
   }
+}
+
+/* existing=true when the row is loading a saved ingredient: then only a
+   *locked* default may change it, so opening Edit never rewrites saved units. */
+function maybeApplyUnitDefault(row, existing = false){
+  const [nameEl, typeEl, , unitEl] = row.children;
+  if (!ingredientKey(nameEl.value)) return;
+  const def = unitDefaultFor(nameEl.value);
+  const locked = !!def?.locked;
+  if (def && (!existing || locked)){
+    typeEl.value = def.type;
+    if (def.unitLabel) unitEl.value = def.unitLabel;
+  }
+  typeEl.disabled = locked;
+  unitEl.disabled = locked && def?.type === "qty";
+  typeEl.title = locked ? "Locked by unit defaults (Settings)" : "";
+  unitEl.title = typeEl.title;
+  syncIngredientRowType(row);
 }
 
 function addIngredientRow(container, pref = {}, opts = {}){
@@ -685,18 +811,9 @@ function addIngredientRow(container, pref = {}, opts = {}){
   typeEl.value = pref.type || "grams";
   amtEl.value  = (pref.amount ?? "");
   unitEl.value = pref.unit || "";
+  syncIngredientRowType(row);
 
-  const enforce = () => {
-    if (typeEl.value === "qty"){
-      amtEl.step = "1";
-      if (amtEl.value) amtEl.value = String(Math.max(0, Math.round(parseFloat(amtEl.value) || 0)));
-    } else {
-      amtEl.step = "any";
-    }
-  };
-  enforce();
-
-  typeEl.addEventListener("change", enforce);
+  typeEl.addEventListener("change", () => syncIngredientRowType(row));
   rmBtn.addEventListener("click", () => row.remove());
   nameEl.addEventListener("change", () => maybeApplyUnitDefault(row));
 
@@ -710,7 +827,7 @@ function addIngredientRow(container, pref = {}, opts = {}){
       setTimeout(() => nameEl.classList.remove("flash-input"), 1300);
     }, 30);
   }
-  if (nameEl.value) maybeApplyUnitDefault(row);
+  if (nameEl.value) maybeApplyUnitDefault(row, true);
   return row;
 }
 
@@ -769,14 +886,18 @@ function addStepFromInput(inputEl, steps, onChange){
 
 /* ============== Modal helpers ============== */
 function lockBodyScroll(locked){
-  document.body.classList.toggle("modal-open", !!locked);
+  // Stay locked while any modal is still open (e.g. Scan over Add)
+  document.body.classList.toggle("modal-open", !!locked || !!$(".modal.open"));
 }
 
-/* ============== Selection count ============== */
-function updateSelectedCount(){
-  const n = state.selected.size;
-  const el = $("#selected-count");
-  if (el) el.textContent = n ? `${n} meal${n === 1 ? "" : "s"} selected` : "No meals selected";
+
+/* Cook time in minutes, or null when blank/invalid. Same limit as Scan. */
+const MAX_COOK_MINS = 600;
+function parseCookMins(raw){
+  raw = String(raw ?? "").trim();
+  if (raw === "") return null;
+  const n = Number(raw);
+  return isFinite(n) ? Math.max(0, Math.min(MAX_COOK_MINS, n)) : null;
 }
 
 /* =====================================================
@@ -810,10 +931,7 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
       catch(err){ console.warn(err); imageDataUrl = null; }
     }
 
-    const cookRaw = ($("#cook-mins").value || "").trim();
-    let cookMins = cookRaw === "" ? null : Number(cookRaw);
-    if (cookMins !== null && !isFinite(cookMins)) cookMins = null;
-    if (cookMins !== null) cookMins = Math.max(0, Math.min(120, cookMins));
+    const cookMins = parseCookMins($("#cook-mins").value);
 
     const ingredients = [];
     $$(".ingredient-row", ingContainer).forEach(row => {
@@ -864,7 +982,8 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
     refreshCreateSteps();
 
     status(`✓ ${meal.title} added`);
-    if (isMobile()) setView("meals");
+    closeAddSheet();
+    setView("meals");
   } catch(err){
     console.error(err);
     alert("Something went wrong while saving. See console for details.");
@@ -964,11 +1083,7 @@ $("#edit-form")?.addEventListener("submit", async (e) => {
     if (data) meal.image = { type:"data", src:data };
   }
 
-  const editCookRaw = ($("#edit-cook-mins").value || "").trim();
-  let cook = editCookRaw === "" ? null : Number(editCookRaw);
-  if (cook !== null && !isFinite(cook)) cook = null;
-  if (cook !== null) cook = Math.max(0, Math.min(120, cook));
-  meal.cookMins = cook;
+  meal.cookMins = parseCookMins($("#edit-cook-mins").value);
 
   const ing = [];
   $$(".ingredient-row", editIng).forEach(row => {
@@ -1004,28 +1119,48 @@ window.addEventListener("keydown", (e) => {
   if ($("#filters-modal")?.classList.contains("open")) closeFilters();
   if ($("#settings-modal")?.classList.contains("open")) closeSettings();
   if (editModal?.classList.contains("open")) closeEdit();
+  if (addModal?.classList.contains("open") && !$("#scan-modal")?.classList.contains("open")) closeAddSheet();
   if (popEl) closePopover();
 });
 
 /* =====================================================
    TAG BAR + POPOVER
+   Tags are identified by ingredientKey(), so "tomato" and "tomatoes" are one
+   tag; the label shown is the most common spelling.
    ===================================================== */
+function mostCommon(countMap){
+  let best = "", bestN = -1;
+  for (const [s, n] of countMap){
+    if (n > bestN || (n === bestN && s.length < best.length)){ best = s; bestN = n; }
+  }
+  return best;
+}
 function computeTagStats(){
-  const counts = new Map();
-  const ingNames = new Set();
-  state.meals.forEach(m => (m.ingredients || []).forEach(i => ingNames.add(normaliseRaw(i.name))));
-  state.meals.forEach(m => (m.tags || []).forEach(t => {
-    const k = String(t).toLowerCase();
-    counts.set(k, (counts.get(k) || 0) + 1);
-  }));
+  const counts = new Map();    // key -> meals
+  const spellings = new Map(); // key -> Map(spelling -> uses)
+  const ingKeys = new Set();
+  state.meals.forEach(m => (m.ingredients || []).forEach(i => ingKeys.add(ingredientKey(i.name))));
+  state.meals.forEach(m => {
+    const seen = new Set();
+    (m.tags || []).forEach(t => {
+      const k = ingredientKey(t);
+      if (!k) return;
+      const sp = spellings.get(k) || new Map();
+      const label = String(t).toLowerCase();
+      sp.set(label, (sp.get(label) || 0) + 1);
+      spellings.set(k, sp);
+      if (!seen.has(k)){ seen.add(k); counts.set(k, (counts.get(k) || 0) + 1); }
+    });
+  });
   const rows = Array.from(counts.entries())
-    .map(([tag, count]) => ({ tag, count, isIngredient: ingNames.has(tag) }))
-    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+    .map(([tag, count]) => ({ tag, label: mostCommon(spellings.get(tag)), count, isIngredient: ingKeys.has(tag) }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   const noTagsCount = state.meals.filter(m => !m.tags || !m.tags.length).length;
   return { rows, noTagsCount };
 }
 function pruneTagFilter(){
-  const all = allTagsSet();
+  const all = new Set();
+  state.meals.forEach(m => (m.tags || []).forEach(t => all.add(ingredientKey(t))));
   for (const t of Array.from(state.tagFilter)){
     if (t === NO_TAGS) continue;
     if (!all.has(t)) state.tagFilter.delete(t);
@@ -1047,12 +1182,13 @@ function buildTagBar(){
   const list = [];
   active.forEach(t => {
     if (!list.find(x => x.tag === t)){
-      list.push({ tag:t, count: rows.find(r => r.tag === t)?.count || 0 });
+      const r = rows.find(r => r.tag === t);
+      list.push({ tag:t, label: r?.label || t, count: r?.count || 0 });
     }
   });
   rows.forEach(r => {
     if (!includeIng && r.isIngredient) return;
-    if (!list.find(x => x.tag === r.tag)) list.push({ tag:r.tag, count:r.count });
+    if (!list.find(x => x.tag === r.tag)) list.push(r);
   });
 
   const show = list.slice(0, max);
@@ -1068,7 +1204,7 @@ function buildTagBar(){
     const b = document.createElement("button");
     b.type = "button";
     b.className = "tag" + (state.tagFilter.has(x.tag) ? " active" : "");
-    b.innerHTML = `${escapeHtml(x.tag)}${x.count ? ` <span class="count">${x.count}</span>` : ""}`;
+    b.innerHTML = `${escapeHtml(x.label)}${x.count ? ` <span class="count">${x.count}</span>` : ""}`;
     b.addEventListener("click", () => toggleTag(x.tag));
     bar.appendChild(b);
   });
@@ -1076,6 +1212,7 @@ function buildTagBar(){
   const mode = state.tagMode === "ALL" ? "ALL" : "ANY";
   $("#tag-active").textContent = state.tagFilter.size ? `${state.tagFilter.size} selected (${mode})` : "";
   $("#m-tag-active") && ($("#m-tag-active").textContent = state.tagFilter.size ? `${state.tagFilter.size} selected (${mode})` : "");
+  refreshFiltersBadge();
 }
 
 let popEl = null;
@@ -1129,7 +1266,7 @@ function openTagPopover(anchor){
     listEl.innerHTML = "";
     const sentinel = { tag:NO_TAGS, label:"no tags", count:noTagsCount };
     const candidates = rows.filter(r => incIng || !r.isIngredient);
-    const items = [sentinel, ...candidates.map(r => ({ tag:r.tag, label:r.tag, count:r.count }))]
+    const items = [sentinel, ...candidates]
       .filter(x => !q || x.label.includes(q));
 
     items.forEach(x => {
@@ -1177,14 +1314,15 @@ $("#tag-filter")?.addEventListener("click", (e) => {
 });
 
 /* =====================================================
-   FILTERS MODAL (mobile)
+   FILTERS MODAL (all sizes)
    ===================================================== */
+const TIME_FILTER_MAX = 120;   // slider top end means "120+ min"
 const filtersModal = $("#filters-modal");
 function openFilters(){
   filtersModal.classList.add("open");
   filtersModal.setAttribute("aria-hidden", "false");
   lockBodyScroll(true);
-  syncMobileFiltersUI();
+  syncFiltersUI();
 }
 function closeFilters(){
   filtersModal.classList.remove("open");
@@ -1198,33 +1336,46 @@ $("#m-tag-filter")?.addEventListener("click", (e) => {
   openTagPopover(e.currentTarget);
 });
 
-function syncMobileFiltersUI(){
+function timeLabel(){
+  const { min, max } = state.timeFilter;
+  return max >= TIME_FILTER_MAX ? `${min}–${TIME_FILTER_MAX}+ min` : `${min}–${max} min`;
+}
+function timeFilterActive(){
+  return state.timeFilter.min > 0 || state.timeFilter.max < TIME_FILTER_MAX;
+}
+function refreshFiltersBadge(){
+  const n = (state.showFavsOnly ? 1 : 0) + (timeFilterActive() ? 1 : 0) + (state.tagFilter.size ? 1 : 0);
+  const btn = $("#open-filters");
+  if (!btn) return;
+  btn.textContent = n ? `Filters (${n})` : "Filters";
+  btn.classList.toggle("active", n > 0);
+}
+function syncFiltersUI(){
   $("#m-time-min").value = String(state.timeFilter.min);
   $("#m-time-max").value = String(state.timeFilter.max);
-  $("#m-time-label").textContent = `${state.timeFilter.min}–${state.timeFilter.max} min`;
+  $("#m-time-label").textContent = timeLabel();
   $("#m-favs").textContent = state.showFavsOnly ? "Show all" : "Show favourites only";
   $("#m-tag-active").textContent = state.tagFilter.size
     ? `${state.tagFilter.size} selected (${state.tagMode === "ALL" ? "ALL" : "ANY"})` : "";
+  refreshFiltersBadge();
 }
-function clampMobileTime(){
+function clampTime(){
   let a = Number($("#m-time-min").value);
   let b = Number($("#m-time-max").value);
   if (a > b) [a, b] = [b, a];
   state.timeFilter.min = a; state.timeFilter.max = b;
-  $("#m-time-label").textContent = `${a}–${b} min`;
-  syncTimeSliders();
+  syncFiltersUI();
   renderMeals();
 }
-$("#m-time-min")?.addEventListener("input", clampMobileTime);
-$("#m-time-max")?.addEventListener("input", clampMobileTime);
+$("#m-time-min")?.addEventListener("input", clampTime);
+$("#m-time-max")?.addEventListener("input", clampTime);
 $("#m-time-clear")?.addEventListener("click", () => {
-  state.timeFilter.min = 0; state.timeFilter.max = 120;
-  syncTimeSliders(); syncMobileFiltersUI(); renderMeals();
+  state.timeFilter.min = 0; state.timeFilter.max = TIME_FILTER_MAX;
+  syncFiltersUI(); renderMeals();
 });
 $("#m-favs")?.addEventListener("click", () => {
   state.showFavsOnly = !state.showFavsOnly;
-  $("#toggle-favs").textContent = state.showFavsOnly ? "Show all" : "Show favourites only";
-  syncMobileFiltersUI(); renderMeals();
+  syncFiltersUI(); renderMeals();
 });
 
 /* =====================================================
@@ -1248,13 +1399,10 @@ function visibleMeals(){
   // Contains filter: meal must contain ALL listed ingredients (substring match,
   // canonicalised via normaliser so "scallion" matches if mapped to "spring onion")
   if (state.containsFilter.size){
-    const need = [...state.containsFilter].map(s => {
-      const canon = normaliserLookup(s) || normaliseRaw(s);
-      return canon;
-    });
+    const need = [...state.containsFilter].map(s => ingredientKey(canonicalName(s)));
     items = items.filter(m => {
-      const ingNames = (m.ingredients || []).map(i => normaliseRaw(i.name));
-      return need.every(n => ingNames.some(ing => ing.includes(n)));
+      const ingKeys = (m.ingredients || []).map(i => ingredientKey(i.name));
+      return need.every(n => ingKeys.some(ing => ing.includes(n)));
     });
   }
 
@@ -1262,21 +1410,58 @@ function visibleMeals(){
     const need = [...state.tagFilter];
     items = items.filter(m => {
       const hasNoTags = !m.tags || !m.tags.length;
-      const tags = new Set((m.tags || []).map(t => String(t).toLowerCase()));
+      const tags = new Set((m.tags || []).map(ingredientKey));
       if (state.tagMode === "ANY") return need.some(t => t === NO_TAGS ? hasNoTags : tags.has(t));
       return need.every(t => t === NO_TAGS ? hasNoTags : tags.has(t));
     });
   }
-  items = items.filter(m => {
-    const t = m.cookMins;
-    if (typeof t !== "number") return (state.timeFilter.min === 0 && state.timeFilter.max === 120);
-    return t >= state.timeFilter.min && t <= state.timeFilter.max;
-  });
-  return items.sort((a, b) => {
-    const fav = (b.fav === true) - (a.fav === true);
-    if (fav) return fav;
-    return (a.title || "").localeCompare(b.title || "", "en-GB", { sensitivity:"base" });
-  });
+  if (timeFilterActive()){
+    const { min, max } = state.timeFilter;
+    items = items.filter(m => {
+      const t = m.cookMins;
+      if (typeof t !== "number") return false;
+      return t >= min && (max >= TIME_FILTER_MAX || t <= max);
+    });
+  }
+
+  const byTitle = (a, b) => (a.title || "").localeCompare(b.title || "", "en-GB", { sensitivity:"base" });
+  const count = m => state.history[m.id]?.count || 0;
+  const last  = m => lastChosen(m.id) || "";
+  const sorts = {
+    az:     (a, b) => ((b.fav === true) - (a.fav === true)) || byTitle(a, b),
+    most:   (a, b) => (count(b) - count(a)) || byTitle(a, b),
+    least:  (a, b) => (count(a) - count(b)) || byTitle(a, b),
+    oldest: (a, b) => last(a).localeCompare(last(b)) || byTitle(a, b)   // never chosen ("") first
+  };
+  return items.sort(sorts[state.prefs.mealSort] || sorts.az);
+}
+
+/* ============== Meal history (times chosen for a shop) ============== */
+function lastChosen(id){
+  const d = state.history[id]?.dates;
+  return d && d.length ? d[d.length - 1] : null;
+}
+function formatShortDate(iso){
+  const d = new Date(iso);
+  return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day:"numeric", month:"short" });
+}
+/* Count each selected meal once per shop. Called when the list is used
+   (Ocado, Share, Copy as TSV, Print). Clear selection starts a new shop. */
+async function recordShopUse(){
+  const today = new Date().toISOString().slice(0, 10);
+  let n = 0;
+  for (const id of state.selected){
+    if (state.countedIds.has(id)) continue;
+    const h = state.history[id] || { count:0, dates:[] };
+    h.count += 1;
+    h.dates = [...(h.dates || []), today].slice(-HISTORY_MAX_DATES);
+    state.history[id] = h;
+    state.countedIds.add(id);
+    n++;
+  }
+  if (!n) return;
+  await Promise.all([idbSet(IDB_KEYS.history, state.history), saveSession()]);
+  renderMeals();
 }
 
 function renderMeals(){
@@ -1287,14 +1472,14 @@ function renderMeals(){
   if (!items.length){
     const d = document.createElement("div");
     d.className = "empty";
-    d.textContent = state.meals.length ? "No meals match your filters." : "No meals yet — add one with the form ↑";
+    d.textContent = state.meals.length ? "No meals match your filters." : "No meals yet — tap ＋ Add to add one.";
     grid.appendChild(d);
     return;
   }
 
   items.forEach(meal => {
     const card = document.createElement("article");
-    card.className = "card";
+    card.className = "card" + (state.selected.has(meal.id) ? " selected" : "");
 
     // ---- media ----
     const media = document.createElement("div");
@@ -1315,8 +1500,9 @@ function renderMeals(){
     cb.setAttribute("aria-label", `Include ${meal.title}`);
     cb.addEventListener("change", () => {
       if (cb.checked) state.selected.add(meal.id); else state.selected.delete(meal.id);
+      card.classList.toggle("selected", cb.checked);
+      saveSession();
       renderShopping();
-      updateSelectedCount();
     });
     sel.append(cb, document.createTextNode("Include"));
 
@@ -1377,6 +1563,14 @@ function renderMeals(){
       n.className = "chip"; n.textContent = "📝 notes";
       chips.appendChild(n);
     }
+    const hist = state.history[meal.id];
+    if (hist?.count){
+      const h = document.createElement("span");
+      h.className = "chip chip-history";
+      h.textContent = `🛒 ×${hist.count} · ${formatShortDate(lastChosen(meal.id))}`;
+      h.title = `Chosen for ${hist.count} shop${hist.count === 1 ? "" : "s"}`;
+      chips.appendChild(h);
+    }
     if (chips.childElementCount) body.append(chips);
 
     if (!meal.tags || !meal.tags.length){
@@ -1410,9 +1604,11 @@ function renderMeals(){
       const removed = state.meals[idx];
       state.meals.splice(idx, 1);
       state.selected.delete(meal.id);
+      state.countedIds.delete(meal.id);
       await saveAll();
       renderMeals(); renderShopping(); populateCookSelect();
-      updateIngredientSuggestions(); refreshTagSuggestions(); updateSelectedCount();
+      updateIngredientSuggestions(); refreshTagSuggestions();
+      const UNDO_MS = 6000;
       showUndoToast(`"${removed.title}" deleted`, async () => {
         // restore at the same index
         state.meals.splice(Math.min(idx, state.meals.length), 0, removed);
@@ -1420,7 +1616,13 @@ function renderMeals(){
         renderMeals(); renderShopping(); populateCookSelect();
         updateIngredientSuggestions(); refreshTagSuggestions();
         status(`"${removed.title}" restored`);
-      });
+      }, UNDO_MS);
+      // Drop its history once Undo is no longer possible (loadAll also prunes orphans)
+      setTimeout(() => {
+        if (state.meals.some(m => m.id === removed.id) || !state.history[removed.id]) return;
+        delete state.history[removed.id];
+        idbSet(IDB_KEYS.history, state.history);
+      }, UNDO_MS + 500);
     });
     controls.append(editBtn, del);
     body.appendChild(controls);
@@ -1428,21 +1630,30 @@ function renderMeals(){
     card.append(media, body);
     grid.appendChild(card);
   });
-
-  syncMobileFiltersUI();
 }
 
 /* Density buttons */
-$$("[data-density]").forEach(btn => btn.addEventListener("click", async () => {
-  const mode = btn.dataset.density;
+function applyDensity(){
+  const mode = state.prefs.gridMin;
   document.documentElement.style.setProperty(
     "--card-min",
     mode === "compact" ? "200px" : mode === "cozy" ? "260px" : "320px"
   );
-  state.prefs.gridMin = mode;
-  await saveAll();
-  renderMeals();
+  $$("[data-density]").forEach(b => b.classList.toggle("active", b.dataset.density === mode));
+}
+$$("[data-density]").forEach(btn => btn.addEventListener("click", async () => {
+  state.prefs.gridMin = btn.dataset.density;
+  applyDensity();
+  await idbSet(IDB_KEYS.prefs, state.prefs);
 }));
+function syncSortUI(){
+  const s = $("#meal-sort");
+  if (s) s.value = state.prefs.mealSort || "az";
+}
+/* Forget the current shop entirely (import / clear all). */
+function clearShopState(){
+  state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear();
+}
 
 /* ===== Contains filter (search by ingredient) ===== */
 let containsEditor = null;
@@ -1486,166 +1697,238 @@ $("#contains-clear")?.addEventListener("click", () => {
 /* Search */
 $("#search")?.addEventListener("input", (e) => {
   state.search = (e.target.value || "").trim().toLowerCase();
-  if ($("#search-m")) $("#search-m").value = e.target.value;
-  renderMeals();
-});
-$("#search-m")?.addEventListener("input", (e) => {
-  state.search = (e.target.value || "").trim().toLowerCase();
-  if ($("#search")) $("#search").value = e.target.value;
   renderMeals();
 });
 
-/* Time filter (desktop) */
-function clampTime(){
-  const minEl = $("#time-min");
-  const maxEl = $("#time-max");
-  if (!minEl || !maxEl) return;
-  let a = Number(minEl.value), b = Number(maxEl.value);
-  if (a > b) [a, b] = [b, a];
-  state.timeFilter.min = a; state.timeFilter.max = b;
-  $("#time-label").textContent = `${a}–${b} min`;
-  syncMobileFiltersUI();
-}
-function syncTimeSliders(){
-  if ($("#time-min")) $("#time-min").value = String(state.timeFilter.min);
-  if ($("#time-max")) $("#time-max").value = String(state.timeFilter.max);
-  if ($("#time-label")) $("#time-label").textContent = `${state.timeFilter.min}–${state.timeFilter.max} min`;
-  if ($("#m-time-min")) $("#m-time-min").value = String(state.timeFilter.min);
-  if ($("#m-time-max")) $("#m-time-max").value = String(state.timeFilter.max);
-  if ($("#m-time-label")) $("#m-time-label").textContent = `${state.timeFilter.min}–${state.timeFilter.max} min`;
-}
-$("#time-min")?.addEventListener("input", () => { clampTime(); renderMeals(); });
-$("#time-max")?.addEventListener("input", () => { clampTime(); renderMeals(); });
-$("#time-clear")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  state.timeFilter.min = 0; state.timeFilter.max = 120;
-  syncTimeSliders(); renderMeals();
+/* Sort */
+$("#meal-sort")?.addEventListener("change", async (e) => {
+  state.prefs.mealSort = e.target.value;
+  renderMeals();
+  await idbSet(IDB_KEYS.prefs, state.prefs);
 });
-$("#toggle-favs")?.addEventListener("click", () => {
-  state.showFavsOnly = !state.showFavsOnly;
-  $("#toggle-favs").textContent = state.showFavsOnly ? "Show all" : "Show favourites only";
-  syncMobileFiltersUI(); renderMeals();
+
+/* Clear selection = start a new shop: ticks, pulled-back staples and the
+   "already counted" set all reset. Undo restores the lot. */
+$("#clear-selection")?.addEventListener("click", () => {
+  if (!state.selected.size) return;
+  const before = {
+    selected: new Set(state.selected), haveIt: new Set(state.haveIt),
+    pantryUse: new Set(state.pantryUse), countedIds: new Set(state.countedIds)
+  };
+  state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear();
+  saveSession(); renderMeals(); renderShopping();
+  showUndoToast("Selection cleared — new shop", () => {
+    Object.assign(state, before);
+    saveSession(); renderMeals(); renderShopping();
+  });
 });
 
 /* =====================================================
    SHOPPING LIST
+   One row per ingredient (by ingredientKey of its canonical name), so
+   "cashew nut" + "cashew nuts" merge. tsp and tbsp combine (1 tbsp = 3 tsp);
+   other unit types stay as parts of the same row: "400 g + 1 piece".
    ===================================================== */
 const shoppingWrap = $("#shopping");
+const SPOON_TSP = { tsp:1, tbsp:3 };
+const PART_ORDER = ["g", "ml", "spoon", "cup"];
 
-function aggKey(i){
-  const n = normaliseRaw(i.name);
-  if (i.type === "grams") return `${n}|g`;
-  if (i.type === "ml")    return `${n}|ml`;
-  if (["tsp","tbsp","cup"].includes(i.type)) return `${n}|${i.type}`;
-  return `${n}|qty|${(i.unit || "").toLowerCase()}`;
+function partKey(i){
+  if (i.type === "grams") return "g";
+  if (i.type === "ml") return "ml";
+  if (i.type === "tsp" || i.type === "tbsp") return "spoon";
+  if (i.type === "cup") return "cup";
+  return "qty|" + (normaliseUnitLabel(i.unit) || "piece");
+}
+/* Plural unit label for display ("3 cloves"); stored labels stay singular. */
+const UNIT_LABEL_PLURAL_OF = Object.fromEntries(Object.entries(UNIT_LABEL_PLURALS).map(([p, s]) => [s, p]));
+function displayUnit(unit, value){
+  return value === 1 ? unit : (UNIT_LABEL_PLURAL_OF[unit] || unit);
+}
+/* One aggregated amount -> display parts. Spoons split into whole tbsp + tsp
+   (5 tsp -> "1 tbsp + 2 tsp") rather than "1.67 tbsp". */
+function formatPart(pk, total){
+  if (pk === "g")  return [total >= 1000 ? { value:total / 1000, unit:"kg" } : { value:total, unit:"g" }];
+  if (pk === "ml") return [total >= 1000 ? { value:total / 1000, unit:"L" }  : { value:total, unit:"ml" }];
+  if (pk === "spoon"){
+    const tbsp = Math.floor(total / 3 + 1e-9);
+    const tsp = Math.round((total - tbsp * 3) * 100) / 100;
+    if (!tbsp) return [{ value:tsp, unit:"tsp" }];
+    return tsp ? [{ value:tbsp, unit:"tbsp" }, { value:tsp, unit:"tsp" }] : [{ value:tbsp, unit:"tbsp" }];
+  }
+  if (pk === "cup") return [{ value:total, unit: total === 1 ? "cup" : "cups" }];
+  const unit = pk.slice(4);
+  return [{ value:total, unit: displayUnit(unit, total) }];
 }
 function aggregate(){
-  const sel = state.meals.filter(m => state.selected.has(m.id));
   const map = new Map();
-  for (const m of sel){
+  for (const m of state.meals){
+    if (!state.selected.has(m.id)) continue;
     for (const i of (m.ingredients || [])){
-      const k = aggKey(i);
-      const p = map.get(k) || { name:i.name, type:i.type, unit:i.unit, total:0 };
-      p.total += Number(i.amount) || 0;
-      map.set(k, p);
+      const name = canonicalName(i.name);
+      const key = ingredientKey(name);
+      if (!key) continue;
+      let row = map.get(key);
+      if (!row){ row = { key, spellings:new Map(), parts:new Map() }; map.set(key, row); }
+      row.spellings.set(name, (row.spellings.get(name) || 0) + 1);
+      const pk = partKey(i);
+      const amt = (Number(i.amount) || 0) * (pk === "spoon" ? SPOON_TSP[i.type] : 1);
+      row.parts.set(pk, (row.parts.get(pk) || 0) + amt);
     }
   }
-  return Array.from(map.values()).sort((a, b) =>
-    a.name.localeCompare(b.name, "en-GB", { sensitivity:"base" })
-  );
+  const rank = pk => { const i = PART_ORDER.indexOf(pk); return i === -1 ? PART_ORDER.length : i; };
+  return Array.from(map.values()).map(r => {
+    const parts = Array.from(r.parts.entries())
+      .filter(([, total]) => total > 0)
+      .sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+      .flatMap(([pk, total]) => formatPart(pk, total));
+    return {
+      key: r.key,
+      name: mostCommon(r.spellings),
+      names: Array.from(r.spellings.keys()),
+      parts,
+      amount: parts.map(p => `${formatNumber(p.value)} ${p.unit}`).join(" + ") || "—"
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name, "en-GB", { sensitivity:"base" }));
 }
-function displayValueAndUnit(r){
-  if (r.type === "ml")    return r.total >= 1000 ? { value:r.total/1000, unit:"L" } : { value:r.total, unit:"ml" };
-  if (r.type === "grams") return r.total >= 1000 ? { value:r.total/1000, unit:"kg" } : { value:r.total, unit:"g" };
-  if (["tsp","tbsp","cup"].includes(r.type)) return { value:r.total, unit:r.type };
-  return { value:r.total, unit:(r.unit || "qty") };
+
+function isStapleRow(r){ return state.pantry.has(r.key) && !state.pantryUse.has(r.key); }
+
+/* Rows to buy: not ticked as "have it", not a cupboard staple. */
+function rowsToBuy(){
+  return aggregate().filter(r => !state.haveIt.has(r.key) && !isStapleRow(r));
 }
-/* Per-shop "I have it" ticks. Keyed by aggKey, lives in memory only. */
-const haveIt = new Set();
 
-function renderShopping(){
-  shoppingWrap.innerHTML = "";
-  const rows = aggregate();
-  if (!rows.length){
-    const d = document.createElement("div");
-    d.className = "empty";
-    d.textContent = "Select meals to build your shopping list.";
-    shoppingWrap.appendChild(d);
-    updateSelectedCount();
-    updateShoppingActions();
-    return;
-  }
+async function togglePantry(key, on){
+  if (on) state.pantry.add(key); else state.pantry.delete(key);
+  state.pantryUse.delete(key);
+  await Promise.all([idbSet(IDB_KEYS.pantry, Array.from(state.pantry)), saveSession()]);
+  renderShopping();
+}
 
-  // Prune ticks for rows that no longer exist
-  const liveKeys = new Set(rows.map(r => aggKey(r)));
-  for (const k of Array.from(haveIt)) if (!liveKeys.has(k)) haveIt.delete(k);
+function shoppingRow(r, opts){
+  const tr = document.createElement("tr");
+  const ticked = state.haveIt.has(r.key);
+  tr.classList.toggle("ticked", ticked && !opts.staple);
 
-  const table = document.createElement("table");
-  table.className = "table shopping-table";
-  const thead = document.createElement("thead");
-  thead.innerHTML = "<tr><th class='col-tick' aria-label='Have'></th><th>Ingredient</th><th>Total</th><th>Unit</th><th class='col-merge' aria-label='Merge'></th></tr>";
-  const tbody = document.createElement("tbody");
-
-  rows.forEach(r => {
-    const k = aggKey(r);
-    const tr = document.createElement("tr");
-    const ticked = haveIt.has(k);
-    if (ticked) tr.classList.add("ticked");
-
-    const { value, unit } = displayValueAndUnit(r);
-
-    // Tick column
-    const tdTick = document.createElement("td");
-    tdTick.className = "col-tick";
+  const tdTick = document.createElement("td");
+  tdTick.className = "col-tick";
+  if (!opts.staple){
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = ticked;
     cb.setAttribute("aria-label", `I have ${r.name}`);
     cb.addEventListener("change", () => {
-      if (cb.checked) haveIt.add(k); else haveIt.delete(k);
+      if (cb.checked) state.haveIt.add(r.key); else state.haveIt.delete(r.key);
       tr.classList.toggle("ticked", cb.checked);
+      saveSession();
       updateShoppingActions();
     });
     tdTick.appendChild(cb);
+  }
 
-    // Ingredient name
-    const tdName = document.createElement("td");
-    tdName.textContent = titleCase(r.name);
+  const tdName = document.createElement("td");
+  tdName.className = "col-name";
+  tdName.textContent = titleCase(r.name);
+  if (r.names.length > 1) tdName.title = `Merged: ${r.names.join(", ")}`;
 
-    // Total
-    const tdTotal = document.createElement("td");
-    tdTotal.textContent = formatNumber(value);
-    tdTotal.className = "col-total";
+  const tdAmt = document.createElement("td");
+  tdAmt.className = "col-amount";
+  tdAmt.textContent = r.amount;
 
-    // Unit
-    const tdUnit = document.createElement("td");
-    tdUnit.textContent = unit;
-    tdUnit.className = "col-unit";
+  const tdAct = document.createElement("td");
+  tdAct.className = "col-actions";
+  const mk = (text, title, onClick, cls = "") => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `btn mini row-btn ${cls}`.trim();
+    b.textContent = text;
+    b.title = title;
+    b.setAttribute("aria-label", title);
+    b.addEventListener("click", onClick);
+    tdAct.appendChild(b);
+  };
+  if (opts.staple){
+    mk("Need it", `Add ${r.name} to this shop`, () => {
+      state.pantryUse.add(r.key); saveSession(); renderShopping();
+    }, "need-btn");
+    mk("✕", `${r.name} is not a staple`, () => togglePantry(r.key, false));
+  } else if (state.pantry.has(r.key)){
+    mk("🏠", `Back to the cupboard (staple)`, () => {
+      state.pantryUse.delete(r.key); saveSession(); renderShopping();
+    }, "on");
+  } else {
+    mk("🏠", `Always have ${r.name} (staple)`, () => togglePantry(r.key, true));
+  }
+  if (!opts.staple) mk("⇄", `Merge "${r.name}" into another name`, () => openMergeDialog(r.names));
 
-    // Merge button
-    const tdMerge = document.createElement("td");
-    tdMerge.className = "col-merge";
-    const merge = document.createElement("button");
-    merge.type = "button";
-    merge.className = "btn mini merge-btn";
-    merge.textContent = "⇄";
-    merge.title = `Merge "${r.name}" into a canonical name`;
-    merge.setAttribute("aria-label", `Merge ${r.name}`);
-    merge.addEventListener("click", () => openMergeDialog(r.name));
-    tdMerge.appendChild(merge);
+  tr.append(tdTick, tdName, tdAmt, tdAct);
+  return tr;
+}
 
-    tr.append(tdTick, tdName, tdTotal, tdUnit, tdMerge);
-    tbody.appendChild(tr);
-  });
-
-  table.append(thead, tbody);
-  shoppingWrap.appendChild(table);
+function renderShopping(){
+  shoppingWrap.innerHTML = "";
+  const rows = aggregate();
   updateSelectedCount();
+  if (!rows.length){
+    const d = document.createElement("div");
+    d.className = "empty";
+    d.textContent = "Tick meals to build your shopping list.";
+    shoppingWrap.appendChild(d);
+    updateShoppingActions();
+    return;
+  }
+
+  // Prune per-shop state for rows that no longer exist
+  const live = new Set(rows.map(r => r.key));
+  for (const k of Array.from(state.haveIt)) if (!live.has(k)) state.haveIt.delete(k);
+  for (const k of Array.from(state.pantryUse)) if (!live.has(k)) state.pantryUse.delete(k);
+
+  const main = rows.filter(r => !isStapleRow(r));
+  const staples = rows.filter(isStapleRow);
+
+  if (main.length){
+    const table = document.createElement("table");
+    table.className = "table shopping-table";
+    const tbody = document.createElement("tbody");
+    main.forEach(r => tbody.appendChild(shoppingRow(r, { staple:false })));
+    table.appendChild(tbody);
+    shoppingWrap.appendChild(table);
+  } else {
+    const d = document.createElement("div");
+    d.className = "empty";
+    d.textContent = "Everything here is a cupboard staple.";
+    shoppingWrap.appendChild(d);
+  }
+
+  if (staples.length){
+    const det = document.createElement("details");
+    det.className = "staples";
+    const sum = document.createElement("summary");
+    sum.textContent = `🏠 Usually in the cupboard (${staples.length})`;
+    const table = document.createElement("table");
+    table.className = "table shopping-table";
+    const tbody = document.createElement("tbody");
+    staples.forEach(r => tbody.appendChild(shoppingRow(r, { staple:true })));
+    table.appendChild(tbody);
+    det.append(sum, table);
+    shoppingWrap.appendChild(det);
+  }
   updateShoppingActions();
 }
 
+function updateSelectedCount(){
+  const n = state.selected.size;
+  const txt = n ? `${n} meal${n === 1 ? "" : "s"} selected` : "No meals selected";
+  $("#selected-count") && ($("#selected-count").textContent = txt);
+  $("#sel-count") && ($("#sel-count").textContent = txt);
+  $("#sel-bar")?.toggleAttribute("hidden", !n);
+  const badge = $("#nav-shop-count");
+  if (badge){ badge.textContent = n ? String(n) : ""; badge.hidden = !n; }
+}
+
 function updateShoppingActions(){
-  const tickedN = haveIt.size;
+  const tickedN = state.haveIt.size;
   const reset = $("#reset-ticks");
   if (reset){
     reset.disabled = tickedN === 0;
@@ -1653,42 +1936,49 @@ function updateShoppingActions(){
   }
 }
 
-/* Reset ticks button (hooked up below in init handlers) */
 function resetHaveItTicks(){
-  haveIt.clear();
+  state.haveIt.clear();
+  saveSession();
   renderShopping();
 }
 
-/* ===== Merge dialog: quick-add an alias to an existing canonical or create a new one ===== */
-function openMergeDialog(rawName){
-  // Build a list of canonical options
-  const canonicals = state.normaliser.map(e => e.canonical);
+/* Add aliases to a normaliser entry, creating it if needed. */
+function addNormaliserAliases(canonical, aliases){
+  canonical = normaliseRaw(canonical);
+  const ck = ingredientKey(canonical);
+  let entry = state.normaliser.find(e => ingredientKey(e.canonical) === ck);
+  if (!entry){
+    entry = { canonical, aliases: [] };
+    state.normaliser.push(entry);
+  }
+  entry.aliases = entry.aliases || [];
+  for (const a of aliases.map(normaliseRaw)){
+    if (!a || a === normaliseRaw(entry.canonical) || entry.aliases.map(normaliseRaw).includes(a)) continue;
+    entry.aliases.push(a);
+  }
+  return entry;
+}
+
+/* ===== Merge dialog: map one shopping row's spellings onto another name ===== */
+function openMergeDialog(names){
+  names = (Array.isArray(names) ? names : [names]).map(normaliseRaw).filter(Boolean);
+  const label = names.join(" / ");
   const wrap = document.createElement("div");
   wrap.className = "modal open";
   wrap.innerHTML = `
     <div class="dialog merge-dialog" style="max-width:520px">
       <div class="stickybar group space-between">
-        <h3 class="h3">Merge "${escapeHtml(rawName)}"</h3>
+        <h3 class="h3">Merge "${escapeHtml(label)}"</h3>
         <button class="btn" data-close aria-label="Close">✕</button>
       </div>
       <p class="muted small" style="margin:0 0 10px;">
-        Merge this ingredient into a canonical name. All existing meals using
-        "<strong>${escapeHtml(rawName)}</strong>" will be updated.
+        Pick the name this should become. Every meal using
+        "<strong>${escapeHtml(label)}</strong>" is updated, and future meals map the same way.
       </p>
-
       <div class="form-row">
-        <label>Merge into</label>
-        <select id="merge-canonical">
-          ${canonicals.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")}
-          <option value="__new__">+ Create new canonical…</option>
-        </select>
+        <label for="merge-into">Merge into</label>
+        <input id="merge-into" type="text" list="ingredient-suggestions" value="${escapeHtml(names[0])}" />
       </div>
-
-      <div id="merge-new-canonical-row" class="form-row" style="display:none;">
-        <label for="merge-new-canonical">New canonical name</label>
-        <input id="merge-new-canonical" type="text" placeholder="e.g. garlic" value="${escapeHtml(rawName)}" />
-      </div>
-
       <div class="group" style="justify-content:flex-end;">
         <button class="btn" data-close>Cancel</button>
         <button class="btn primary" id="merge-confirm">Merge</button>
@@ -1696,122 +1986,148 @@ function openMergeDialog(rawName){
     </div>
   `;
   document.body.appendChild(wrap);
-  document.body.classList.add("modal-open");
+  lockBodyScroll(true);
+  const input = $("#merge-into", wrap);
+  setTimeout(() => { input.focus(); input.select(); }, 30);
 
-  const close = () => {
-    wrap.remove();
-    if (!$(".modal.open")) document.body.classList.remove("modal-open");
-  };
+  const close = () => { wrap.remove(); lockBodyScroll(false); };
   wrap.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", close));
   wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
 
-  // If no existing canonicals, default to "create new" mode
-  const sel = $("#merge-canonical", wrap);
-  const newRow = $("#merge-new-canonical-row", wrap);
-  if (!canonicals.length){
-    sel.value = "__new__";
-    newRow.style.display = "";
-  }
-  sel.addEventListener("change", () => {
-    newRow.style.display = sel.value === "__new__" ? "" : "none";
-    if (sel.value === "__new__") $("#merge-new-canonical", wrap).focus();
-  });
-
   $("#merge-confirm", wrap).addEventListener("click", async () => {
-    let canonical;
-    if (sel.value === "__new__"){
-      canonical = ($("#merge-new-canonical", wrap).value || "").trim().toLowerCase();
-      if (!canonical) { alert("Please enter a canonical name."); return; }
-    } else {
-      canonical = sel.value;
-    }
-    const alias = normaliseRaw(rawName);
-
-    // If a canonical entry already exists, just append the alias.
-    // Otherwise create a new entry.
-    let entry = state.normaliser.find(e => normaliseRaw(e.canonical) === canonical);
-    if (entry){
-      if (!entry.aliases) entry.aliases = [];
-      if (alias !== normaliseRaw(entry.canonical) && !entry.aliases.map(normaliseRaw).includes(alias)){
-        entry.aliases.push(alias);
-      }
-    } else {
-      const aliases = (alias !== canonical) ? [alias] : [];
-      state.normaliser.push({ canonical, aliases });
-    }
-
-    // Apply across existing meals
+    const canonical = normaliseRaw(input.value);
+    if (!canonical){ alert("Please enter a name to merge into."); return; }
+    addNormaliserAliases(canonical, names);
     const changed = applyNormaliserAcrossMeals();
     await saveAll();
     renderMeals(); renderShopping();
     updateIngredientSuggestions(); refreshTagSuggestions();
     close();
     status(changed
-      ? `Merged "${rawName}" → "${canonical}" (${changed} meal${changed === 1 ? "" : "s"})`
-      : `Merged "${rawName}" → "${canonical}"`);
+      ? `Merged "${label}" → "${canonical}" (${changed} meal${changed === 1 ? "" : "s"})`
+      : `Merged "${label}" → "${canonical}"`);
   });
 }
 
-/* TSV copy with mobile fallback */
-function showFallbackTSV(tsv){
-  // small modal-ish overlay to allow manual copy on iOS where clipboard often fails
+/* Manual-copy fallback (select-all in a textarea) for when the clipboard API
+   is unavailable or refused. */
+function showCopyFallback(text, title = "Copy shopping list"){
   const wrap = document.createElement("div");
   wrap.className = "modal open";
   wrap.innerHTML = `
     <div class="dialog" style="max-width:680px">
       <div class="stickybar group space-between">
-        <h3 class="h3">Copy shopping list</h3>
-        <button class="btn" data-close>✕</button>
+        <h3 class="h3">${escapeHtml(title)}</h3>
+        <button class="btn" data-close aria-label="Close">✕</button>
       </div>
       <p class="muted">Long-press / select-all and copy.</p>
       <textarea readonly style="height:240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;"></textarea>
     </div>
   `;
   document.body.appendChild(wrap);
+  lockBodyScroll(true);
   const ta = wrap.querySelector("textarea");
-  ta.value = tsv;
+  ta.value = text;
   ta.focus(); ta.select();
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) wrap.remove(); });
-  wrap.querySelector("[data-close]").addEventListener("click", () => wrap.remove());
+  const close = () => { wrap.remove(); lockBodyScroll(false); };
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  wrap.querySelector("[data-close]").addEventListener("click", close);
+}
+async function copyText(text, fallbackTitle){
+  try {
+    if (navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through */ }
+  showCopyFallback(text, fallbackTitle);
+  return false;   // true only when copied straight to the clipboard
+}
+function closeShopMenu(){ const m = $("#shop-menu"); if (m) m.open = false; }
+function nothingToExport(){
+  if (!state.selected.size){ status("Tick some meals first."); return true; }
+  return false;
 }
 
+/* Ocado's "Find a list of products" takes one product name per line and
+   can't use quantities, so this copies names only. */
+const OCADO_URL = "https://www.ocado.com/";
+$("#ocado")?.addEventListener("click", async () => {
+  if (nothingToExport()) return;
+  const rows = rowsToBuy();
+  if (!rows.length){ status("Everything is ticked or a staple — nothing to copy."); return; }
+  const text = rows.map(r => titleCase(r.name)).join("\n");
+  const copied = await copyText(text, "Copy for Ocado");
+  await recordShopUse();
+  if (copied){
+    showActionToast(
+      `Copied ${rows.length} items — paste into Ocado's "Find a list of products"`,
+      "Open Ocado",
+      () => window.open(OCADO_URL, "_blank", "noopener"),
+      9000
+    );
+  }
+});
+
+$("#share")?.addEventListener("click", async () => {
+  if (nothingToExport()) return;
+  const rows = rowsToBuy();
+  if (!rows.length){ status("Everything is ticked or a staple — nothing to share."); return; }
+  const n = state.selected.size;
+  const text = [`Shopping list (${n} meal${n === 1 ? "" : "s"})`, "",
+    ...rows.map(r => `• ${titleCase(r.name)} — ${r.amount}`)].join("\n");
+  if (navigator.share){
+    try {
+      await navigator.share({ title: "Shopping list", text });
+      await recordShopUse();
+    } catch (err){
+      if (err?.name === "AbortError") return;   // user closed the share sheet
+      console.warn("Share failed:", err);
+      if (await copyText(text)) status("Sharing failed — copied instead.");
+      await recordShopUse();
+    }
+    return;
+  }
+  if (await copyText(text)) status("Sharing isn't available here — copied instead.");
+  await recordShopUse();
+});
+
 $("#copy-tsv")?.addEventListener("click", async () => {
+  closeShopMenu();
+  if (nothingToExport()) return;
   const allRows = aggregate();
-  if (!allRows.length){ status("No items to copy."); return; }
-  const rows = allRows.filter(r => !haveIt.has(aggKey(r)));
-  if (!rows.length){ status("Everything is ticked — nothing to copy."); return; }
-  const selectedCount = state.selected.size;
-  const tickedCount = allRows.length - rows.length;
-  const header = ["Ingredient", "Total", "Unit"];
-  const body = rows.map(r => {
-    const { value, unit } = displayValueAndUnit(r);
-    return [titleCase(r.name), String(value), unit];
-  });
-  const top = [
-    ["Meals selected", String(selectedCount), ""]
-  ];
-  if (tickedCount) top.push(["Skipped (ticked as 'have')", String(tickedCount), ""]);
-  top.push(["", "", ""]);
-  top.push(header);
+  const rows = rowsToBuy();
+  if (!rows.length){ status("Everything is ticked or a staple — nothing to copy."); return; }
+  const skipped = allRows.length - rows.length;
+  const body = rows.map(r => r.parts.length === 1
+    ? [titleCase(r.name), formatNumber(r.parts[0].value), r.parts[0].unit]
+    : [titleCase(r.name), r.amount, ""]);
+  const top = [["Meals selected", String(state.selected.size), ""]];
+  if (skipped) top.push(["Skipped (have it / staples)", String(skipped), ""]);
+  top.push(["", "", ""], ["Ingredient", "Total", "Unit"]);
   const tsv = [...top, ...body]
     .map(cols => cols.map(v => String(v).replaceAll("\t", " ")).join("\t"))
     .join("\n");
-
-  try {
-    if (navigator.clipboard && window.isSecureContext){
-      await navigator.clipboard.writeText(tsv);
-      status(tickedCount
-        ? `Copied ${rows.length} items (${tickedCount} skipped).`
-        : `Copied ${rows.length} items.`);
-      return;
-    }
-    throw new Error("clipboard unavailable");
-  } catch {
-    showFallbackTSV(tsv);
+  if (await copyText(tsv)){
+    status(skipped ? `Copied ${rows.length} items (${skipped} skipped).` : `Copied ${rows.length} items.`);
   }
+  await recordShopUse();
 });
-$("#print")?.addEventListener("click", () => window.print());
-$("#reset-ticks")?.addEventListener("click", resetHaveItTicks);
+$("#print")?.addEventListener("click", async () => {
+  closeShopMenu();
+  if (nothingToExport()) return;
+  await recordShopUse();
+  window.print();
+});
+$("#reset-ticks")?.addEventListener("click", () => { closeShopMenu(); resetHaveItTicks(); });
+$("#shop-help-toggle")?.addEventListener("click", () => {
+  const help = $("#shop-help");
+  if (help) help.hidden = !help.hidden;
+});
+document.addEventListener("click", (e) => {
+  const m = $("#shop-menu");
+  if (m?.open && !m.contains(e.target)) m.open = false;
+});
 
 /* =====================================================
    COOK MODE
@@ -1872,7 +2188,9 @@ $("#export")?.addEventListener("click", () => {
     meals: state.meals,
     normaliser: state.normaliser,
     unitDefaults: state.unitDefaults,
-    prefs: state.prefs
+    prefs: state.prefs,
+    pantry: Array.from(state.pantry),
+    history: state.history
   }, null, 2);
 
   const blob = new Blob([data], { type: "application/json" });
@@ -1880,7 +2198,7 @@ $("#export")?.addEventListener("click", () => {
   const a = document.createElement("a");
   a.href = url;
   const stamp = new Date().toISOString().slice(0, 10);
-  a.download = `meal-planner-${stamp}-v${EXPORT_SCHEMA_VERSION}.json`;
+  a.download = `meal-planner-export-${stamp}-schema${EXPORT_SCHEMA_VERSION}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1920,7 +2238,10 @@ function migrateImport(json){
     meals,
     normaliser: Array.isArray(json.normaliser) ? json.normaliser : [],
     unitDefaults: (json.unitDefaults && typeof json.unitDefaults === "object") ? json.unitDefaults : {},
-    prefs: (json.prefs && typeof json.prefs === "object") ? json.prefs : state.prefs
+    prefs: (json.prefs && typeof json.prefs === "object") ? json.prefs : state.prefs,
+    // schema 11+: absent in older exports
+    pantry: Array.isArray(json.pantry) ? json.pantry.map(String) : [],
+    history: (json.history && typeof json.history === "object") ? json.history : {}
   };
 }
 $("#import")?.addEventListener("change", async (e) => {
@@ -1938,12 +2259,14 @@ $("#import")?.addEventListener("change", async (e) => {
     state.normaliser = migrated.normaliser || [];
     state.unitDefaults = migrated.unitDefaults || {};
     state.prefs = { ...state.prefs, ...(migrated.prefs || {}) };
-    state.selected.clear();
+    state.pantry = new Set(migrated.pantry);
+    state.history = migrated.history;
+    clearShopState();
 
     await saveAll();
-    applyTheme();
+    applyTheme(); applyDensity(); syncSortUI();
     renderMeals(); renderShopping(); populateCookSelect();
-    updateIngredientSuggestions(); refreshTagSuggestions(); updateSelectedCount();
+    updateIngredientSuggestions(); refreshTagSuggestions();
     status(`Imported ${migrated.meals.length} meal${migrated.meals.length === 1 ? "" : "s"}.`);
   } catch(err){
     console.error(err);
@@ -1957,10 +2280,11 @@ $("#clear-all")?.addEventListener("click", async () => {
   if (!state.meals.length){ status("Nothing to clear."); return; }
   if (!confirm("Delete ALL saved meals? This cannot be undone (export first if needed).")) return;
   state.meals = [];
-  state.selected.clear();
+  state.history = {};
+  clearShopState();
   await saveAll();
   renderMeals(); renderShopping(); populateCookSelect();
-  updateIngredientSuggestions(); refreshTagSuggestions(); updateSelectedCount();
+  updateIngredientSuggestions(); refreshTagSuggestions();
   status("All meals cleared.");
 });
 
@@ -2020,6 +2344,9 @@ function renderSettings(){
     await saveAll();
     renderSettings();
   }));
+
+  renderPantry();
+  renderHistory();
 }
 
 $("#backfill-tags")?.addEventListener("click", async () => {
@@ -2039,54 +2366,124 @@ $("#backfill-tags")?.addEventListener("click", async () => {
   status(changed ? `Backfilled tags on ${changed} meal${changed === 1 ? "" : "s"}.` : "Nothing to backfill.");
 });
 
-/* ===== Data cleanup (singularise units, fill missing qty labels) ===== */
-let cleanupPreviewData = null;
-$("#cleanup-preview")?.addEventListener("click", () => {
-  const results = $("#cleanup-results");
-  const applyBtn = $("#cleanup-apply");
-  if (!state.meals.length){
-    results.style.display = "block";
-    results.innerHTML = "<em>No meals saved yet.</em>";
+/* ===== Tidy ingredients review ===== */
+const TIDY_GROUPS = {
+  merge:    "Merge spellings (also added to the normaliser for future meals)",
+  singular: "Singular names (ticked where both forms are in use)",
+  units:    "Units",
+  defaults: "Unit defaults"
+};
+let tidyItems = [];
+$("#tidy-preview")?.addEventListener("click", () => {
+  const results = $("#tidy-results");
+  const applyBtn = $("#tidy-apply");
+  tidyItems = state.meals.length ? planTidy() : [];
+  results.hidden = false;
+  if (!tidyItems.length){
+    results.innerHTML = "<em>Nothing to tidy — your ingredients already look consistent. ✓</em>";
     applyBtn.disabled = true;
     return;
   }
-  cleanupPreviewData = cleanupIngredientUnits(false);
-  results.style.display = "block";
-
-  if (!cleanupPreviewData.totalChanges){
-    results.innerHTML = "<em>Nothing to clean up — your data already looks tidy. ✓</em>";
-    applyBtn.disabled = true;
-    return;
-  }
-
-  // Group changes by before→after for compactness
-  const grouped = new Map();
-  cleanupPreviewData.changes.forEach(c => {
-    const key = `${c.before} → ${c.after}`;
-    grouped.set(key, (grouped.get(key) || 0) + 1);
-  });
-  const summaryRows = Array.from(grouped.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, n]) => `<li><code>${escapeHtml(k)}</code> &mdash; ${n} time${n === 1 ? "" : "s"}</li>`)
-    .join("");
-
-  results.innerHTML = `
-    <strong>${cleanupPreviewData.totalChanges} change${cleanupPreviewData.totalChanges === 1 ? "" : "s"} would be made:</strong>
-    <ul style="margin:6px 0 0; padding-left:20px;">${summaryRows}</ul>
-  `;
+  results.innerHTML = Object.entries(TIDY_GROUPS).map(([g, title]) => {
+    const rows = tidyItems.filter(x => x.group === g);
+    if (!rows.length) return "";
+    return `<h5 class="tidy-h">${escapeHtml(title)}</h5>` + rows.map(x => `
+      <label class="tidy-row">
+        <input type="checkbox" data-tidy="${escapeHtml(x.id)}" ${x.checked ? "checked" : ""}/>
+        <span>${escapeHtml(x.label)} <span class="muted">(${x.uses})</span>
+        ${x.note ? `<br><span class="tidy-note">⚠ ${escapeHtml(x.note)}</span>` : ""}</span>
+      </label>`).join("");
+  }).join("");
   applyBtn.disabled = false;
 });
-$("#cleanup-apply")?.addEventListener("click", async () => {
-  if (!cleanupPreviewData || !cleanupPreviewData.totalChanges) return;
-  const result = cleanupIngredientUnits(true);
-  await saveAll();
-  renderMeals();
-  renderShopping();
-  cleanupPreviewData = null;
-  $("#cleanup-results").innerHTML = `<em>✓ Applied ${result.totalChanges} change${result.totalChanges === 1 ? "" : "s"}.</em>`;
-  $("#cleanup-apply").disabled = true;
-  status(`Cleaned up ${result.totalChanges} ingredient${result.totalChanges === 1 ? "" : "s"}.`);
+$("#tidy-apply")?.addEventListener("click", async () => {
+  const on = new Set($$("[data-tidy]:checked", $("#tidy-results")).map(cb => cb.dataset.tidy));
+  const chosen = tidyItems.filter(x => on.has(x.id));
+  if (!chosen.length){ status("Nothing ticked."); return; }
+  const snapshot = applyTidy(chosen);
+  const refresh = async () => {
+    await saveAll();
+    renderSettings(); renderMeals(); renderShopping(); populateCookSelect();
+    updateIngredientSuggestions(); refreshTagSuggestions();
+  };
+  await refresh();
+  tidyItems = [];
+  $("#tidy-results").innerHTML = `<em>✓ Applied ${chosen.length} change${chosen.length === 1 ? "" : "s"}.</em>`;
+  $("#tidy-apply").disabled = true;
+  showUndoToast(`Tidied ${chosen.length} item${chosen.length === 1 ? "" : "s"}`, async () => {
+    restoreTidy(snapshot);
+    await refresh();
+    status("Tidy undone.");
+  }, 10000);
 });
+
+/* ===== Pantry staples ===== */
+function renderPantry(){
+  const wrap = $("#pantry-list");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  if (!state.pantry.size){
+    wrap.innerHTML = `<span class="muted small">None yet — tap 🏠 on a shopping-list row.</span>`;
+    return;
+  }
+  Array.from(state.pantry).sort().forEach(k => {
+    const tok = document.createElement("span");
+    tok.className = "token";
+    const t = document.createElement("span");
+    t.textContent = k;
+    const x = document.createElement("button");
+    x.type = "button"; x.className = "x"; x.textContent = "×";
+    x.setAttribute("aria-label", `Remove ${k} from staples`);
+    x.addEventListener("click", async () => { await togglePantry(k, false); renderPantry(); });
+    tok.append(t, x);
+    wrap.appendChild(tok);
+  });
+}
+
+/* ===== Meal history ===== */
+const HISTORY_STALE_DAYS = 60;
+function renderHistory(){
+  const wrap = $("#history-wrap");
+  if (!wrap) return;
+  const meals = state.meals.map(m => ({ m, h: state.history[m.id], last: lastChosen(m.id) }));
+  const chosen = meals.filter(x => x.h?.count).sort((a, b) => b.h.count - a.h.count || a.m.title.localeCompare(b.m.title));
+  const never = meals.filter(x => !x.h?.count).sort((a, b) => a.m.title.localeCompare(b.m.title));
+  const cutoff = new Date(Date.now() - HISTORY_STALE_DAYS * 864e5).toISOString().slice(0, 10);
+  const stale = chosen.filter(x => x.last < cutoff).sort((a, b) => a.last.localeCompare(b.last));
+
+  if (!chosen.length){
+    wrap.innerHTML = `<p class="muted small">No history yet. A meal counts once per shop when you use Ocado, Share, Copy as TSV or Print.</p>`;
+    return;
+  }
+  const row = x => `<li><span>${escapeHtml(x.m.title)}</span>
+    <span class="muted">×${x.h.count} · ${escapeHtml(formatShortDate(x.last))}</span>
+    <button class="btn mini" data-hist-dec="${escapeHtml(x.m.id)}" title="Remove one count" aria-label="Remove one count from ${escapeHtml(x.m.title)}">−1</button></li>`;
+  wrap.innerHTML = `
+    <h5 class="tidy-h">Most chosen</h5>
+    <ol class="hist-list">${chosen.slice(0, 10).map(row).join("")}</ol>
+    <h5 class="tidy-h">Not chosen in ${HISTORY_STALE_DAYS}+ days (${stale.length})</h5>
+    ${stale.length ? `<ul class="hist-list">${stale.map(row).join("")}</ul>` : `<p class="muted small">None.</p>`}
+    <h5 class="tidy-h">Never chosen (${never.length})</h5>
+    <p class="small">${never.map(x => escapeHtml(x.m.title)).join(" · ") || "<span class='muted'>None.</span>"}</p>
+    <button class="btn mini danger" id="history-reset">Reset history</button>`;
+  $$("[data-hist-dec]", wrap).forEach(b => b.addEventListener("click", async () => {
+    const id = b.dataset.histDec;
+    const h = state.history[id];
+    if (!h) return;
+    h.count -= 1;
+    h.dates = (h.dates || []).slice(0, -1);
+    if (h.count <= 0) delete state.history[id];
+    await idbSet(IDB_KEYS.history, state.history);
+    renderHistory(); renderMeals();
+  }));
+  $("#history-reset", wrap)?.addEventListener("click", async () => {
+    if (!confirm("Reset the chosen-for-a-shop history for every meal?")) return;
+    state.history = {};
+    state.countedIds.clear();
+    await Promise.all([idbSet(IDB_KEYS.history, state.history), saveSession()]);
+    renderHistory(); renderMeals();
+  });
+}
 
 $("#norm-add")?.addEventListener("click", async () => {
   const c = $("#norm-canonical").value.trim();
@@ -2124,7 +2521,7 @@ $("#unit-add")?.addEventListener("click", async () => {
   const l = $("#unit-label").value.trim();
   const locked = $("#unit-locked").checked;
   if (!n){ alert("Enter an ingredient name."); return; }
-  const key = normaliseKey(n);
+  const key = ingredientKey(canonicalName(n));
   state.unitDefaults[key] = { type:t, unitLabel: l || undefined, locked };
   $("#unit-name").value = "";
   $("#unit-label").value = "";
@@ -2140,23 +2537,16 @@ $("#unit-add")?.addEventListener("click", async () => {
 (async () => {
   await loadAll();
   applyTheme();
-
-  document.documentElement.style.setProperty(
-    "--card-min",
-    state.prefs.gridMin === "compact" ? "200px" :
-    state.prefs.gridMin === "cozy"    ? "260px" : "320px"
-  );
+  applyDensity();
+  syncSortUI();
+  syncHeaderHeight();
 
   updateIngredientSuggestions();
   refreshTagSuggestions();
-  setupMobileAddPanel();
   setView("meals");
-
-  syncTimeSliders();
-  clampTime();
+  syncFiltersUI();
 
   renderMeals();
   renderShopping();
   populateCookSelect();
-  updateSelectedCount();
 })();

@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v10
+   Meal Planner & Shopping List — v12
    ===================================================== */
 
 :root{
@@ -104,20 +104,20 @@ h1{
 .h3{ margin:0; font-size:1.05rem; }
 .h4{ margin:.4rem 0 .4rem; font-size:.95rem; }
 
-.desktop-only-input{ width:240px; }
-@media (max-width:980px){ .desktop-only-input{ display:none; } }
 
 /* ============== LAYOUT ============== */
+/* Split view: meals on the left, shopping list on the right.
+   minmax(0, 1fr) prevents grid items from blowing out
+   when their content has intrinsic size (long titles, etc.) */
 .layout{
   display:grid;
-  /* minmax(0, 1fr) prevents grid items from blowing out
-     when their content has intrinsic size (long titles, etc.) */
-  grid-template-columns: 420px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 34vw, 460px);
   gap:18px;
   padding:18px;
+  align-items:start;
 }
-@media (max-width:980px){
-  .layout{ grid-template-columns: minmax(0, 1fr); padding:12px; gap:12px; }
+@media (max-width:1100px){
+  .layout{ gap:12px; padding:12px; }
 }
 
 .panel{
@@ -451,7 +451,7 @@ input[type=file]{ padding:8px; }
   min-width: 0;
   max-width: 96vw;
 }
-@media (max-width:720px){
+@media (max-width:839px){
   /* On mobile, modal sits in the safe area between the page header (~70px)
      and the bottom nav (~74px + safe-area-inset). Dialog stretches to fit
      that area so its scroll boundaries align with the visible region.
@@ -512,7 +512,7 @@ input[type=file]{ padding:8px; }
 body.modal-open{ overflow:hidden; }
 
 .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-@media (max-width:720px){ .row{ grid-template-columns:1fr; } }
+@media (max-width:839px){ .row{ grid-template-columns:1fr; } }
 
 .table{ width:100%; border-collapse:collapse; table-layout: fixed; }
 .table th, .table td{
@@ -543,16 +543,6 @@ body.modal-open{ overflow:hidden; }
 }
 .cook-steps input{ accent-color: var(--accent); margin-top:3px; }
 
-/* ============== COLLAPSIBLE ADD (mobile) ============== */
-.collapsible-header{
-  margin:0 0 10px; font-size:1.05rem; font-weight:700;
-  display:flex; align-items:center; justify-content:space-between;
-  cursor:pointer; user-select:none;
-}
-.collapsible-header .chev{ transition: transform .2s ease; }
-.panel.collapsible:not(.open) .collapsible-body{ display:none; }
-.panel.collapsible.open .collapsible-header .chev{ transform: rotate(180deg); }
-
 /* ============== BOTTOM NAV ============== */
 .bottom-nav{ display:none; }
 .navbtn{
@@ -580,12 +570,10 @@ body.modal-open{ overflow:hidden; }
   color: var(--text);
 }
 
-/* Desktop vs mobile controls */
-.mobile-controls{ display:none; }
-.desktop-controls{ display:flex; }
-
-/* Views */
-.view{ display:block; }
+/* Views: left pane shows Meals or Cook; on phones body[data-view] also
+   decides which panel is visible (see MOBILE). */
+.view{ display:none; }
+.view.active{ display:block; }
 
 /* ============== TOAST ============== */
 .toast{
@@ -630,26 +618,28 @@ body.modal-open{ overflow:hidden; }
   from{ transform: translateY(8px); opacity:0; }
   to  { transform: translateY(0);   opacity:1; }
 }
-@media (min-width:721px){
+@media (min-width:840px){
   .toast{ left:auto; right:24px; bottom:24px; max-width:360px; }
 }
 
 /* ============== PRINT ============== */
 @media print{
-  header, .bottom-nav, #add-panel, .toolbar .group, #toast,
-  #view-meals, #view-add, #view-cook,
-  .desktop-controls, .mobile-controls{
+  header, .bottom-nav, #left-panel, #toast, .modal,
+  .shop-actions, #shop-help-toggle, #shop-help, .staples{
     display:none !important;
   }
+  #shop-panel{ display:block !important; position:static !important; max-height:none !important; overflow:visible !important; }
+  #shop-panel *{ color:#000 !important; }
+  .shop-head{ position:static !important; background:#fff !important; border:none !important; margin:0 0 8px !important; padding:0 !important; }
   body, .panel, .layout, .inner{
     background:#fff; color:#000; box-shadow:none; border:none;
   }
   .layout{ grid-template-columns:1fr !important; padding:0 !important; }
   #shopping table{ width:100%; }
   #shopping th, #shopping td{ border-bottom:1px solid #ccc; padding:6px 8px; }
-  /* Hide ticked rows + tick/merge columns when printing */
+  /* Hide ticked rows + tick/action columns when printing */
   #shopping tr.ticked{ display: none !important; }
-  #shopping .col-tick, #shopping .col-merge{ display: none !important; }
+  #shopping .col-tick, #shopping .col-actions{ display: none !important; }
 }
 
 /* Shopping list ticked row styling (screen) */
@@ -659,7 +649,7 @@ body.modal-open{ overflow:hidden; }
   text-decoration-color: var(--muted);
 }
 #shopping tr.ticked td.col-tick,
-#shopping tr.ticked td.col-merge{
+#shopping tr.ticked td.col-actions{
   text-decoration: none;
   opacity: 1;
 }
@@ -667,7 +657,7 @@ body.modal-open{ overflow:hidden; }
 /* =====================================================
    MOBILE
    ===================================================== */
-@media (max-width:720px){
+@media (max-width:839px){
   input, select, textarea{ font-size:16px; }   /* prevents iOS auto-zoom */
   .layout{ padding:12px; gap:12px; }
   .inner{ padding:12px; }
@@ -687,27 +677,14 @@ body.modal-open{ overflow:hidden; }
   }
   [data-theme="light"] .bottom-nav{ background: rgba(255,255,255,.92); }
 
-  /* Add panel order: meals on top, add below */
-  #add-panel{ order:2; }
-  #right-panel{ order:1; }
-
-  .desktop-controls{ display:none; }
-  .mobile-controls{
-    display:flex;
-    width:100%;
-    min-width:0;
-    flex-wrap:nowrap;
-    gap:8px;
-  }
-  .mobile-controls input{
-    flex:1 1 auto;
-    min-width:0;
-  }
-  .mobile-controls .btn{ flex-shrink:0; }
+  /* One panel at a time, picked by the bottom nav */
+  .layout{ grid-template-columns: minmax(0, 1fr); }
+  body[data-view="shopping"] #left-panel,
+  body:not([data-view="shopping"]) #shop-panel{ display:none; }
 
   /* Make sure no view/inner blows the column out */
-  #right-panel,
-  #right-panel .inner,
+  #left-panel,
+  #left-panel .inner,
   .view{
     min-width: 0 !important;
     max-width: 100% !important;
@@ -832,14 +809,20 @@ body.modal-open{ overflow:hidden; }
   }
   .fav span:nth-child(2){ display:none; }
 
-  /* Ingredient row reflow for narrow screens */
+  /* Ingredient row reflow for narrow screens: name + remove on top,
+     type / amount (/ unit label for quantities) below */
   .ingredient-row{
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0,1.2fr) minmax(0,.9fr) minmax(0,1fr) 40px;
     grid-template-areas:
-      "name remove"
-      "type amount"
-      "unit unit";
+      "name name name remove"
+      "type amount amount amount";
   }
+  .ingredient-row.is-qty{
+    grid-template-areas:
+      "name name name remove"
+      "type amount unit unit";
+  }
+  .ingredient-row:not(.is-qty) > input:nth-child(4){ display:none; }
   .ingredient-row > input:nth-child(1){ grid-area:name; }
   .ingredient-row > select{ grid-area:type; }
   .ingredient-row > input:nth-child(3){ grid-area:amount; }
@@ -851,39 +834,9 @@ body.modal-open{ overflow:hidden; }
     font-size:18px;
   }
 
-  /* Shopping table -> rows on mobile (5 cols: tick, name, total, unit, merge) */
-  #shopping table thead{ display:none; }
-  #shopping table tr{
-    display:flex; align-items:center; gap:8px;
-    border-bottom:1px dashed var(--border);
-    padding: 6px 0;
-  }
-  #shopping table td{ border:none; padding:0; }
-  #shopping .col-tick{ flex: 0 0 28px; }
-  #shopping .col-tick input{ width: 22px; height: 22px; accent-color: var(--accent); }
-  #shopping table td:nth-child(2){
-    flex:1 1 auto; min-width:0;
-    word-break:break-word;
-    font-size: .95rem;
-  }
-  #shopping .col-total,
-  #shopping .col-unit{ white-space:nowrap; flex-shrink: 0; }
-  #shopping .col-merge{ flex: 0 0 32px; text-align: right; }
-  #shopping .merge-btn{
-    padding: 4px 7px !important;
-    font-size: .9rem !important;
-    border-radius: 8px !important;
-    opacity: .65;
-  }
-  #shopping .merge-btn:active{ opacity: 1; }
-
-  /* hide #view-add helper section if on mobile (form is in aside) */
-  .view{ display:none; }
-  .view.active{ display:block; }
-
   /* tag bar: small action button */
   .tagbar-wrap{ flex-wrap:wrap; }
-  .tagbar-wrap > .btn.mini{ flex-shrink:0; }
+  .tagbar-wrap > .btn.mini{ flex-shrink:0; white-space:nowrap; }
   .tagbar-wrap > #tag-active{ flex-basis:100%; }
 }
 
@@ -1005,15 +958,151 @@ body.modal-open{ overflow:hidden; }
 }
 [data-theme="light"] .ingredient-row.low-confidence::before{ color: #fff; }
 
-/* Re-apply mobile reflow for the scan modal's ingredient rows */
-@media (max-width:720px){
-  .ingredient-row.low-confidence{
-    grid-template-areas:
-      "name remove"
-      "type amount"
-      "unit unit"
-      "note note" !important;
-  }
-  .ingredient-row.low-confidence .confidence-note{ grid-area: note; }
+
+
+/* =====================================================
+   v12 — SPLIT VIEW, ADD SHEET, SHOPPING PANE, PANTRY, HISTORY
+   ===================================================== */
+.header-actions{ flex-wrap:nowrap; }
+#add-open{ font-weight:600; }
+.phone-only{ display:none; }
+
+/* Left pane tabs (split view only) */
+.pane-tabs{ display:flex; gap:8px; margin-bottom:12px; }
+.pane-tabs .tab{
+  border:1px solid var(--border-strong);
+  background: var(--card); color: var(--text);
+  padding:8px 16px; border-radius:999px;
+  cursor:pointer; font:inherit; font-weight:600;
+}
+.pane-tabs .tab.active{ background: var(--accent-glow); border-color: var(--accent-border); }
+
+/* Meals toolbar: search / sort / filters */
+.meals-toolbar{ flex-wrap:nowrap; }
+.meals-toolbar #search{ flex:1 1 auto; min-width:0; }
+.meals-toolbar #meal-sort{ flex:0 0 auto; width:auto; max-width:46%; }
+.meals-toolbar .btn{ flex-shrink:0; }
+.tagbar-wrap > .btn{ white-space:nowrap; flex-shrink:0; }
+#open-filters.active,
+[data-density].active{ background: var(--accent-glow); border-color: var(--accent-border); }
+
+/* Narrower left pane (tablet portrait): keep at least two columns */
+@media (min-width:840px) and (max-width:1100px){
+  .grid{ grid-template-columns: repeat(auto-fill, minmax(min(var(--card-min), 230px), 1fr)); }
 }
 
+/* Selection bar + selected cards */
+.sel-bar{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:8px 12px; margin:0 0 10px;
+  border:1px solid var(--accent-border); background: var(--accent-glow);
+  border-radius: var(--radius-sm); font-size:.9rem;
+}
+.sel-bar[hidden]{ display:none; }
+.card.selected{
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-border), var(--shadow);
+}
+.card.selected .select{ background: var(--accent); border-color: var(--accent); color:#04120a; }
+.chip-history{ border-color: var(--accent-border); }
+
+/* Shopping pane: sticky, own scroll, actions pinned at its top */
+#shop-panel{
+  position:sticky;
+  top: calc(var(--header-h, 64px) + 12px);
+  max-height: calc(100dvh - var(--header-h, 64px) - 24px);
+  overflow:auto;
+  overscroll-behavior:contain;
+}
+.shop-head{
+  position:sticky; top:0; z-index:2;
+  margin:-16px -16px 10px; padding:16px 16px 10px;
+  background: var(--panel);
+  border-bottom:1px solid var(--border);
+}
+.shop-head .h2{ margin:0; }
+.shop-head #shop-help{ margin:8px 0 0; }
+.shop-actions{ margin-top:8px; flex-wrap:nowrap; }
+.shop-actions > .btn{ flex:1 1 auto; }
+.icon-btn{ min-width:34px; text-align:center; }
+.btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+/* "⋯" menu */
+.menu{ position:relative; }
+.menu > summary{ list-style:none; cursor:pointer; }
+.menu > summary::-webkit-details-marker{ display:none; }
+.menu-list{
+  position:absolute; right:0; top:calc(100% + 6px); z-index:20;
+  display:grid; gap:6px; min-width:180px; padding:8px;
+  background: var(--panel);
+  border:1px solid var(--border-strong); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+.menu-list .btn{ text-align:left; }
+
+/* Shopping rows (all sizes): tick | name | amount | actions */
+#shopping .table{ table-layout:auto; }
+#shopping tr{
+  display:flex; align-items:center; gap:8px;
+  border-bottom:1px dashed var(--border);
+  padding:6px 0;
+}
+#shopping td{ border:none; padding:0; }
+#shopping .col-tick{ flex:0 0 26px; }
+#shopping .col-tick input{ width:20px; height:20px; accent-color: var(--accent); }
+#shopping .col-name{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; font-size:.95rem; }
+#shopping .col-amount{
+  flex:0 1 auto; max-width:48%; text-align:right;
+  color: var(--chip-text); font-variant-numeric: tabular-nums;
+}
+#shopping .col-actions{ flex:0 0 auto; display:flex; gap:4px; }
+#shopping .row-btn{ padding:4px 7px; font-size:.85rem; border-radius:8px; opacity:.6; }
+#shopping .row-btn:hover, #shopping .row-btn.on, #shopping .need-btn{ opacity:1; }
+#shopping .row-btn.on{ background: var(--accent-glow); border-color: var(--accent-border); }
+
+.staples{
+  margin-top:14px; padding:6px 10px;
+  border:1px dashed var(--border-strong); border-radius: var(--radius-sm);
+}
+.staples > summary{ cursor:pointer; color: var(--muted); padding:4px 0; font-size:.9rem; }
+
+/* Bottom-nav count badge */
+.navbtn{ position:relative; }
+.nav-badge{
+  position:absolute; top:4px; right:calc(50% - 28px);
+  min-width:18px; height:18px; padding:0 5px;
+  border-radius:999px; background: var(--accent); color:#04120a;
+  font-size:.7rem; font-weight:800; line-height:18px;
+}
+.nav-badge[hidden]{ display:none; }
+
+/* Unit label only applies to "quantity" rows */
+.ingredient-row:not(.is-qty) > input:nth-child(4){ visibility:hidden; }
+
+/* Settings: tidy review, pantry, history */
+.tidy-results{
+  border:1px solid var(--border); border-radius: var(--radius-sm);
+  padding:10px 12px; max-height:50vh; overflow:auto;
+}
+.tidy-h{ margin:10px 0 4px; font-size:.85rem; color: var(--muted); }
+.tidy-row{ display:flex; gap:8px; align-items:flex-start; padding:4px 0; color: var(--text); font-size:.9rem; }
+.tidy-row input{ margin-top:3px; accent-color: var(--accent); }
+.tidy-note{ color: var(--gold); font-size:.8rem; }
+.token-list{ display:flex; flex-wrap:wrap; gap:6px; }
+.hist-list{ margin:0 0 6px; padding-left:22px; }
+.hist-list li{ padding:3px 0; }
+.hist-list li .btn{ margin-left:8px; padding:2px 8px; }
+
+/* Phone overrides for the v12 rules above (must come after them) */
+@media (max-width:839px){
+  .phone-only{ display:block; }
+  .pane-tabs{ display:none; }           /* bottom nav switches views */
+  #add-open{ display:none; }            /* bottom nav has Add */
+  #shop-panel{ position:static; max-height:none; overflow:visible; }
+  .shop-head{ top: var(--header-h, 64px); margin:-12px -12px 10px; padding:12px; }
+}
+@media (max-width:480px){
+  .meals-toolbar{ flex-wrap:wrap; }
+  .meals-toolbar #search{ flex-basis:100%; }
+  .meals-toolbar #meal-sort{ flex:1 1 auto; max-width:none; }
+}
