@@ -642,12 +642,12 @@ $("#hints-reset")?.addEventListener("click", () => {
 });
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["refresh",  "Sync across devices", "Settings › Sync: turn it on here, then link your phone, PC and your household with a QR code or a short code. Meals, photos, the plan and the shopping list stay the same everywhere."],
-  ["cart",     "Shop together", "Tick items off on your phone in the shop and the tablet catches up within seconds. Works offline too — changes send when you're back online."],
-  ["info",     "Your own copy stays", "Each device keeps all the data, so the app still works without signal. Theme, text size and layout stay per device."]
+  ["search",   "Search as you type", "A search box at the top of Meals. Type \"ru\" and your rump steak is there — no button to press. Meals with it in the title come first, then meals with it in the ingredients."],
+  ["camera",   "Save while the back of a card scans", "Press Save and carry on: the steps are added to the meal when the scan finishes (with Undo if it replaced old steps)."],
+  ["refresh",  "Sync", "Settings › Sync keeps your tablet, phone, PC and household in step."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -1488,7 +1488,6 @@ window.addEventListener("keydown", (e) => {
   else if (viewingId && !$("#scan-modal")?.classList.contains("open")) closeMealView();
   if (addModal?.classList.contains("open") && !$("#scan-modal")?.classList.contains("open")) closeAddSheet();
   if (popEl) closePopover();
-  if (searchSheet?.classList.contains("open")) closeSearch();
   if ($("#whatsnew")?.classList.contains("open")) closeWhatsNew();
 });
 
@@ -1734,7 +1733,6 @@ function renderActiveFilters(){
   const wrap = $("#active-filters");
   if (!wrap) return;
   const chips = [];
-  if (state.search) chips.push({ label: `“${state.search}”`, clear: () => { state.search = ""; $("#search").value = ""; } });
   if ((state.prefs.mealSort || "az") !== "az") chips.push({ label: `Sort: ${SORT_LABELS[state.prefs.mealSort]}`, clear: () => { state.prefs.mealSort = "az"; syncSortUI(); idbSet(IDB_KEYS.prefs, state.prefs); } });
   if (state.showFavsOnly) chips.push({ label: "Favourites", clear: () => { state.showFavsOnly = false; } });
   if (timeFilterActive()) chips.push({ label: timeLabel(), clear: () => { state.timeFilter.min = 0; state.timeFilter.max = TIME_FILTER_MAX; } });
@@ -2118,13 +2116,25 @@ function renderMeals(){
   if (!items.length){
     const d = document.createElement("div");
     d.className = "empty";
-    d.textContent = "No meals match your filters.";
+    d.textContent = state.search ? `No meals match “${state.search}”.` : "No meals match your filters.";
     grid.appendChild(d);
     return;
   }
 
   const frag = document.createDocumentFragment();
-  items.forEach(meal => frag.appendChild(buildCard(meal)));
+  if (state.search){
+    const q = state.search;
+    const inTitle = items.filter(m => (m.title || "").toLowerCase().includes(q));
+    const onlyIngredients = items.filter(m => !(m.title || "").toLowerCase().includes(q));
+    inTitle.forEach(meal => frag.appendChild(buildCard(meal)));
+    if (onlyIngredients.length){
+      const h = document.createElement("div");
+      h.className = "grid-divider";
+      h.textContent = `${inTitle.length ? "Also" : "Meals"} with “${state.search}” in the ingredients (${onlyIngredients.length})`;
+      frag.appendChild(h);
+      onlyIngredients.forEach(meal => frag.appendChild(buildCard(meal)));
+    }
+  } else items.forEach(meal => frag.appendChild(buildCard(meal)));
   grid.appendChild(frag);
   queueThumbs();
 }
@@ -2422,60 +2432,27 @@ $("#contains-clear")?.addEventListener("click", () => {
 /* "What can I make?" opens from the sheet: close the sheet first (plan.js opens it) */
 $("#wcim-open")?.addEventListener("click", () => closeFilters());
 
-/* ============== Search (header 🔍 → full-screen search) ============== */
-const SEARCH_RECENT_KEY = "search-recent-v18";
-const searchSheet = $("#search-sheet");
-function recentSearches(){ try { return JSON.parse(localStorage.getItem(SEARCH_RECENT_KEY) || "[]"); } catch { return []; } }
-function rememberSearch(q){
-  q = (q || "").trim().toLowerCase();
-  if (!q) return;
-  const list = [q, ...recentSearches().filter(x => x !== q)].slice(0, 6);
-  try { localStorage.setItem(SEARCH_RECENT_KEY, JSON.stringify(list)); } catch { /* ok */ }
-}
-function openSearch(){
-  searchSheet.classList.add("open");
-  searchSheet.setAttribute("aria-hidden", "false");
-  lockBodyScroll(true);
-  renderSearch();
-  setTimeout(() => $("#search")?.focus(), 60);
-}
-function closeSearch(){
-  rememberSearch(state.search);
-  searchSheet.classList.remove("open");
-  searchSheet.setAttribute("aria-hidden", "true");
-  lockBodyScroll(false);
-}
-function renderSearch(){
-  const q = state.search;
-  const rec = recentSearches();
-  $("#search-recent").innerHTML = !q && rec.length
-    ? `<span class="muted small">Recent</span>` + rec.map(r => `<button type="button" class="filter-chip" data-recent="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join("")
-    : "";
-  $$("[data-recent]", $("#search-recent")).forEach(b => b.addEventListener("click", () => {
-    $("#search").value = b.dataset.recent;
-    $("#search").dispatchEvent(new Event("input"));
-  }));
-  const out = $("#search-results");
-  if (!q){ out.innerHTML = `<p class="muted small">Search by meal name or ingredient, e.g. "chicken", "couscous".</p>`; return; }
-  const hits = visibleMeals().slice(0, 40);
-  out.innerHTML = hits.map(m => `
-    <button type="button" class="pp-item" data-open="${escapeHtml(m.id)}">
-      <img alt="" data-img="${escapeHtml(m.id)}" />
-      <span class="pp-name">${escapeHtml(m.title)}<span class="muted small">${typeof m.cookMins === "number" ? `${m.cookMins} min` : ""}</span></span>
-      ${icon("next", 18)}
-    </button>`).join("") || `<div class="empty">No meals match “${escapeHtml(q)}”.</div>`;
-  $$("img[data-img]", out).forEach(img => { img.loading = "lazy"; img.src = gridImageSrc(state.meals.find(m => m.id === img.dataset.img)); });
-  $$("[data-open]", out).forEach(b => b.addEventListener("click", () => { rememberSearch(q); closeSearch(); openMealView(b.dataset.open); }));
-}
-$("#search-open")?.addEventListener("click", openSearch);
-$("#search-close")?.addEventListener("click", () => { closeSearch(); if (state.search) setView("meals"); });
-$("#search")?.addEventListener("input", (e) => {
-  state.search = (e.target.value || "").trim().toLowerCase();
-  renderMeals();
-  if (searchSheet?.classList.contains("open")) renderSearch();
+/* ============== Live search (Meals tab) ==============
+   Filters as you type — no button. Title matches come first; meals that only
+   match on an ingredient follow under their own heading. The header 🔍 jumps
+   here and focuses the box. */
+const mealSearch = $("#meal-search");
+let searchFrame = 0;
+mealSearch?.addEventListener("input", () => {
+  state.search = (mealSearch.value || "").trim().toLowerCase();
+  cancelAnimationFrame(searchFrame);
+  searchFrame = requestAnimationFrame(() => {
+    renderMeals();
+    if (state.search) window.scrollTo({ top: 0 });
+  });
 });
-$("#search")?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter"){ e.preventDefault(); closeSearch(); setView("meals"); }
+mealSearch?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter"){ e.preventDefault(); mealSearch.blur(); }   // closes the phone keyboard
+  else if (e.key === "Escape" && mealSearch.value){ e.stopPropagation(); mealSearch.value = ""; mealSearch.dispatchEvent(new Event("input")); }
+});
+$("#search-open")?.addEventListener("click", () => {
+  switchView("meals");
+  setTimeout(() => { mealSearch?.focus(); mealSearch?.select(); }, 80);
 });
 
 /* Sort */

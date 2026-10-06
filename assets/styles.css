@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v21
+   Meal Planner & Shopping List — v22
    ===================================================== */
 
 :root{
@@ -1824,3 +1824,15 @@ code.sync-code[hidden]{ display:none; }
 .sync-progress[hidden]{ display:none; }
 .sync-bar{ height:6px; border-radius:999px; background: var(--chip); overflow:hidden; margin-bottom:6px; }
 #sync-progress-bar{ height:100%; width:0; background: var(--accent); transition: width .2s ease; }
+
+/* =====================================================
+   v22 — LIVE SEARCH ON THE MEALS TAB
+   ===================================================== */
+.meal-search{ position:relative; margin:0 0 10px; }
+.meal-search > .ic{ position:absolute; left:14px; top:50%; transform:translateY(-50%); color: var(--muted); pointer-events:none; }
+.meal-search input{ padding-left:42px; border-radius:999px; min-height:46px; font-size:1rem; }
+.meal-search input::-webkit-search-cancel-button{ cursor:pointer; }
+.grid-divider{
+  grid-column: 1 / -1; margin:8px 0 0; padding-top:10px; border-top:1px solid var(--border);
+  font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color: var(--muted);
+}

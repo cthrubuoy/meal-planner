@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=21" />
-  <link rel="stylesheet" href="assets/styles.css?v=21" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=22" />
+  <link rel="stylesheet" href="assets/styles.css?v=22" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v21</span>
+      <span class="pill">v22</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -99,6 +99,11 @@
             <button id="backup-now" class="btn mini">Back up now</button>
             <button id="backup-later" class="btn mini ghost">Later</button>
           </span>
+        </div>
+
+        <div class="meal-search">
+          <i data-icon="search" data-size="18"></i>
+          <input id="meal-search" type="search" placeholder="Search meals or ingredients" autocomplete="off" enterkeyhint="search" aria-label="Search meals" />
         </div>
 
         <div class="tagbar-wrap">
@@ -846,19 +851,6 @@
   </div>
 </div>
 
-<!-- ================== SEARCH ================== -->
-<div id="search-sheet" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Search meals">
-  <div class="dialog sheet-dialog search-dialog">
-    <div class="search-bar">
-      <i data-icon="search"></i>
-      <input id="search" type="search" placeholder="Search meals or ingredients…" autocomplete="off" />
-      <button id="search-close" class="btn mini ghost">Close</button>
-    </div>
-    <div id="search-recent" class="search-recent"></div>
-    <div id="search-results" class="pp-list"></div>
-  </div>
-</div>
-
 <!-- ================== WHAT'S NEW ================== -->
 <div id="whatsnew" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="whatsnew-title">
   <div class="dialog picker-dialog">
@@ -892,13 +884,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=21" defer></script>
-<script src="assets/app.js?v=21" defer></script>
-<script src="assets/cook.js?v=21" defer></script>
-<script src="assets/plan.js?v=21" defer></script>
-<script src="assets/vendor/qrcode.js?v=21" defer></script>
-<script src="assets/sync.js?v=21" defer></script>
-<script src="assets/scan.js?v=21" defer></script>
-<script src="assets/pwa.js?v=21" defer></script>
+<script src="assets/icons.js?v=22" defer></script>
+<script src="assets/app.js?v=22" defer></script>
+<script src="assets/cook.js?v=22" defer></script>
+<script src="assets/plan.js?v=22" defer></script>
+<script src="assets/vendor/qrcode.js?v=22" defer></script>
+<script src="assets/sync.js?v=22" defer></script>
+<script src="assets/scan.js?v=22" defer></script>
+<script src="assets/pwa.js?v=22" defer></script>
 </body>
 </html>

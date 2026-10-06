@@ -417,82 +417,98 @@
     await runStepsScan(file);
   });
 
+  /* Runs in the background (v22): you can press Save (or close Edit) while it
+     scans. If Edit is still open on the same meal, the steps go into the form
+     as before; otherwise they're saved straight onto the meal, with Undo. */
   async function runStepsScan(file) {
-    if (!state.editingId) {
+    const mealId = state.editingId;
+    if (!mealId) {
       alert("Please open a meal for editing first.");
       return;
     }
-    status("📷 Scanning the back of the card…", 30000);
+    const titleNow = () => state.meals.find(m => m.id === mealId)?.title || "this meal";
+    status("Scanning the back of the card… You can save and carry on — the steps are added when it's done.", 8000);
 
-    let dataUrl;
-    try {
-      dataUrl = await fileToCompressedDataURL(file);
-      if (!dataUrl) throw new Error("Couldn't process the image.");
-    } catch (err) {
-      status(`Image error: ${err.message || "couldn't process photo"}`, 4000);
-      return;
-    }
-
-    let resp, data;
-    try {
-      resp = await fetch(SCAN_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl, mode: "steps_only" })
-      });
-    } catch {
-      status("Couldn't reach the scan server. Check your connection.", 4000);
-      return;
-    }
-
-    try { data = await resp.json(); }
-    catch { status("Scan server returned an unexpected response.", 4000); return; }
-
-    if (!resp.ok || data.error) {
-      if (data?.error === "not_a_recipe_card") {
-        status("That doesn't look like a recipe-instructions page.", 4000);
-      } else {
-        status(`Scan failed: ${data?.reason || resp.status}`, 4000);
+    {
+      let dataUrl;
+      try {
+        dataUrl = await fileToCompressedDataURL(file);
+        if (!dataUrl) throw new Error("Couldn't process the image.");
+      } catch (err) {
+        status(`Image error: ${err.message || "couldn't process photo"}`, 4000);
+        return;
       }
-      return;
-    }
 
-    const newSteps = Array.isArray(data.steps) ? data.steps : [];
-    if (!newSteps.length) {
-      status("No cooking steps found on that photo.", 4000);
-      return;
-    }
+      let resp, data;
+      try {
+        resp = await fetch(SCAN_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: dataUrl, mode: "steps_only" })
+        });
+      } catch {
+        status(`Couldn't reach the scan server for "${titleNow()}". Check your connection.`, 5000);
+        return;
+      }
 
-    // Decide: replace, append, or cancel
+      try { data = await resp.json(); }
+      catch { status("Scan server returned an unexpected response.", 4000); return; }
+
+      if (!resp.ok || data.error) {
+        if (data?.error === "not_a_recipe_card") status("That doesn't look like a recipe-instructions page.", 5000);
+        else status(`Scan of "${titleNow()}" failed: ${data?.reason || resp.status}`, 7000);
+        return;
+      }
+
+      const newSteps = Array.isArray(data.steps) ? data.steps : [];
+      if (!newSteps.length) {
+        status("No cooking steps found on that photo.", 4000);
+        return;
+      }
+
+      const formOpen = editModal?.classList.contains("open") && state.editingId === mealId;
+      if (formOpen) fillForm(newSteps, data);
+      else await saveToMeal(mealId, newSteps, data);
+    }
+  }
+
+  /* Edit is still open on this meal: put the steps in the form (Save keeps them) */
+  function fillForm(newSteps, data) {
     let replace = true;
     if (editSteps.length) {
-      const choice = confirm(
+      replace = confirm(
         `Found ${newSteps.length} cooking step${newSteps.length === 1 ? "" : "s"}.\n\n` +
         `This meal already has ${editSteps.length} step${editSteps.length === 1 ? "" : "s"}.\n\n` +
         `OK = replace existing steps with the scanned ones\n` +
         `Cancel = keep existing, add scanned to the end`
       );
-      replace = choice;
     }
-
-    if (replace) {
-      editSteps.length = 0;
-      newSteps.forEach(s => editSteps.push(s));
-    } else {
-      newSteps.forEach(s => editSteps.push(s));
-    }
+    if (replace) editSteps.length = 0;
+    newSteps.forEach(s => editSteps.push(s));
     refreshEditSteps();
-
-    // Merge cookMins only if not already set
-    if (typeof data.cookMins === "number" && !$("#edit-cook-mins").value.trim()) {
-      $("#edit-cook-mins").value = String(data.cookMins);
-    }
-
-    // Merge notes only if existing notes are empty
-    if (data.notes && !$("#edit-notes").value.trim()) {
-      $("#edit-notes").value = data.notes;
-    }
-
+    if (typeof data.cookMins === "number" && !$("#edit-cook-mins").value.trim()) $("#edit-cook-mins").value = String(data.cookMins);
+    if (data.notes && !$("#edit-notes").value.trim()) $("#edit-notes").value = data.notes;
     status(`✓ Added ${newSteps.length} step${newSteps.length === 1 ? "" : "s"} from scan`, 3500);
+  }
+
+  /* Edit was saved or closed: save the steps onto the meal itself */
+  async function saveToMeal(mealId, newSteps, data) {
+    const meal = state.meals.find(m => m.id === mealId);
+    if (!meal) { status("The scan finished, but that meal has been deleted.", 4000); return; }
+    const before = { steps: (meal.steps || []).slice(), cookMins: meal.cookMins, notes: meal.notes };
+    meal.steps = newSteps.slice();                       // the card is the source: replace (Undo restores)
+    if (typeof data.cookMins === "number" && typeof meal.cookMins !== "number") meal.cookMins = data.cookMins;
+    if (data.notes && !String(meal.notes || "").trim()) meal.notes = data.notes;
+    const after = () => { renderMeals(); window.populateCookSelect?.(); refreshMealView(); window.renderToday?.(); };
+    await saveAll(); after();
+    const msg = `✓ ${newSteps.length} step${newSteps.length === 1 ? "" : "s"} added to "${meal.title}"`;
+    if (before.steps.length) {
+      showUndoToast(`${msg} (replaced ${before.steps.length})`, async () => {
+        Object.assign(meal, before); await saveAll(); after();
+        status(`Steps of "${meal.title}" restored`, 3000);
+      }, 8000);
+    } else {
+      status(msg, 4500);
+    }
   }
 })();

@@ -3,6 +3,26 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v22 — Live search, save while the back of a card scans (2026-10-06)
+Cache `meal-planner-v24` · assets `?v=22` · export schema 14 (unchanged)
+
+### Added
+- **Search box at the top of Meals** (above the tags) that filters as you type, with no button to press. "r" shows everything with an r; "ru" narrows it to your rump steak.
+  - Meals with the text in the title come first; meals that only have it in an ingredient follow under their own heading.
+  - The header magnifier jumps to this box.
+
+### Changed
+- **The back-of-card scan no longer holds you up:**
+  - Press Save (or close Edit) while it's scanning, and the steps are added to the meal when the scan finishes.
+  - If the meal already had steps, the scan replaces them, with Undo.
+  - If Edit is still open on that meal when the scan finishes, the steps go into the form as before.
+- **The search sheet from v18 is gone.** The search box on Meals replaces it.
+
+### Fixed (scan server v2.2)
+- **"Gemini declined to answer (RECITATION)"** on cards with a lot of text.
+  - The cause: Gemini refuses to copy word for word text that's published online, as recipe-box cards are.
+  - The scan server no longer asks for the exact printed wording. If Gemini still refuses, it asks again for the steps in its own words, keeping every quantity, time and temperature.
+
 ## v21 — Sync across devices and your household (2026-10-06)
 Cache `meal-planner-v23` · assets `?v=21` · export schema 14 (unchanged)
 
