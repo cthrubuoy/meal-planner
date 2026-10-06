@@ -773,13 +773,13 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["refresh",  "Restore my meals", "If this device ever loses its meals, Settings › Sync › Restore my meals brings everything back from your household — with the key saved in your password manager, no other device needed."],
-  ["save",     "Save your household key", "Settings › Sync › Save to password manager. Do this once on each device."],
-  ["info",     "A safety brake on sync", "If a device suddenly tries to delete lots of meals, sync stops and asks first — so one emptied device can never wipe everyone's meals."],
-  ["edit",     "Rename devices", "Settings › Sync › Rename (your tablet may show as \"Computer\" — Brave runs in desktop mode)."]
+  ["cart", "A new shopping list", "Round ticks you can hit with a thumb, a \"3 of 40 got\" bar, and under each item the meal it's for. Tap an item (or swipe it right) when it's in the trolley."],
+  ["list", "By aisle · A–Z · By meal", "Switch at the top of the list. By meal shows what each meal needs, with shared items first."],
+  ["swap", "Swipe left for the rest", "\"Always have\" and \"same as another ingredient\" moved off the rows: swipe an item left (or ⋯ on a computer)."],
+  ["edit", "A cleaner Edit meal", "The photo at the top (change it, or take it from a card), time quick-picks, and ingredients that read like the meal page: tap one to change it."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -946,15 +946,80 @@ async function cropImageToDataURL(src, box){
   }
 }
 
-/* Edit form: a photo waiting to be saved (from "Take dish photo from a recipe card") */
+/* Add / Edit form photo header (v26): shows the meal's photo, or the new one
+   waiting to be saved (picked, or taken from a recipe card), with Undo. */
 let editPendingImage = null;
+const photoHeads = {};
+function photoHead(prefix){
+  if (photoHeads[prefix]) return photoHeads[prefix];
+  const box = document.getElementById(`${prefix}photo-head`);
+  if (!box) return null;
+  const file = document.getElementById(`${prefix}image-file`);
+  const h = photoHeads[prefix] = { box, file, saved: null, preview: null,
+    render(){
+      const src = h.preview || h.saved;
+      const img = box.querySelector("img");
+      img.hidden = !src;
+      if (src) img.src = src; else img.removeAttribute("src");
+      box.classList.toggle("has-photo", !!src);
+      box.querySelector(".ph-undo").hidden = !h.preview;
+      box.querySelector(".ph-label").textContent = src ? "Change photo" : "Add photo";
+    },
+    set(saved){ h.saved = saved || null; h.clear(); },
+    clear(){ if (h.preview?.startsWith("blob:")) URL.revokeObjectURL(h.preview); h.preview = null; if (file) file.value = ""; if (prefix === "edit-") editPendingImage = null; h.render(); }
+  };
+  file?.addEventListener("change", () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    if (prefix === "edit-") editPendingImage = null;
+    if (h.preview?.startsWith("blob:")) URL.revokeObjectURL(h.preview);
+    h.preview = URL.createObjectURL(f);
+    h.render();
+  });
+  box.querySelector(".ph-undo").addEventListener("click", () => h.clear());
+  return h;
+}
 function setEditPendingImage(dataUrl){
-  editPendingImage = dataUrl || null;
-  const box = document.getElementById("edit-photo-pending");
-  if (!box) return;
-  box.hidden = !editPendingImage;
-  const img = box.querySelector("img");
-  if (img) img.src = editPendingImage || "";
+  const h = photoHead("edit-");
+  if (!dataUrl){ h?.clear(); return; }
+  if (h?.file) h.file.value = "";
+  editPendingImage = dataUrl;
+  if (h){ h.preview = dataUrl; h.render(); }
+}
+
+/* Time quick-picks: 10 · 20 · 30 · 40 · 45 · 60 · Other (the number box) */
+const TIME_PICKS = [10, 20, 30, 40, 45, 60];
+function timePicks(input){
+  if (!input || input.previousElementSibling?.classList.contains("time-picks")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "time-picks";
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", "Minutes");
+  wrap.innerHTML = TIME_PICKS.map(m => `<button type="button" class="tchip" data-mins="${m}">${m}</button>`).join("") + `<button type="button" class="tchip" data-mins="other">Other</button>`;
+  input.before(wrap);
+  const sync = () => {
+    const v = input.value.trim();
+    const pick = TIME_PICKS.includes(Number(v)) && v !== "";
+    let other = wrap.dataset.other === "1" || (v !== "" && !pick);
+    $$(".tchip", wrap).forEach(b => {
+      const on = b.dataset.mins === "other" ? other : (!other && b.dataset.mins === v);
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+      if (on && b.dataset.mins !== "other") b.textContent = `${v} min`; else if (b.dataset.mins !== "other") b.textContent = b.dataset.mins;
+    });
+    input.classList.toggle("time-other", other);
+  };
+  wrap.addEventListener("click", (e) => {
+    const b = e.target.closest(".tchip");
+    if (!b) return;
+    if (b.dataset.mins === "other"){ wrap.dataset.other = "1"; sync(); input.focus(); return; }
+    wrap.dataset.other = "";
+    input.value = input.value === b.dataset.mins ? "" : b.dataset.mins;   // tap again to clear
+    sync();
+  });
+  input.addEventListener("input", sync);
+  input.syncPicks = () => { wrap.dataset.other = ""; sync(); };
+  sync();
 }
 
 /* A meal without a photo: a warm colour pair picked from its title, its
@@ -1233,9 +1298,34 @@ document.addEventListener("pointerdown", (e) => {
   handle.addEventListener("pointercancel", up);
 });
 
+/* A saved ingredient shows as one line ("320 g  Chicken thigh ›"); tapping it
+   opens the boxes. It folds back when focus leaves the row. */
+const TYPE_UNIT = { grams:"g", ml:"ml", tsp:"tsp", tbsp:"tbsp" };
+function ingredientSummary(row){
+  const [n, t, a, u] = row.children;
+  const amt = Number(a.value);
+  let unit = TYPE_UNIT[t.value] || "";
+  if (t.value === "cup") unit = amt === 1 ? "cup" : "cups";
+  if (t.value === "qty"){ const l = singulariseUnitLabel(u.value.trim()); unit = l && l !== "piece" ? displayUnit(l, amt) : ""; }
+  return { q: a.value === "" ? "" : `${formatNumber(amt)} ${unit}`.trim(), name: titleCase(n.value.trim()) };
+}
+function foldIngredientRow(row){
+  const sum = row.querySelector(".ing-sum");
+  if (!sum || !row.children[0].value.trim() || row.classList.contains("low-confidence")) return;
+  const s = ingredientSummary(row);
+  sum.querySelector(".ing-q").textContent = s.q;
+  sum.querySelector(".ing-n").textContent = s.name;
+  sum.setAttribute("aria-label", `${s.q} ${s.name} — change`.trim());
+  row.classList.add("folded");
+}
+
 function addIngredientRow(container, pref = {}, opts = {}){
   const row = $("#ingredient-template").content.firstElementChild.cloneNode(true);
   const [nameEl, typeEl, amtEl, unitEl, rmBtn] = row.children;
+  const sum = row.querySelector(".ing-sum");
+  hydrateIcons?.(sum);
+  sum.addEventListener("click", () => { row.classList.remove("folded"); nameEl.focus(); });
+  row.addEventListener("focusout", () => setTimeout(() => { if (row.isConnected && !row.contains(document.activeElement)) foldIngredientRow(row); }, 0));
 
   nameEl.value = pref.name || "";
   typeEl.value = pref.type || "grams";
@@ -1258,6 +1348,7 @@ function addIngredientRow(container, pref = {}, opts = {}){
     }, 30);
   }
   if (nameEl.value) maybeApplyUnitDefault(row, true);
+  if (pref.name && opts.fold !== false) foldIngredientRow(row);
   return row;
 }
 
@@ -1607,6 +1698,8 @@ addIngredientRow(ingContainer, {}, { focus:false });
 addIngredientRow(ingContainer, {}, { focus:false });
 
 const tagEditor = tokenEditor($("#tags-editor"), $("#tags-input"));
+photoHead(""); photoHead("edit-");
+timePicks($("#cook-mins")); timePicks($("#edit-cook-mins"));
 
 let createSteps = [];
 function refreshCreateSteps(){ renderSteps($("#steps"), createSteps, refreshCreateSteps); }
@@ -1623,7 +1716,7 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
     if (!title){ alert("Please provide a meal name."); $("#title").focus(); return; }
 
     let imageDataUrl = null;
-    const file = $("#image-file").files[0];
+    const file = $("#image-file").files[0];   // shown in the photo header
     if (file){
       try{ imageDataUrl = await fileToCompressedDataURL(file); }
       catch(err){ console.warn(err); imageDataUrl = null; }
@@ -1631,21 +1724,7 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
 
     const cookMins = parseCookMins($("#cook-mins").value);
 
-    const ingredients = [];
-    $$(".ingredient-row", ingContainer).forEach(row => {
-      const [n, t, a, u] = row.children;
-      const name = n.value.trim();
-      if (!name) return;
-      let amount = Number(a.value);
-      if (!isFinite(amount) || amount < 0) return;
-      const type = t.value;
-      if (type === "qty") amount = Math.max(0, Math.round(amount));
-      let unit = singulariseUnitLabel(u.value.trim());
-      if (type === "qty" && !unit) unit = "piece";   // never store qty without a label
-      // apply normaliser at save time
-      const canon = normaliserLookup(name) || normaliseRaw(name);
-      ingredients.push({ name: canon, type, amount, unit });
-    });
+    const ingredients = readIngredientRows(ingContainer);   // normaliser applied at save time
     if (!ingredients.length){ alert("Please add at least one valid ingredient."); return; }
 
     const autoTags = ingredientNamesToTags(ingredients);
@@ -1672,6 +1751,8 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
 
     // reset form
     e.target.reset();
+    photoHead("")?.set(null);
+    $("#cook-mins").syncPicks?.();
     ingContainer.innerHTML = "";
     addIngredientRow(ingContainer, {}, { focus:false });
     addIngredientRow(ingContainer, {}, { focus:false });
@@ -1689,6 +1770,8 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
 });
 
 $("#reset-form")?.addEventListener("click", () => {
+  photoHead("")?.set(null);
+  setTimeout(() => $("#cook-mins").syncPicks?.(), 0);   // after the form's own reset
   ingContainer.innerHTML = "";
   addIngredientRow(ingContainer, {}, { focus:false });
   addIngredientRow(ingContainer, {}, { focus:false });
@@ -1736,6 +1819,8 @@ function openEdit(id){
 
   $("#edit-title").value = meal.title;
   $("#edit-cook-mins").value = (meal.cookMins ?? "");
+  $("#edit-cook-mins").syncPicks?.();
+  photoHead("edit-")?.set(meal.image?.src || null);
   editIng.innerHTML = "";
   (meal.ingredients || []).forEach(i => addIngredientRow(editIng, i, { focus:false }));
   if (!(meal.ingredients || []).length) addIngredientRow(editIng, {}, { focus:false });
@@ -1752,13 +1837,13 @@ function openEdit(id){
   editModal.classList.add("open");
   editModal.setAttribute("aria-hidden", "false");
   lockBodyScroll(true);
-  setTimeout(() => $("#edit-title")?.focus(), 40);
+  if (!isMobile()) setTimeout(() => $("#edit-title")?.focus(), 40);   // phones: no keyboard over the photo
 }
 function closeEdit(){
   editModal.classList.remove("open");
   editModal.setAttribute("aria-hidden", "true");
   state.editingId = null;
-  setEditPendingImage(null);
+  photoHead("edit-")?.set(null);
   $("#edit-form").reset();
   editIng.innerHTML = "";
   if ($("#edit-extras")) $("#edit-extras").innerHTML = "";
@@ -2867,7 +2952,7 @@ function formatPart(pk, total){
   }
   if (pk === "cup") return [{ value:total, unit: total === 1 ? "cup" : "cups" }];
   const unit = pk.slice(4);
-  return [{ value:total, unit: displayUnit(unit, total) }];
+  return [{ value:total, unit: unit === "piece" ? "" : displayUnit(unit, total) }];   // "3", not "3 pieces"
 }
 function aggregate(){
   const map = new Map();
@@ -2884,7 +2969,7 @@ function aggregate(){
       const pk = partKey(i);
       const amt = (Number(i.amount) || 0) * (pk === "spoon" ? SPOON_TSP[i.type] : 1) * mult;
       row.parts.set(pk, (row.parts.get(pk) || 0) + amt);
-      if (extra) (row.extraFor ||= new Set()).add(m.title); else row.recipe = true;
+      if (extra) (row.extraFor ||= new Set()).add(m.title); else { row.recipe = true; (row.meals ||= new Set()).add(m.title); }
     };
     for (const i of (m.ingredients || [])) add(i, false);
     for (const i of (m.extras || [])) add(i, true);      // "I usually add" — bought with the meal
@@ -2902,7 +2987,8 @@ function aggregate(){
       name: mostCommon(r.spellings),
       names: Array.from(r.spellings.keys()),
       parts,
-      amount: parts.map(p => `${formatNumber(p.value)} ${p.unit}`).join(" + ") || "—",
+      amount: parts.map(p => `${formatNumber(p.value)} ${p.unit}`.trim()).join(" + ") || "—",
+      forMeals: r.meals ? Array.from(r.meals) : [],
       extraFor: r.extraFor ? Array.from(r.extraFor) : undefined,
       onlyExtra: !!r.extraFor && !r.recipe
     };
@@ -2959,115 +3045,181 @@ function setGot(key, on){
   saveSession();
   renderShopping();
 }
-/* Swipe a row right to tick, left to untick. Horizontal only, so vertical
-   scrolling still works (rows use touch-action: pan-y). */
-function attachRowSwipe(tr, key){
+/* Swipe a row right to tick it (or untick it); left for its less-used actions
+   (always have / merge / remove). Horizontal only, so vertical scrolling still
+   works (rows use touch-action: pan-y). */
+function attachRowSwipe(row, r, onMore){
   let start = null;
-  tr.addEventListener("pointerdown", (e) => {
-    if (e.button > 0 || e.target.closest("button, input")) return;
+  row.addEventListener("pointerdown", (e) => {
+    if (e.button > 0 || e.target.closest(".smore, .need-btn")) return;
     start = { x: e.clientX, y: e.clientY, id: e.pointerId, swiping: false };
   });
-  tr.addEventListener("pointermove", (e) => {
+  row.addEventListener("pointermove", (e) => {
     if (!start || e.pointerId !== start.id) return;
     const dx = e.clientX - start.x, dy = e.clientY - start.y;
     if (!start.swiping){
       if (Math.abs(dy) > 12){ start = null; return; }          // a scroll, not a swipe
-      if (Math.abs(dx) > 12){ start.swiping = true; try { tr.setPointerCapture(e.pointerId); } catch { /* ok */ } }
+      if (Math.abs(dx) > 12){ start.swiping = true; try { row.setPointerCapture(e.pointerId); } catch { /* ok */ } }
     }
     if (start?.swiping){
-      tr.style.transform = `translateX(${Math.max(-90, Math.min(90, dx))}px)`;
-      tr.classList.toggle("swipe-got", dx > 60);
-      tr.classList.toggle("swipe-undo", dx < -60);
+      row.style.transform = `translateX(${Math.max(-90, Math.min(90, dx))}px)`;
+      row.classList.toggle("swipe-got", dx > 60);
+      row.classList.toggle("swipe-more", dx < -60);
     }
   });
-  const end = (e) => {
+  const reset = () => { row.style.transform = ""; row.classList.remove("swipe-got", "swipe-more"); };
+  row.addEventListener("pointerup", (e) => {
     if (!start || e.pointerId !== start.id) return;
     const dx = e.clientX - start.x, dy = e.clientY - start.y, was = start.swiping;
     start = null;
-    tr.style.transform = "";
-    tr.classList.remove("swipe-got", "swipe-undo");
+    reset();
     if (!was || Math.abs(dy) > 30) return;
-    if (dx > 60 && !state.haveIt.has(key)) setGot(key, true);
-    else if (dx < -60 && state.haveIt.has(key)) setGot(key, false);
-  };
-  tr.addEventListener("pointerup", end);
-  tr.addEventListener("pointercancel", () => { start = null; tr.style.transform = ""; tr.classList.remove("swipe-got", "swipe-undo"); });
+    row.dataset.swiped = "1";                  // the click that follows isn't a tap
+    setTimeout(() => delete row.dataset.swiped, 50);
+    if (dx > 60) setGot(r.key, !state.haveIt.has(r.key));
+    else if (dx < -60) onMore();
+  });
+  row.addEventListener("pointercancel", () => { start = null; reset(); });
 }
 
-function shoppingRow(r, opts){
-  const tr = document.createElement("tr");
+/* "Chicken & Chorizo Pie" stays; "10-Min Fruity Moroccan Chicken Stew with Couscous"
+   becomes "Fruity Moroccan Chicken Stew" — the "for" line has room for a few. */
+function shortMealTitle(t){
+  let s = String(t || "").replace(/^\s*\d+[- ]?min(ute)?s?\s+/i, "").trim();
+  const cut = s.search(/\s+(with|w\/|served with|on a bed of)\s+|,\s+/i);
+  if (cut > 8) s = s.slice(0, cut);
+  return s;
+}
+function forLine(r){
+  if (r.added) return "Added to the list";
+  const parts = (r.forMeals || []).map(shortMealTitle);
+  for (const t of (r.extraFor || [])) if (!(r.forMeals || []).includes(t)) parts.push(`${shortMealTitle(t)} (your extra)`);
+  if (r.extraFor?.length && !r.onlyExtra && parts.length && !parts.some(p => p.endsWith("(your extra)"))) parts.push("+ your extra");
+  return parts.join(" · ");
+}
+
+function shopRowActions(r){
+  if (r.added) return [{ icon: "trash", label: `Remove ${r.name}`, danger: true, run: () => removeListItem(r.key.slice(5)) }];
+  const out = [];
+  if (state.pantry.has(r.key)) out.push({ icon: "home", label: "Back to the cupboard (staple)", run: () => { state.pantryUse.delete(r.key); saveSession(); renderShopping(); } });
+  else out.push({ icon: "home", label: `Always have ${r.name} (staple)`, run: () => togglePantry(r.key, true) });
+  out.push({ icon: "swap", label: "Same as another ingredient…", run: () => openMergeDialog(r.names) });
+  return out;
+}
+
+function shoppingRow(r, opts = {}){
+  const row = document.createElement("div");
+  row.className = "srow";
+  row.setAttribute("role", "listitem");
+  row.dataset.key = r.key;
   const ticked = state.haveIt.has(r.key);
-  tr.classList.toggle("ticked", ticked && !opts.staple);
-  tr.classList.toggle("just-got", ticked && r.key === justGot);
+  row.classList.toggle("got", ticked && !opts.staple);
+  row.classList.toggle("just-got", ticked && r.key === justGot);
+  if (r.names.length > 1) row.title = `Merged: ${r.names.join(", ")}`;
 
-  const tdTick = document.createElement("td");
-  tdTick.className = "col-tick";
   if (!opts.staple){
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = ticked;
-    cb.setAttribute("aria-label", `I have ${r.name}`);
-    cb.addEventListener("change", () => setGot(r.key, cb.checked));
-    tdTick.appendChild(cb);
-    attachRowSwipe(tr, r.key);
+    const tick = document.createElement("button");
+    tick.type = "button";
+    tick.className = "stick";
+    tick.setAttribute("aria-pressed", String(ticked));
+    tick.setAttribute("aria-label", `Got ${r.name}`);
+    tick.innerHTML = icon("check", 18);
+    row.appendChild(tick);
   }
-
-  const tdName = document.createElement("td");
-  tdName.className = "col-name";
-  tdName.textContent = titleCase(r.name);
-  if (r.extraFor?.length || r.added){
-    const note = document.createElement("span");
-    note.className = "row-note";
-    note.textContent = r.added ? "added by hand" : `${r.onlyExtra ? "your extra" : "+ your extra"} · ${r.extraFor.join(", ")}`;
-    tdName.appendChild(note);
+  const name = document.createElement("div");
+  name.className = "sname";
+  name.textContent = titleCase(r.name);
+  const fl = forLine(r);
+  if (fl){
+    const f = document.createElement("span");
+    f.className = "sfor";
+    f.textContent = fl;
+    name.appendChild(f);
   }
-  if (r.names.length > 1) tdName.title = `Merged: ${r.names.join(", ")}`;
+  const amt = document.createElement("span");
+  amt.className = "samt";
+  amt.textContent = r.amount === "—" ? "" : r.amount;
+  amt.hidden = !amt.textContent;
+  row.append(name, amt);
 
-  const tdAmt = document.createElement("td");
-  tdAmt.className = "col-amount";
-  tdAmt.textContent = r.amount;
-
-  const tdAct = document.createElement("td");
-  tdAct.className = "col-actions";
-  const mk = (text, title, onClick, cls = "") => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `btn mini row-btn ${cls}`.trim();
-    if (ICON_PATHS[text]) b.innerHTML = icon(text, 18); else b.textContent = text;
-    b.title = title;
-    b.setAttribute("aria-label", title);
-    b.addEventListener("click", onClick);
-    tdAct.appendChild(b);
-  };
-  if (r.added){
-    mk("x", `Remove ${r.name} from the list`, () => removeListItem(r.key.slice(5)));
-  } else if (opts.staple){
-    mk("Need it", `Add ${r.name} to this shop`, () => {
-      state.pantryUse.add(r.key); saveSession(); renderShopping();
-    }, "need-btn");
-    mk("x", `${r.name} is not a staple`, () => togglePantry(r.key, false));
-  } else if (state.pantry.has(r.key)){
-    mk("home", `Back to the cupboard (staple)`, () => {
-      state.pantryUse.delete(r.key); saveSession(); renderShopping();
-    }, "on");
-  } else {
-    mk("home", `Always have ${r.name} (staple)`, () => togglePantry(r.key, true));
+  const more = () => openMenu(row.querySelector(".smore") || row, opts.staple
+    ? [{ icon: "x", label: `${r.name} isn't a staple`, run: () => togglePantry(r.key, false) }]
+    : shopRowActions(r));
+  if (opts.staple){
+    const need = document.createElement("button");
+    need.type = "button";
+    need.className = "btn mini need-btn";
+    need.textContent = "Need it";
+    need.setAttribute("aria-label", `Add ${r.name} to this shop`);
+    need.addEventListener("click", () => { state.pantryUse.add(r.key); saveSession(); renderShopping(); });
+    row.appendChild(need);
   }
-  if (!opts.staple && !r.added) mk("swap", `Merge "${r.name}" into another name`, () => openMergeDialog(r.names));
+  const mb = document.createElement("button");
+  mb.type = "button";
+  mb.className = "smore";
+  mb.setAttribute("aria-label", `More for ${r.name}`);
+  mb.innerHTML = icon("more", 18);
+  mb.addEventListener("click", (e) => { e.stopPropagation(); more(); });
+  row.appendChild(mb);
 
-  tr.append(tdTick, tdName, tdAmt, tdAct);
-  return tr;
+  if (!opts.staple){
+    row.addEventListener("click", (e) => {
+      if (row.dataset.swiped || e.target.closest(".smore")) return;
+      setGot(r.key, !state.haveIt.has(r.key));
+    });
+    attachRowSwipe(row, r, more);
+  }
+  return row;
+}
+
+/* How the list is ordered: "aisle" (by category), "az", or "meal". */
+function shopSort(){ return state.prefs.shopSort || (state.prefs.shopGroup ? "aisle" : "az"); }
+function syncShopSort(){
+  $$("[data-shopsort]").forEach(b => b.classList.toggle("on", b.dataset.shopsort === shopSort()));
+}
+$$("[data-shopsort]").forEach(b => b.addEventListener("click", async () => {
+  state.prefs.shopSort = b.dataset.shopsort;
+  syncShopSort();
+  renderShopping();
+  await idbSet(IDB_KEYS.prefs, state.prefs);
+}));
+
+function shopGroups(items){
+  const sort = shopSort();
+  if (sort === "aisle"){
+    const groups = new Map(SHOP_CATEGORY_ORDER.map(c => [c, []]));
+    items.forEach(r => groups.get(r.added ? "Other" : shopCategory(r.name)).push(r));
+    return [...groups].filter(([, l]) => l.length);
+  }
+  if (sort === "meal"){
+    const order = state.meals.filter(m => state.selected.has(m.id)).map(m => m.title);
+    const groups = new Map(order.map(t => [t, []]));
+    const shared = [], added = [];
+    for (const r of items){
+      const meals = new Set([...(r.forMeals || []), ...(r.extraFor || [])]);
+      if (r.added) added.push(r);
+      else if (meals.size === 1) groups.get([...meals][0])?.push(r);
+      else shared.push(r);
+    }
+    return [["For more than one meal", shared], ...[...groups].map(([t, l]) => [shortMealTitle(t), l]), ["Not from a recipe", added]].filter(([, l]) => l.length);
+  }
+  return [["", items]];
 }
 
 function renderShopping(){
   shoppingWrap.innerHTML = "";
+  const done = $("#shop-done");
+  if (done) done.innerHTML = "";
   const rows = aggregate();
   updateSelectedCount();
+  syncShopSort();
+  shoppingWrap.closest("#view-shopping")?.classList.toggle("is-empty", !rows.length);
   if (!rows.length){
     const d = document.createElement("div");
     d.className = "empty";
-    d.textContent = "Tick meals to build your shopping list.";
+    d.textContent = "Tick meals to build your shopping list — or add anything below.";
     shoppingWrap.appendChild(d);
+    updateShopProgress(0, 0);
     updateShoppingActions();
     return;
   }
@@ -3081,78 +3233,71 @@ function renderShopping(){
   const main = listed.filter(r => !state.haveIt.has(r.key));
   const got = listed.filter(r => state.haveIt.has(r.key));
   const staples = rows.filter(isStapleRow);
-  const table = (items) => {
-    const t = document.createElement("table");
-    t.className = "table shopping-table";
-    const tbody = document.createElement("tbody");
-    items.forEach(r => tbody.appendChild(shoppingRow(r, { staple:false })));
-    t.appendChild(tbody);
-    return t;
+  updateShopProgress(got.length, listed.length);
+  const list = (items, opts) => {
+    const l = document.createElement("div");
+    l.className = "slist";
+    l.setAttribute("role", "list");
+    items.forEach(r => l.appendChild(shoppingRow(r, opts)));
+    return l;
   };
 
-  if (main.length && state.prefs.shopGroup){
-    const groups = new Map(SHOP_CATEGORY_ORDER.map(c => [c, []]));
-    main.forEach(r => groups.get(shopCategory(r.name)).push(r));
-    for (const [cat, items] of groups){
-      if (!items.length) continue;
-      const h = document.createElement("div");
-      h.className = "cat-head";
-      h.textContent = `${cat} (${items.length})`;
-      shoppingWrap.append(h, table(items));
+  if (main.length){
+    for (const [title, items] of shopGroups(main)){
+      if (title){
+        const h = document.createElement("div");
+        h.className = "cat-head";
+        h.innerHTML = `<span>${escapeHtml(title)}</span><span>${items.length}</span>`;
+        shoppingWrap.appendChild(h);
+      }
+      shoppingWrap.appendChild(list(items));
     }
-  } else if (main.length) shoppingWrap.appendChild(table(main));
-  else {
+  } else {
     const d = document.createElement("div");
     d.className = "empty";
     d.textContent = listed.length ? "All got! ✓" : "Everything here is a cupboard staple.";
     shoppingWrap.appendChild(d);
   }
-  if (got.length){
-    const h = document.createElement("div");
-    h.className = "got-head";
-    h.innerHTML = `${icon("check", 16)}Got (${got.length})`;
-    shoppingWrap.append(h, table(got));
-  }
   if (main.length && !got.length && !state.prefs.swipeHintSeen){
     const tip = document.createElement("p");
     tip.className = "muted small swipe-tip";
-    tip.textContent = "Tip: swipe an item right to tick it off, left to undo.";
+    tip.textContent = "Tap or swipe right when you've got it. Swipe left (or ⋯) for “always have” and more.";
     shoppingWrap.appendChild(tip);
   }
 
-  if (staples.length){
+  const fold = (cls, iconName, label, items, opts, openKey) => {
     const det = document.createElement("details");
-    det.className = "staples";
+    det.className = `shop-fold ${cls}`;
+    det.open = !!state.prefs[openKey];
+    det.addEventListener("toggle", () => { state.prefs[openKey] = det.open; idbSet(IDB_KEYS.prefs, state.prefs); });
     const sum = document.createElement("summary");
-    sum.innerHTML = `${icon("home", 16)}Usually in the cupboard (${staples.length})`;
-    const table = document.createElement("table");
-    table.className = "table shopping-table";
-    const tbody = document.createElement("tbody");
-    staples.forEach(r => tbody.appendChild(shoppingRow(r, { staple:true })));
-    table.appendChild(tbody);
-    det.append(sum, table);
-    shoppingWrap.appendChild(det);
-  }
+    sum.innerHTML = `${icon(iconName, 16)}<span>${label} (${items.length})</span>${icon("next", 16)}`;
+    det.append(sum, list(items, opts));
+    return det;
+  };
+  if (got.length) done?.appendChild(fold("got-fold", "check", "Got", got, {}, "shopGotOpen"));
+  if (staples.length) done?.appendChild(fold("staples", "home", "Usually in the cupboard", staples, { staple:true }, "shopStaplesOpen"));
   justGot = null;
   updateShoppingActions();
 }
 
-function syncGroupToggle(){
-  const l = $("#group-toggle-label");
-  if (l) l.textContent = state.prefs.shopGroup ? "Show A–Z" : "Group by category";
+function updateShopProgress(got, total){
+  const t = $("#shop-progress-text");
+  if (t) t.textContent = total ? `${got} of ${total} got` : "";
+  const bar = $("#shop-bar");
+  if (bar){
+    bar.hidden = !total;
+    bar.firstElementChild.style.width = total ? `${Math.round(got / total * 100)}%` : "0";
+    bar.setAttribute("aria-valuenow", String(got));
+    bar.setAttribute("aria-valuemax", String(total));
+  }
 }
-$("#group-toggle")?.addEventListener("click", async () => {
-  state.prefs.shopGroup = !state.prefs.shopGroup;
-  syncGroupToggle();
-  $("#shop-menu")?.removeAttribute("open");
-  renderShopping();
-  await idbSet(IDB_KEYS.prefs, state.prefs);
-});
 
 function updateSelectedCount(){
   const n = state.selected.size;
   const d = Array.from(state.doubled).filter(id => state.selected.has(id)).length;
-  const txt = n ? `${n} meal${n === 1 ? "" : "s"} selected${d ? ` · ${d} doubled` : ""}` : "No meals selected";
+  const items = state.listItems.length;
+  const txt = n ? `${n} meal${n === 1 ? "" : "s"}${d ? ` · ${d} doubled` : ""}${items ? ` · ${items} other item${items === 1 ? "" : "s"}` : ""}` : items ? `${items} item${items === 1 ? "" : "s"} · no meals yet` : "No meals selected";
   $("#selected-count") && ($("#selected-count").textContent = txt);
   $("#sel-count") && ($("#sel-count").textContent = txt);
   $("#sel-bar")?.toggleAttribute("hidden", !n);
@@ -3355,6 +3500,7 @@ $("#print")?.addEventListener("click", async () => {
 });
 $("#reset-ticks")?.addEventListener("click", () => { closeShopMenu(); resetHaveItTicks(); });
 $("#shop-help-toggle")?.addEventListener("click", () => {
+  closeShopMenu();
   const help = $("#shop-help");
   if (help) help.hidden = !help.hidden;
 });
@@ -3794,7 +3940,7 @@ $("#unit-add")?.addEventListener("click", async () => {
 
   updateIngredientSuggestions();
   refreshTagSuggestions();
-  syncGroupToggle();
+  syncShopSort();
   $("#about-version") && ($("#about-version").textContent = `v${APP_VERSION}`);
   setView("today");
   syncFiltersUI();

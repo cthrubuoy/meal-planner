@@ -18,19 +18,32 @@
      what was asked, how long it took, and why it failed (the server lists each
      Gemini attempt). The response is returned untouched. */
   const DETAILS = " — details in Settings › Advanced.";
+  /* The scan server gives up on Gemini after 80 s; this is the app's own limit, in case the server can't answer */
+  const SCAN_TIMEOUT_MS = 100000;
+  const SLOW_MSG = "Gemini (Google) is slow or busy right now, so the scan didn't finish. Please try again in a few minutes.";
+  /* Server reasons like "Gemini 524: error code: 524" → plain words */
+  function scanReason(data){
+    const r = String(data?.reason || data?.error || "");
+    if (data?.error === "scan_timeout" || /Gemini 5\d\d|timed? ?out|524|504/i.test(r)) return SLOW_MSG;
+    return r ? `Scan failed: ${r}` : "Scan failed.";
+  }
   async function loggedFetch(kind, about, url, opts) {
     const t0 = Date.now();
     const sentKB = opts?.body ? Math.round(opts.body.length / 1024) : 0;
     logEvent("info", "scan", `${kind} started${about ? ` (${about})` : ""}`, { sentKB });   // no matching OK/failed line = interrupted (app closed?)
     let resp;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), SCAN_TIMEOUT_MS);
     try {
-      resp = await fetch(url, opts);
+      resp = await fetch(url, { ...opts, signal: ctrl.signal });
     } catch (e) {
-      logEvent("error", "scan", `${kind}: couldn't reach the scan server${about ? ` (${about})` : ""}`, {
+      const timedOut = e?.name === "AbortError";
+      logEvent("error", "scan", `${kind}: ${timedOut ? `no answer after ${SCAN_TIMEOUT_MS / 1000} s` : "couldn't reach the scan server"}${about ? ` (${about})` : ""}`, {
         error: String(e?.message || e), ms: Date.now() - t0, sentKB, online: navigator.onLine, visible: document.visibilityState
       });
+      if (timedOut) e.timedOut = true;
       throw e;
-    }
+    } finally { clearTimeout(timer); }
     resp.clone().json().then(d => {
       const ms = Date.now() - t0;
       if (!resp.ok || d?.error) {
@@ -164,9 +177,8 @@
     } catch { /* offline: fall back to the whole photo */ }
     const src = box ? (await cropImageToDataURL(file, box)) || card : card;
     setEditPendingImage(src);
-    status(box ? "✓ Dish photo found — press Save changes to keep it." : "Couldn't pick out the dish, so the whole photo is ready — press Save changes to keep it.", 6000);
+    status(box ? "✓ Dish photo found — press Save to keep it." : "Couldn't pick out the dish, so the whole photo is ready — press Save to keep it.", 6000);
   });
-  $("#edit-photo-undo")?.addEventListener("click", () => setEditPendingImage(null));
 
   /* ============== Import from a link (website, TikTok, Instagram…) ==============
      Needs the scan server's POST /import (Worker v2). The box only appears once
@@ -260,14 +272,14 @@
         body: JSON.stringify({ image: dataUrl })
       });
     } catch (err) {
-      showError("Couldn't reach the scan server. Check your internet connection and try again." + DETAILS);
+      showError((err?.timedOut ? SLOW_MSG : "Couldn't reach the scan server. Check your internet connection and try again.") + DETAILS);
       return;
     }
 
     try {
       data = await resp.json();
     } catch {
-      showError("The scan server returned an unexpected response.");
+      showError((resp.status >= 520 ? SLOW_MSG : `The scan server returned an unexpected response (HTTP ${resp.status}).`) + DETAILS);
       return;
     }
 
@@ -276,8 +288,8 @@
         showError("That doesn't look like a recipe card. Try a clearer photo of one.");
       } else if (data?.error === "image_too_large") {
         showError("That photo is too big — try a smaller one.");
-      } else if (data?.error === "scan_failed") {
-        showError(`Scan failed: ${data.reason || "unknown error"}` + DETAILS);
+      } else if (data?.error === "scan_failed" || data?.error === "scan_timeout") {
+        showError(scanReason(data) + DETAILS);
       } else {
         showError(`Scan failed (${resp.status}). Please try again.` + DETAILS);
       }
@@ -523,7 +535,7 @@
     if (replace) editSteps.length = 0;
     newSteps.forEach(s => editSteps.push(s));
     refreshEditSteps();
-    if (typeof data.cookMins === "number" && !$("#edit-cook-mins").value.trim()) $("#edit-cook-mins").value = String(data.cookMins);
+    if (typeof data.cookMins === "number" && !$("#edit-cook-mins").value.trim()){ $("#edit-cook-mins").value = String(data.cookMins); $("#edit-cook-mins").syncPicks?.(); }
     if (data.notes && !$("#edit-notes").value.trim()) $("#edit-notes").value = data.notes;
     status(`✓ Added ${newSteps.length} step${newSteps.length === 1 ? "" : "s"} from scan`, 3500);
   }

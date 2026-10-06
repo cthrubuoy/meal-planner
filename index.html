@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=25" />
-  <link rel="stylesheet" href="assets/styles.css?v=25" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=26" />
+  <link rel="stylesheet" href="assets/styles.css?v=26" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v25</span>
+      <span class="pill">v26</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -164,36 +164,40 @@
     <div class="inner">
       <section id="view-shopping" aria-label="Shopping list">
         <div class="shop-head">
-          <div class="group space-between">
+          <div class="shop-title">
             <h2 class="h2">Shopping list</h2>
-            <button id="shop-help-toggle" class="btn mini icon-btn ghost" title="How this works" aria-label="How this works"><i data-icon="info" data-size="18"></i></button>
-          </div>
-          <span id="selected-count" class="muted small">No meals selected</span>
-          <div class="group shop-actions">
-            <button id="ocado" class="btn primary" title="Copy names for Ocado's Find a list of products"><i data-icon="cart" data-size="18"></i>Ocado</button>
-            <button id="share" class="btn" title="Share the list (Keep, WhatsApp…)"><i data-icon="share" data-size="18"></i>Share</button>
+            <span id="shop-progress-text" class="shop-progress-text"></span>
             <details id="shop-menu" class="menu">
-              <summary class="btn icon-btn" aria-label="More actions"><i data-icon="more"></i></summary>
+              <summary class="btn icon-btn ghost" aria-label="More actions"><i data-icon="more"></i></summary>
               <div class="menu-list">
-                <button id="group-toggle" class="btn"><i data-icon="list" data-size="16"></i><span id="group-toggle-label">Group by category</span></button>
-                <button id="copy-tsv" class="btn"><i data-icon="copy" data-size="16"></i>Copy as TSV</button>
+                <button id="copy-tsv" class="btn"><i data-icon="copy" data-size="16"></i>Copy as a table (TSV)</button>
                 <button id="print" class="btn"><i data-icon="printer" data-size="16"></i>Print</button>
                 <button id="reset-ticks" class="btn" disabled><i data-icon="refresh" data-size="16"></i>Reset ticks</button>
+                <button id="shop-help-toggle" class="btn"><i data-icon="info" data-size="16"></i>How this works</button>
               </div>
             </details>
           </div>
+          <span id="selected-count" class="muted small">No meals selected</span>
+          <div id="shop-bar" class="shop-bar" role="progressbar" aria-label="Items got" hidden><span></span></div>
+          <div class="seg shop-sort" role="group" aria-label="Order the list">
+            <button type="button" class="segbtn" data-shopsort="aisle">By aisle</button><button type="button" class="segbtn" data-shopsort="az">A–Z</button><button type="button" class="segbtn" data-shopsort="meal">By meal</button>
+          </div>
           <p id="shop-help" class="muted small" hidden>
-            Tick meals to add them. Tick an item you already have and it's left out of Ocado, Share, TSV and Print — or swipe it right.
-            The house button marks an item you always have (a staple); it moves to "Usually in the cupboard".
-            The swap button merges a differently-spelled ingredient into another name.
+            Tick meals to add their ingredients; each item says which meal it's for. Tap an item (or swipe it right) when you've got it — it moves to "Got" and is left out of Ocado, Share and Print.
+            Swipe left (or ⋯) to mark something you always have (it moves to "Usually in the cupboard") or to say two names are the same ingredient.
             <strong>Ocado</strong> copies names only (one per line) — paste them into Ocado's "Find a list of products"; it can't take quantities.
           </p>
         </div>
         <div id="shopping"></div>
         <form id="add-item-form" class="add-item" autocomplete="off">
-          <input id="add-item-input" type="text" maxlength="100" placeholder="Add something else — milk, bin bags…" aria-label="Add an item to the shopping list" enterkeyhint="done" />
+          <input id="add-item-input" type="text" maxlength="100" placeholder="+ Add something else (milk, bin bags…)" aria-label="Add an item to the shopping list" enterkeyhint="done" />
           <button type="submit" class="btn" aria-label="Add to the list"><i data-icon="plus" data-size="18"></i>Add</button>
         </form>
+        <div id="shop-done"></div>
+        <div class="shop-actions">
+          <button id="ocado" class="btn primary" title="Copy names for Ocado's Find a list of products"><i data-icon="cart" data-size="18"></i>Copy for Ocado</button>
+          <button id="share" class="btn" title="Share the list (Keep, WhatsApp…)"><i data-icon="share" data-size="18"></i>Share</button>
+        </div>
       </section>
     </div>
   </section>
@@ -246,8 +250,9 @@
 <div id="add-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="add-title">
   <div class="dialog">
     <div class="stickybar group space-between">
-      <h3 id="add-title" class="h3">Add a meal</h3>
       <button id="add-close" class="btn icon-btn" aria-label="Close"><i data-icon="x"></i></button>
+      <h3 id="add-title" class="h3">Add a meal</h3>
+      <button type="submit" form="meal-form" class="btn primary">Save</button>
     </div>
 
     <form id="meal-form" autocomplete="off" novalidate>
@@ -265,24 +270,28 @@
         </div>
       </div>
 
-      <div class="form-row">
-        <label for="title">Meal name</label>
-        <input id="title" type="text" required placeholder="e.g. Lemon chicken pasta" />
+      <div class="photo-head" id="photo-head">
+        <img alt="" hidden />
+        <div class="photo-head-empty"><i data-icon="camera" data-size="28"></i><span>No photo yet</span></div>
+        <div class="photo-head-btns">
+          <label class="btn glass" for="image-file"><i data-icon="camera" data-size="16"></i><span class="ph-label">Add photo</span></label>
+          <button type="button" class="btn glass ph-undo" hidden>Undo</button>
+        </div>
+        <input id="image-file" type="file" accept="image/*" hidden />
       </div>
 
       <div class="form-row">
-        <label for="image-file">Photo (optional)</label>
-        <input id="image-file" type="file" accept="image/*" />
-        <small class="muted">Compressed automatically. If upload fails, the meal saves anyway.</small>
+        <label for="title">Name</label>
+        <input id="title" type="text" required placeholder="e.g. Lemon chicken pasta" class="name-input" />
       </div>
 
       <div class="form-row">
-        <label for="cook-mins">Time to cook (minutes)</label>
-        <input id="cook-mins" type="number" min="0" max="600" step="5" placeholder="e.g. 25" />
+        <label for="cook-mins">Time</label>
+        <input id="cook-mins" type="number" min="0" max="600" step="5" placeholder="Minutes" />
       </div>
 
       <div class="form-row">
-        <label>Ingredients <span class="muted">— add as many as you need</span></label>
+        <label class="sec-label">Ingredients <span class="sec-hint">tap one to change it</span></label>
         <div id="ingredients" class="ingredients" aria-label="Ingredient list"></div>
         <div class="group">
           <button type="button" id="add-ingredient" class="btn">+ Add ingredient</button>
@@ -292,19 +301,18 @@
       </div>
 
       <div class="form-row">
-        <label for="tags-input">Tags <span class="muted">— auto-seeded from ingredients (Enter or comma to add)</span></label>
+        <label for="tags-input">Tags <span class="muted">— added from the ingredients too (Enter or comma to add)</span></label>
         <div id="tags-editor" class="token-editor" aria-label="Tags"></div>
         <input id="tags-input" type="text" list="tag-suggestions" placeholder="e.g. quick, vegetarian" />
       </div>
 
       <div class="form-row">
-        <label>Steps <span class="muted">— optional, used in Cook mode</span></label>
+        <label class="sec-label">Steps <span class="sec-hint">used in cook mode · join · split · reorder</span></label>
         <div id="steps" class="steps"></div>
         <div class="group">
           <input id="step-input" type="text" placeholder="Add a step and press Enter" />
           <button type="button" id="add-step" class="btn">+ Add step</button>
         </div>
-        <small class="muted">Use ↑ ↓ buttons to reorder.</small>
       </div>
 
       <div class="form-row">
@@ -482,45 +490,36 @@
 <div id="edit-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="edit-title-label">
   <div class="dialog">
     <div class="stickybar group space-between">
+      <button type="button" id="edit-close" class="btn">Cancel</button>
       <h3 id="edit-title-label" class="h3">Edit meal</h3>
-      <button id="edit-close" class="btn" aria-label="Close">✕</button>
+      <button type="submit" form="edit-form" class="btn primary">Save</button>
     </div>
     <form id="edit-form" novalidate>
 
-      <div class="form-row">
-        <label for="edit-title">Meal name</label>
-        <input id="edit-title" type="text" required />
-      </div>
-
-      <div class="form-row">
-        <label for="edit-image-file">Replace photo (optional)</label>
-        <input id="edit-image-file" type="file" accept="image/*" />
-        <div class="group">
-          <button type="button" id="edit-card-photo" class="btn mini"><i data-icon="camera" data-size="16"></i>Take dish photo from a recipe card</button>
+      <div class="photo-head" id="edit-photo-head">
+        <img alt="" hidden />
+        <div class="photo-head-empty"><i data-icon="camera" data-size="28"></i><span>No photo yet</span></div>
+        <div class="photo-head-btns">
+          <label class="btn glass" for="edit-image-file"><i data-icon="camera" data-size="16"></i><span class="ph-label">Add photo</span></label>
+          <button type="button" id="edit-card-photo" class="btn glass" title="Take the dish photo from a recipe card"><i data-icon="cards" data-size="16"></i>From a card</button>
           <input id="edit-card-photo-file" type="file" accept="image/*" capture="environment" hidden />
+          <button type="button" class="btn glass ph-undo" hidden>Undo</button>
         </div>
-        <div id="edit-photo-pending" class="photo-pending" hidden>
-          <img alt="New meal photo" />
-          <span class="small">New photo ready — it's saved when you press <b>Save changes</b>.</span>
-          <button type="button" id="edit-photo-undo" class="btn mini">Undo</button>
-        </div>
+        <input id="edit-image-file" type="file" accept="image/*" hidden />
       </div>
 
       <div class="form-row">
-        <label for="edit-cook-mins">Time to cook (minutes)</label>
-        <input id="edit-cook-mins" type="number" min="0" max="600" step="5" />
+        <label for="edit-title">Name</label>
+        <input id="edit-title" type="text" required class="name-input" />
       </div>
 
       <div class="form-row">
-        <label for="edit-source-name">Source</label>
-        <div class="row">
-          <input id="edit-source-name" type="text" maxlength="60" placeholder="e.g. BBC Good Food, Gousto, Mum" />
-          <input id="edit-source-url" type="url" placeholder="Link (optional)" aria-label="Source link" />
-        </div>
+        <label for="edit-cook-mins">Time</label>
+        <input id="edit-cook-mins" type="number" min="0" max="600" step="5" placeholder="Minutes" />
       </div>
 
       <div class="form-row">
-        <label>Ingredients</label>
+        <label class="sec-label">Ingredients <span class="sec-hint">tap one to change it</span></label>
         <div id="edit-ingredients" class="ingredients"></div>
         <div class="group">
           <button type="button" id="edit-add-ingredient" class="btn">+ Add ingredient</button>
@@ -529,11 +528,24 @@
       </div>
 
       <div class="form-row extras-row">
-        <label>I usually add</label>
+        <label class="sec-label">I usually add</label>
         <p class="muted small" style="margin:0">Things you always add that aren't in the recipe (e.g. broccoli on the side). They go on the shopping list with the meal and show early in cook mode.</p>
         <div id="edit-extras" class="ingredients"></div>
         <div class="group">
           <button type="button" id="edit-add-extra" class="btn">+ Add something</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="group space-between" style="align-items:center;">
+          <label class="sec-label">Steps <span class="sec-hint">join · split · reorder</span></label>
+          <button type="button" id="edit-scan-steps" class="btn mini scan-steps-btn"><i data-icon="camera" data-size="16"></i>Scan back of card</button>
+        </div>
+        <input id="edit-scan-file" type="file" accept="image/*" capture="environment" hidden />
+        <div id="edit-steps" class="steps"></div>
+        <div class="group">
+          <input id="edit-step-input" type="text" placeholder="Add a step and press Enter" />
+          <button type="button" id="edit-add-step" class="btn">+ Add step</button>
         </div>
       </div>
 
@@ -547,15 +559,10 @@
       </div>
 
       <div class="form-row">
-        <div class="group space-between" style="align-items:center;">
-          <label>Steps</label>
-          <button type="button" id="edit-scan-steps" class="btn mini scan-steps-btn"><i data-icon="camera" data-size="16"></i>Scan back of card</button>
-        </div>
-        <input id="edit-scan-file" type="file" accept="image/*" capture="environment" hidden />
-        <div id="edit-steps" class="steps"></div>
-        <div class="group">
-          <input id="edit-step-input" type="text" placeholder="Add a step and press Enter" />
-          <button type="button" id="edit-add-step" class="btn">+ Add step</button>
+        <label for="edit-source-name">Source</label>
+        <div class="row">
+          <input id="edit-source-name" type="text" maxlength="60" placeholder="e.g. BBC Good Food, Gousto, Mum" />
+          <input id="edit-source-url" type="url" placeholder="Link (optional)" aria-label="Source link" />
         </div>
       </div>
 
@@ -566,10 +573,7 @@
 
       <div class="group space-between" style="margin-top:8px;">
         <button type="button" id="edit-delete" class="btn danger"><i data-icon="trash" data-size="16"></i>Delete meal</button>
-        <div class="group">
-          <button type="button" id="edit-cancel" class="btn">Cancel</button>
-          <button type="submit" class="btn primary">Save changes</button>
-        </div>
+        <button type="submit" class="btn primary">Save changes</button>
       </div>
     </form>
   </div>
@@ -953,19 +957,20 @@
     <input type="text" placeholder="Unit label (e.g. piece)" />
     <button type="button" class="remove" aria-label="Remove">×</button>
     <span class="drag-handle" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
+    <button type="button" class="ing-sum"><span class="ing-q"></span><span class="ing-n"></span><i data-icon="next" data-size="16"></i></button>
   </div>
 </template>
 
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=25" defer></script>
-<script src="assets/app.js?v=25" defer></script>
-<script src="assets/cook.js?v=25" defer></script>
-<script src="assets/plan.js?v=25" defer></script>
-<script src="assets/vendor/qrcode.js?v=25" defer></script>
-<script src="assets/sync.js?v=25" defer></script>
-<script src="assets/scan.js?v=25" defer></script>
-<script src="assets/pwa.js?v=25" defer></script>
+<script src="assets/icons.js?v=26" defer></script>
+<script src="assets/app.js?v=26" defer></script>
+<script src="assets/cook.js?v=26" defer></script>
+<script src="assets/plan.js?v=26" defer></script>
+<script src="assets/vendor/qrcode.js?v=26" defer></script>
+<script src="assets/sync.js?v=26" defer></script>
+<script src="assets/scan.js?v=26" defer></script>
+<script src="assets/pwa.js?v=26" defer></script>
 </body>
 </html>

@@ -3,6 +3,31 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v26 — Shopping list and Edit meal redesign (2026-10-06)
+Cache `meal-planner-v28` · assets `?v=26` · export schema 15 (unchanged)
+
+### Changed
+- **Shopping list redesign** (built for the shop floor):
+  - **Round ticks** with big tap targets. Tap an item, or swipe it right, when you've got it; tap again to undo.
+  - **"3 of 40 got"** with a progress bar at the top.
+  - **Which meal each item is for** under its name (e.g. "Chicken & Chorizo Pie · Curry"). Your "I usually add" extras are marked too.
+  - **By aisle · A–Z · By meal** at the top of the list (By aisle replaces "Group by category" in the ⋯ menu). By meal lists what each meal needs, with items shared by several meals first.
+  - **Rows stay clean:** "Always have" (staple) and "Same as another ingredient" (merge) moved to a swipe left, or the ⋯ that appears when you hover on a computer.
+  - **Got** and **Usually in the cupboard** are folded away at the bottom; they remember whether you left them open.
+  - **Copy for Ocado** and **Share** sit at the bottom of the list, always in reach (above the bottom bar on the phone).
+  - Plain counts read "3", not "3 pieces".
+  - "How this works" moved into the ⋯ menu.
+- **Add / Edit meal redesign:**
+  - The **photo** across the top, with **Change photo** and **From a card** (take the dish photo from a recipe card) on it. A new photo shows there straight away, with Undo, until you save.
+  - **Cancel** and **Save** at the top as well as the bottom.
+  - **Time quick-picks:** 10 · 20 · 30 · 40 · 45 · 60 · Other.
+  - **Ingredients read like the meal page** ("320 g  Chicken thigh"). Tap one to change it; it folds back when you move on. New rows open straight away.
+  - Tags, Source and Notes moved below the steps.
+
+### Fixed
+- The Add form now tidies ingredient names (normaliser) exactly like Edit does.
+- Tidy-up: the old shopping-table and photo-box styles were removed rather than overridden.
+
 ## v25 — Data safety: restore without another device, sync safety brake (2026-10-06)
 Cache `meal-planner-v27` · assets `?v=25` · export schema 15 (unchanged) · sync server 1.1
 
