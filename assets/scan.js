@@ -56,6 +56,7 @@
   let scanTagEditor = null;
   let scanImage = null;             // the meal photo chosen on the review screen (data URL)
   let scanSource = "";              // link it was imported from
+  let scanSourceName = "";          // the brand printed on a scanned card (scan server v2.6+), e.g. "Gousto"
 
   /* ---- Show/hide modal sections ---- */
   function openScan() {
@@ -71,6 +72,7 @@
     scanLastFile = null;
     scanImage = null;
     scanSource = "";
+    scanSourceName = "";
     photoChoices = [];
     const row = $("#scan-photo-row");
     if (row) row.hidden = true;
@@ -283,6 +285,7 @@
     }
 
     populateScanForm(data);
+    scanSourceName = typeof data.source === "string" ? data.source : "";
     let dish = null;
     if (Array.isArray(data.dishPhoto)) dish = await cropImageToDataURL(file, data.dishPhoto);
     setPhotoChoices([
@@ -407,8 +410,10 @@
       ingredients,
       cookMins,
       steps: scanSteps.slice(),
-      notes: [($("#scan-notes").value || "").trim(), scanSource ? `Source: ${scanSource}` : ""].filter(Boolean).join("\n")
+      notes: ($("#scan-notes").value || "").trim()
     };
+    const source = cleanSource(scanSource ? { url: scanSource } : { name: scanSourceName });
+    if (source) meal.source = source;
 
     // push to global state and save
     state.meals.unshift(meal);

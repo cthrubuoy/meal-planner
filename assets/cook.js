@@ -401,6 +401,8 @@
     $("[data-go-meals]", wrap)?.addEventListener("click", () => switchView("meals"));
   }
   function renderToday(){
+    const td = $("#today-date");
+    if (td) td.textContent = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     const menu = thisWeekMenu();
     renderTodayHero(menu);
     renderTodayStrip(menu);
@@ -458,7 +460,7 @@
     // "Cook once, eat twice": ×2 from the week's menu / queue entry, or a doubled meal in the current shop
     const q = state.cookQueue.find(e => e.mealId === id);
     const factor = batch || q?.x || (state.selected.has(id) && state.doubled.has(id) ? 2 : 1);
-    guided = { id, page: 0, gathered: new Set(), rating: 0, note: "", factor };
+    guided = { id, page: 0, gathered: new Set(), extrasDone: new Set(), rating: 0, note: "", factor };
     overlay.hidden = false;
     overlay.classList.add("open");   // counts as an open modal for lockBodyScroll
     lockBodyScroll(true);
@@ -483,7 +485,27 @@
     return `<ul class="co-checklist">${(meal.ingredients || []).map((i, idx) => `
       <li><label><input type="checkbox" data-gather="${idx}" ${guided.gathered.has(idx) ? "checked" : ""}/>
         <span class="co-ing-name">${escapeHtml(titleCase(i.name))}</span>
-        <span class="co-ing-amt">${escapeHtml(ingAmount(i, undefined, guided.factor))}</span></label></li>`).join("")}</ul>`;
+        <span class="co-ing-amt">${escapeHtml(ingAmount(i, undefined, guided.factor))}</span></label></li>`).join("")}${extrasItems(meal, true)}</ul>`;
+  }
+  /* "You usually add" (v24): not in the recipe, but whoever's cooking usually adds
+     it — sometimes it needs prep, so it's shown early and can be ticked off. */
+  function extrasItems(meal, tagged){
+    return (meal.extras || []).map((i, idx) => `
+      <li><label><input type="checkbox" data-extra="${idx}" ${guided.extrasDone.has(idx) ? "checked" : ""}/>
+        <span class="co-ing-name">${escapeHtml(titleCase(i.name))}${tagged ? ` <span class="co-extra-tag">extra</span>` : ""}</span>
+        <span class="co-ing-amt">${escapeHtml(ingAmount(i, undefined, guided.factor))}</span></label></li>`).join("");
+  }
+  function extrasCard(meal){
+    if (!(meal.extras || []).length) return "";
+    return `<div class="co-extras"><div class="co-extras-head">You usually add</div><ul class="co-checklist">${extrasItems(meal, false)}</ul>
+      <div class="muted small">Not in the recipe — get these ready too. Tick them off when they're done.</div></div>`;
+  }
+  /* On the steps: a small reminder until every extra is ticked */
+  function extrasReminder(meal){
+    const ex = meal.extras || [];
+    const left = ex.map((i, idx) => ({ i, idx })).filter(x => !guided.extrasDone.has(x.idx));
+    if (!left.length) return "";
+    return `<div class="co-extra-reminder">${icon("info", 16)}<span>You usually add:</span>${left.map(x => `<label class="co-extra-chip"><input type="checkbox" data-extra="${x.idx}"/>${escapeHtml(titleCase(x.i.name))}</label>`).join("")}</div>`;
   }
 
   /* v19: the steps around the current one — the previous step above it, up next below.
@@ -530,6 +552,7 @@
       html = `
         <div class="co-kicker">Get ready</div>
         ${guided.factor > 1 ? `<p class="co-double">×2 — double batch for leftovers. Ingredient amounts are doubled; the step text is as written.</p>` : ""}
+        ${extrasCard(meal)}
         ${lastCookLine(meal.id)}
         ${temps.length ? `<p class="co-temps">Oven: ${temps.map(t => annotateStep(t)).join(" · ")}</p>` : ""}
         ${meal.notes ? `<p class="muted">${escapeHtml(meal.notes)}</p>` : ""}
@@ -556,6 +579,7 @@
       const used = ingredientsInStep(meal, text);
       const timers = parseDurations(text);
       html = `
+        ${extrasReminder(meal)}
         ${contextOn() && p > 1 ? stepPreview(meal, p - 1, "co-prev-step") : ""}
         <div class="co-kicker">Step ${p}</div>
         <p class="co-step">${annotateStep(text)}</p>
@@ -572,6 +596,12 @@
     $("#co-next").textContent = p === total - 2 ? "Finish ›" : "Next ›";
 
     // wiring for this page
+    $$("[data-extra]", overlay).forEach(cb => cb.addEventListener("change", () => {
+      const idx = Number(cb.dataset.extra);
+      if (cb.checked) guided.extrasDone.add(idx); else guided.extrasDone.delete(idx);
+      $$(`[data-extra="${idx}"]`, overlay).forEach(o => { o.checked = cb.checked; });
+      if (cb.closest(".co-extra-reminder")) renderGuided();     // ticked from the reminder: tidy it away
+    }));
     $$("[data-gather]", overlay).forEach(cb => cb.addEventListener("change", () => {
       const idx = Number(cb.dataset.gather);
       if (cb.checked) guided.gathered.add(idx); else guided.gathered.delete(idx);

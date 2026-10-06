@@ -3,6 +3,28 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v24 — "I usually add", add anything to the list, split steps, source, dates (2026-10-06)
+Cache `meal-planner-v26` · assets `?v=24` · export schema **15** (adds `source` and `extras` to meals; older backups still import)
+
+### Added
+- **"I usually add"** (in Edit): things you always add to a meal that aren't in the recipe, e.g. broccoli with the pie.
+  - **Shopping list:** they're added with the meal, marked "your extra · Chicken & Chorizo Pie". ×2 doubles them too.
+  - **Meal page:** shown under the ingredients.
+  - **Cook mode:** **"You usually add"** appears on the Get ready page, because they sometimes need prep. They're on the ingredient checklist too, and a small reminder stays on each step until they're ticked off.
+  - Kept apart from the recipe, so re-scanning a card never removes them.
+- **Add anything to the shopping list:**
+  - Type in the box under the list, e.g. milk, bin bags or "2 loaves bread".
+  - These items are labelled "added by hand", can be removed with ×, are included in Ocado/Share/Copy, sync to the household, and are cleared by Clear selection (with Undo).
+- **Split long steps** (Edit). Imported recipes often have a whole paragraph as one step.
+  - A suggestion appears for long steps: **Split sensibly** keeps things that belong together (cook, drain, toss), or **Every sentence**.
+  - The ✂ button on a step lets you choose exactly where to split.
+- **Source:** where a recipe came from, e.g. "BBC Good Food", with its link.
+  - **Where it shows:** next to the title on the meal page; editable in Edit.
+  - **Filled in automatically:** on link imports (from the web address); on card scans the scan server reads the brand from the card.
+  - **Filter & sort › Source** filters by it.
+  - **Existing meals:** "Source: https://…" lines in Notes are moved into the new field automatically.
+- **Dates:** Today shows the full date (e.g. "Tuesday 6 October"). The plan calendar shows the date over each day, and the list layout uses full day names.
+
 ## v23 — Diagnostics log (2026-10-06)
 Cache `meal-planner-v25` · assets `?v=23` · export schema 14 (unchanged)
 

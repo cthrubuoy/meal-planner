@@ -431,7 +431,7 @@
     window.renderToday?.();   // cook.js
 
     if (calendar){
-      const heads = DAY.slice(1).concat(DAY[0]).map(dn => `<div class="cal-head">${dn}</div>`).join("");
+      const heads = dates.slice(0, 7).map(d => `<div class="cal-head ${localISO(d) === today ? "today" : ""}">${DAY[d.getDay()]} <b>${d.getDate()}</b></div>`).join("");
       wrap.innerHTML = heads + dates.map(d => {
         const iso = localISO(d);
         const cooking = (state.prefs.planDays || []).includes(d.getDay());
@@ -455,7 +455,7 @@
       const items = planned(iso);
       const cooking = (state.prefs.planDays || []).includes(d.getDay());
       return `<div class="plan-day ${iso === today ? "today" : ""} ${cooking ? "" : "off"}" data-day="${iso}">
-        <div class="plan-date">${dayLabel(d)}${iso === today ? ` <span class="chip">today</span>` : ""}</div>
+        <div class="plan-date">${d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}${iso === today ? ` <span class="chip">today</span>` : ""}</div>
         <div class="plan-items">${items.map((e, i) => mealRow(e, iso, i)).join("") || `<span class="muted small">${cooking ? "Nothing planned" : "Not cooking"}</span>`}</div>
         <button type="button" class="btn mini plan-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">${icon("plus", 18)}</button>
       </div>`;

@@ -119,7 +119,8 @@
         ...[...state.haveIt].map(k => ["shop", "have:" + k, 1]),
         ...[...state.pantryUse].map(k => ["shop", "use:" + k, 1]),
         ...[...state.countedIds].map(id => ["shop", "counted:" + id, 1]),
-        ...[...state.doubled].map(id => ["shop", "x2:" + id, 1])
+        ...[...state.doubled].map(id => ["shop", "x2:" + id, 1]),
+        ...state.listItems.map(x => ["shop", "item:" + x.id, { name: x.name, amount: x.amount || "" }])
       ];
     }
     return [];
@@ -192,7 +193,14 @@
       }
       case "prefs": if (!del && d){ state.prefs.avoid = d.avoid || []; state.prefs.planDays = d.planDays || []; } return;
       case "shop": {
-        const at = c.id.indexOf(":"), set = state[SHOP_SETS[c.id.slice(0, at)]];
+        const at = c.id.indexOf(":");
+        if (c.id.slice(0, at) === "item"){     // something added by hand (milk, bin bags…)
+          const id = c.id.slice(at + 1), i = state.listItems.findIndex(x => x.id === id);
+          if (del){ if (i >= 0) state.listItems.splice(i, 1); }
+          else if (d){ const item = { id, name: String(d.name || ""), amount: String(d.amount || "") }; if (i >= 0) state.listItems[i] = item; else state.listItems.push(item); }
+          return;
+        }
+        const set = state[SHOP_SETS[c.id.slice(0, at)]];
         if (!set) return;
         if (del) set.delete(c.id.slice(at + 1)); else set.add(c.id.slice(at + 1));
         return;

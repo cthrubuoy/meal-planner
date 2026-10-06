@@ -24,7 +24,7 @@ const IDB_KEYS = {
   plan: "plan",           // { "YYYY-MM-DD": [{ mealId, x?, pin?, skipped? }] } — planner (exported)
   pins: "pins"            // { "0".."6": [mealId] } — meals pinned to a weekday, every week (exported)
 };
-const EXPORT_SCHEMA_VERSION = 14;
+const EXPORT_SCHEMA_VERSION = 15;   // 15: meal.source, meal.extras
 const DEFAULT_PREFS = {
   theme: "auto",
   gridMin: "cozy",
@@ -50,6 +50,8 @@ const state = {
   editingId: null,
 
   showFavsOnly: false,
+  sourceFilter: "",          // "" any · a source name · "__own" (no source)
+  listItems: [],              // shopping-list items that aren't in a recipe: [{ id, name, amount }]
   search: "",
   tagFilter: new Set(),
   tagMode: "ANY",
@@ -501,7 +503,8 @@ function saveSession(){
     haveIt: Array.from(state.haveIt),
     pantryUse: Array.from(state.pantryUse),
     countedIds: Array.from(state.countedIds),
-    doubled: Array.from(state.doubled)
+    doubled: Array.from(state.doubled),
+    items: state.listItems
   }).catch(err => console.warn("Session save failed:", err));
 }
 async function loadAll(){
@@ -547,6 +550,7 @@ async function loadAll(){
   state.pantryUse  = new Set(s.pantryUse || []);
   state.countedIds = new Set((s.countedIds || []).filter(id => ids.has(id)));
   state.doubled    = new Set((s.doubled || []).filter(id => ids.has(id)));
+  state.listItems  = (Array.isArray(s.items) ? s.items : []).filter(x => x && x.id && x.name);
 }
 
 /* ============== Theme ============== */
@@ -744,11 +748,14 @@ $$('[data-stab="advanced"]').forEach(b => b.addEventListener("click", () => {
 }));
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["info",     "Diagnostics log", "Settings › Advanced shows what happened behind the scenes — every scan (how long it took, and exactly why it failed), sync problems and errors. Copy it to send when something goes wrong. A red dot on Settings means there's a new error to look at."],
-  ["refresh",  "Check the servers", "Settings › Advanced › Check now: are the scan and sync servers reachable, and which versions are they running?"]
+  ["plus",     "\"I usually add\"", "In Edit, add what you always have with a meal that isn't in the recipe (e.g. broccoli). It goes on the shopping list with the meal, and cook mode shows \"You usually add\" at the start so it can be prepped and ticked off."],
+  ["cart",     "Add anything to the shopping list", "Milk, bin bags, \"2 loaves bread\" — type it in the box under the list. It syncs and clears with the shop."],
+  ["scissors", "Split long steps", "Imported recipes often have a whole paragraph as one step. Edit offers to split it sensibly, every sentence, or exactly where you tap."],
+  ["link",     "Where a recipe came from", "Each meal can have a Source (e.g. BBC Good Food) with its link — shown on the meal page, filled in on import, and you can filter by it."],
+  ["today",    "Today's full date", "Today shows the full date, and the plan calendar shows the dates over each day."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -1230,6 +1237,149 @@ function addIngredientRow(container, pref = {}, opts = {}){
   return row;
 }
 
+/* ============== Source and "I usually add" (v24) ==============
+   meal.source = { name, url? } — where a recipe came from ("BBC Good Food").
+   meal.extras = [ingredient…] — what you always add that isn't in the recipe
+   (broccoli with the pie). Kept apart from the recipe, so a re-scan or a swap
+   never touches it, but bought with the meal and shown in cook mode. */
+const SOURCE_NAMES = [
+  [/(^|\.)bbcgoodfood\.com$/, "BBC Good Food"], [/(^|\.)bbc\.co\.uk$/, "BBC Food"], [/(^|\.)gousto\.co\.uk$/, "Gousto"],
+  [/(^|\.)hellofresh\./, "HelloFresh"], [/(^|\.)mindfulchef\.com$/, "Mindful Chef"], [/(^|\.)simplycook\./, "SimplyCook"],
+  [/(^|\.)jamieoliver\.com$/, "Jamie Oliver"], [/(^|\.)nigella\.com$/, "Nigella"], [/(^|\.)deliciousmagazine\.co\.uk$/, "delicious."],
+  [/(^|\.)allrecipes\./, "Allrecipes"], [/(^|\.)recipetineats\.com$/, "RecipeTin Eats"], [/(^|\.)seriouseats\.com$/, "Serious Eats"],
+  [/(^|\.)tesco\.com$/, "Tesco Real Food"], [/(^|\.)sainsburys(magazine)?\.co\.uk$/, "Sainsbury's"], [/(^|\.)waitrose\.com$/, "Waitrose"],
+  [/(^|\.)instagram\.com$/, "Instagram"], [/(^|\.)tiktok\.com$/, "TikTok"], [/(^|\.)(youtube\.com|youtu\.be)$/, "YouTube"], [/(^|\.)facebook\.com$/, "Facebook"]
+];
+function sourceFromUrl(url){
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    for (const [re, name] of SOURCE_NAMES) if (re.test(host)) return name;
+    const base = host.split(".")[0];
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  } catch { return ""; }
+}
+/* { name, url } from anything (form fields, an import) — or undefined if empty */
+function cleanSource(src){
+  if (!src || typeof src !== "object") return undefined;
+  const name = String(src.name || "").trim().slice(0, 60);
+  let url = String(src.url || "").trim().slice(0, 500);
+  if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+  try { if (url) new URL(url); } catch { url = ""; }
+  if (!name && !url) return undefined;
+  return url ? { name: name || sourceFromUrl(url), url } : { name };
+}
+/* Imports before v24 put "Source: https://…" in the notes: move it into meal.source */
+function liftSourceFromNotes(meal){
+  if (meal.source || !meal.notes) return false;
+  const m = /(^|\n)[ \t]*Source:[ \t]*(https?:\/\/\S+)[ \t]*(?=\n|$)/i.exec(meal.notes);
+  if (!m) return false;
+  meal.source = { name: sourceFromUrl(m[2]), url: m[2] };
+  meal.notes = (meal.notes.slice(0, m.index) + meal.notes.slice(m.index + m[0].length)).replace(/\n{3,}/g, "\n\n").trim();
+  return true;
+}
+function liftAllSources(){
+  let n = 0;
+  for (const m of state.meals) if (liftSourceFromNotes(m)) n++;
+  if (!n) return;
+  idbSet(IDB_KEYS.meals, state.meals);         // also reaches linked devices
+  renderMeals(); refreshMealView(); renderSourceChips();
+  logEvent("info", "app", `Moved the recipe link out of Notes into Source for ${n} meal${n === 1 ? "" : "s"}`);
+}
+/* Filter & sort › Source: Any · each source · Your own (no source) */
+function renderSourceChips(){
+  const wrap = $("#m-source-chips"), sec = $("#m-source-sec");
+  if (!wrap || !sec) return;
+  const counts = new Map();
+  let own = 0;
+  for (const m of state.meals){ const n = m.source?.name; if (n) counts.set(n, (counts.get(n) || 0) + 1); else own++; }
+  sec.hidden = !counts.size;
+  if (!counts.size){ state.sourceFilter = ""; return; }
+  const opts = [["", "Any"], ...[...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n]) => [n, n]), ...(own ? [["__own", "Your own"]] : [])];
+  wrap.innerHTML = opts.map(([v, label]) => `<button type="button" class="btn mini ${state.sourceFilter === v ? "active" : ""}" data-source="${escapeHtml(v)}" aria-pressed="${state.sourceFilter === v}">${escapeHtml(label)}</button>`).join("");
+  $$("[data-source]", wrap).forEach(b => b.addEventListener("click", () => {
+    state.sourceFilter = b.dataset.source;
+    renderSourceChips(); renderMeals(); refreshFiltersBadge();
+  }));
+}
+/* Ingredient rows (Edit, extras) → [{ name, type, amount, unit }] */
+function readIngredientRows(container){
+  const out = [];
+  if (!container) return out;
+  $$(".ingredient-row", container).forEach(row => {
+    const [n, t, a, u] = row.children;
+    const name = n.value.trim();
+    if (!name) return;
+    let amount = Number(a.value);
+    if (!isFinite(amount) || amount < 0) return;
+    const type = t.value;
+    if (type === "qty") amount = Math.max(0, Math.round(amount));
+    const canon = normaliserLookup(name) || normaliseRaw(name);
+    let unit = singulariseUnitLabel(u.value.trim());
+    if (type === "qty" && !unit) unit = "piece";
+    out.push({ name: canon, type, amount, unit });
+  });
+  return out;
+}
+
+/* ============== Shopping list: things that aren't in a recipe (v24) ==============
+   "milk", "2 bin bags", "500 g rice" — kept with the current shop (and synced),
+   cleared by Clear selection like the meals. */
+function parseListItem(text){
+  const m = /^\s*(\d+(?:[.,]\d+)?\s*(?:x|×)?\s*(?:kg|g|ml|l|litres?|pints?|packs?|bottles?|tins?|bags?|loaf|loaves|dozen)?)\s+(.+)$/i.exec(text);
+  return m ? { amount: m[1].replace(/\s*(x|×)\s*$/i, "").trim(), name: m[2].trim() } : { amount: "", name: String(text).trim() };
+}
+function addListItem(text){
+  const it = parseListItem(text);
+  if (!it.name) return null;
+  const item = { id: uid(), name: it.name.slice(0, 80), amount: it.amount.slice(0, 20) };
+  state.listItems.push(item);
+  saveSession(); renderShopping();
+  return item;
+}
+function removeListItem(id){
+  const i = state.listItems.findIndex(x => x.id === id);
+  if (i < 0) return;
+  const [gone] = state.listItems.splice(i, 1);
+  state.haveIt.delete("item:" + id);
+  saveSession(); renderShopping();
+  showUndoToast(`Removed ${gone.name}`, () => { state.listItems.splice(i, 0, gone); saveSession(); renderShopping(); });
+}
+$("#add-item-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const inp = $("#add-item-input");
+  const item = addListItem(inp.value || "");
+  if (!item) { inp.focus(); return; }
+  inp.value = "";
+  haptic();
+  status(`Added ${item.name} to the list`);
+});
+
+/* ============== Splitting long steps (v24) ==============
+   Imported recipes (e.g. BBC Good Food) often have whole paragraphs as one
+   step. "Sensibly" keeps things that belong together (cook, drain, toss)
+   and starts a new step at a new stage (heat, bake, tip in, add the…). */
+function stepSentences(text){
+  return String(text).split(/(?<=[.!?])\s+(?=[A-Z“"(])/).map(x => x.trim()).filter(Boolean);
+}
+const STEP_PHASE_RE = /^(heat|preheat|bake|roast|grill|cook|tip|put|place|bring|boil|make|mix|whisk|meanwhile|serve|to serve|transfer|add the|prepare|remove|line|slice|chop|cut)\b/i;
+const STEP_FOLLOW_RE = /^(drain|then|once|until|season|stir through|and|after|while|reduce|cover|leave|set aside|repeat)\b/i;
+function sensibleSplit(sentences){
+  const groups = [];
+  for (const sen of sentences){
+    const g = groups[groups.length - 1];
+    const fresh = !g || (!STEP_FOLLOW_RE.test(sen) && (STEP_PHASE_RE.test(sen) || g.length >= 3 || g.join(" ").length > 220));
+    if (fresh) groups.push([sen]); else g.push(sen);
+  }
+  return groups.map(g => g.join(" "));
+}
+/* Worth suggesting a split: long (3+ sentences, or 2 long ones) AND the sensible
+   split would actually break it up — a step already grouped sensibly isn't flagged */
+function isLongStep(text){
+  const se = stepSentences(text);
+  if (se.length < 2 || (se.length < 3 && String(text).length <= 200)) return false;
+  return sensibleSplit(se).length > 1;
+}
+
 /* ============== Steps UI ============== */
 /* Steps editor (Add, Edit, scan review). v20: tap a step's text to edit it;
    "Join" between two steps makes them one ("Add butter to a pan." + "Once
@@ -1268,6 +1418,28 @@ function renderSteps(container, steps, onChange){
       onChange();
     });
     bar.appendChild(all);
+    container.appendChild(bar);
+  }
+  // long steps (often imports): offer to split them
+  const longIdx = steps.map((t, i) => isLongStep(t) ? i : -1).filter(i => i >= 0);
+  if (longIdx.length){
+    const bar = document.createElement("div");
+    bar.className = "steps-suggest steps-split-suggest";
+    const one = longIdx.length === 1;
+    const sensibleN = longIdx.reduce((n, i) => n + sensibleSplit(stepSentences(steps[i])).length, 0);
+    const everyN = longIdx.reduce((n, i) => n + stepSentences(steps[i]).length, 0);
+    bar.innerHTML = `<span class="muted small">${one ? `Step ${longIdx[0] + 1} is long (${stepSentences(steps[longIdx[0]]).length} sentences).` : `${longIdx.length} steps are long.`} Split ${one ? "it" : "them"} so cook mode shows one thing at a time?</span>`;
+    const mk = (label, cls, fn) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = `btn mini ${cls}`;
+      b.innerHTML = `${icon("scissors", 16)}${label}`;
+      b.addEventListener("click", () => { for (const i of longIdx.slice().reverse()) steps.splice(i, 1, ...fn(steps[i])); onChange(); });
+      return b;
+    };
+    const btns = document.createElement("span");
+    btns.className = "group";
+    btns.append(mk(`Split sensibly (${sensibleN})`, "primary", t => sensibleSplit(stepSentences(t))), mk(`Every sentence (${everyN})`, "", t => stepSentences(t)));
+    bar.appendChild(btns);
     container.appendChild(bar);
   }
   steps.forEach((text, idx) => {
@@ -1332,9 +1504,51 @@ function renderSteps(container, steps, onChange){
     del.setAttribute("aria-label", "Delete step");
     del.addEventListener("click", () => { steps.splice(idx, 1); onChange(); });
 
-    row.append(t, up, down, del);
+    let splitBtn = null;
+    if (stepSentences(text).length >= 2){
+      splitBtn = document.createElement("button");
+      splitBtn.type = "button"; splitBtn.className = "btn mini" + (isLongStep(text) ? " split-suggested" : "");
+      splitBtn.innerHTML = icon("scissors", 16);
+      splitBtn.title = "Split this step";
+      splitBtn.setAttribute("aria-label", `Split step ${idx + 1}`);
+      splitBtn.addEventListener("click", () => openStepSplitter(row, steps, idx, onChange));
+    }
+    row.append(t, ...(splitBtn ? [splitBtn] : []), up, down, del);
     container.appendChild(row);
   });
+}
+/* Split one step: its sentences with a "split here" line between each; the
+   sensible split points start switched on. Tap a line to toggle it. */
+function openStepSplitter(row, steps, idx, onChange){
+  const sentences = stepSentences(steps[idx]);
+  const cuts = new Set();
+  let n = 0;
+  const groups = sensibleSplit(sentences);
+  groups.forEach((g, gi) => { n += stepSentences(g).length; if (gi < groups.length - 1) cuts.add(n - 1); });
+  const box = document.createElement("div");
+  box.className = "step-splitter";
+  const draw = () => {
+    box.innerHTML = `<div class="small muted">Step ${idx + 1} · tap a line to split there</div>`
+      + sentences.map((sen, k) => `<div class="sp-sent">${escapeHtml(sen)}</div>`
+        + (k < sentences.length - 1 ? `<button type="button" class="sp-cut ${cuts.has(k) ? "on" : ""}" data-cut="${k}" aria-pressed="${cuts.has(k)}">${cuts.has(k) ? `${icon("scissors", 14)}split here` : "+ split here"}</button>` : "")).join("")
+      + `<div class="group sp-actions"><button type="button" class="btn mini" data-sp="cancel">Cancel</button><button type="button" class="btn mini primary" data-sp="apply">${cuts.size ? `Split into ${cuts.size + 1}` : "Keep as one"}</button></div>`;
+    $$("[data-cut]", box).forEach(b => b.addEventListener("click", () => {
+      const k = Number(b.dataset.cut);
+      if (cuts.has(k)) cuts.delete(k); else cuts.add(k);
+      draw();
+    }));
+    box.querySelector('[data-sp="cancel"]').addEventListener("click", onChange);
+    box.querySelector('[data-sp="apply"]').addEventListener("click", () => {
+      const parts = [];
+      let cur = [];
+      sentences.forEach((sen, k) => { cur.push(sen); if (cuts.has(k)){ parts.push(cur.join(" ")); cur = []; } });
+      if (cur.length) parts.push(cur.join(" "));
+      steps.splice(idx, 1, ...parts);
+      onChange();
+    });
+  };
+  draw();
+  row.replaceWith(box);
 }
 function addStepFromInput(inputEl, steps, onChange){
   const v = (inputEl.value || "").trim();
@@ -1484,6 +1698,12 @@ $("#edit-step-input")?.addEventListener("keydown", e => {
   if (e.key === "Enter"){ e.preventDefault(); addStepFromInput($("#edit-step-input"), editSteps, refreshEditSteps); }
 });
 $("#edit-add-ingredient")?.addEventListener("click", () => addIngredientRow(editIng));
+$("#edit-add-extra")?.addEventListener("click", () => addIngredientRow($("#edit-extras")));
+/* A pasted link fills in the source's name ("BBC Good Food") if it's empty */
+$("#edit-source-url")?.addEventListener("change", () => {
+  const n = $("#edit-source-name"), src = cleanSource({ url: $("#edit-source-url").value });
+  if (n && src && !n.value.trim()) n.value = src.name;
+});
 
 function openEdit(id){
   const meal = state.meals.find(m => m.id === id);
@@ -1500,6 +1720,10 @@ function openEdit(id){
   editSteps = Array.isArray(meal.steps) ? meal.steps.slice() : [];
   refreshEditSteps();
   $("#edit-notes").value = meal.notes || "";
+  const exWrap = $("#edit-extras");
+  if (exWrap){ exWrap.innerHTML = ""; (meal.extras || []).forEach(i => addIngredientRow(exWrap, i, { focus:false })); }
+  if ($("#edit-source-name")) $("#edit-source-name").value = meal.source?.name || "";
+  if ($("#edit-source-url")) $("#edit-source-url").value = meal.source?.url || "";
 
   editModal.classList.add("open");
   editModal.setAttribute("aria-hidden", "false");
@@ -1513,6 +1737,7 @@ function closeEdit(){
   setEditPendingImage(null);
   $("#edit-form").reset();
   editIng.innerHTML = "";
+  if ($("#edit-extras")) $("#edit-extras").innerHTML = "";
   editSteps = [];
   refreshEditSteps();
   $("#edit-notes").value = "";
@@ -1551,23 +1776,14 @@ $("#edit-form")?.addEventListener("submit", async (e) => {
 
   meal.cookMins = parseCookMins($("#edit-cook-mins").value);
 
-  const ing = [];
-  $$(".ingredient-row", editIng).forEach(row => {
-    const [n, t, a, u] = row.children;
-    const name = n.value.trim();
-    if (!name) return;
-    let amount = Number(a.value);
-    if (!isFinite(amount) || amount < 0) return;
-    const type = t.value;
-    if (type === "qty") amount = Math.max(0, Math.round(amount));
-    const canon = normaliserLookup(name) || normaliseRaw(name);
-    let unit = singulariseUnitLabel(u.value.trim());
-    if (type === "qty" && !unit) unit = "piece";
-    ing.push({ name: canon, type, amount, unit });
-  });
+  const ing = readIngredientRows(editIng);
   if (!ing.length){ alert("Please add at least one ingredient."); return; }
 
   meal.ingredients = ing;
+  const extras = readIngredientRows($("#edit-extras"));
+  if (extras.length) meal.extras = extras; else delete meal.extras;
+  const src = cleanSource({ name: $("#edit-source-name")?.value, url: $("#edit-source-url")?.value });
+  if (src) meal.source = src; else delete meal.source;
   meal.tags = editTagEditor.get();
   meal.steps = editSteps.slice();
   meal.notes = ($("#edit-notes").value || "").trim();
@@ -1813,13 +2029,14 @@ function timeFilterActive(){
 }
 function refreshFiltersBadge(){
   const n = (state.showFavsOnly ? 1 : 0) + (timeFilterActive() ? 1 : 0) + (state.tagFilter.size ? 1 : 0)
-    + (state.containsFilter.size ? 1 : 0) + ((state.prefs.mealSort || "az") !== "az" ? 1 : 0);
+    + (state.containsFilter.size ? 1 : 0) + ((state.prefs.mealSort || "az") !== "az" ? 1 : 0) + (state.sourceFilter ? 1 : 0);
   const label = $("#open-filters-label");
   if (label) label.textContent = n ? `Filter & sort (${n})` : "Filter & sort";
   $("#open-filters")?.classList.toggle("active", n > 0);
 }
 $("#filters-reset")?.addEventListener("click", async () => {
   state.showFavsOnly = false;
+  state.sourceFilter = "";
   state.timeFilter.min = 0; state.timeFilter.max = TIME_FILTER_MAX;
   state.tagFilter.clear();
   state.containsFilter.clear(); containsEditor?.set([]);
@@ -1836,6 +2053,7 @@ function renderActiveFilters(){
   const chips = [];
   if ((state.prefs.mealSort || "az") !== "az") chips.push({ label: `Sort: ${SORT_LABELS[state.prefs.mealSort]}`, clear: () => { state.prefs.mealSort = "az"; syncSortUI(); idbSet(IDB_KEYS.prefs, state.prefs); } });
   if (state.showFavsOnly) chips.push({ label: "Favourites", clear: () => { state.showFavsOnly = false; } });
+  if (state.sourceFilter) chips.push({ label: state.sourceFilter === "__own" ? "Your own recipes" : `From ${state.sourceFilter}`, clear: () => { state.sourceFilter = ""; renderSourceChips(); } });
   if (timeFilterActive()) chips.push({ label: timeLabel(), clear: () => { state.timeFilter.min = 0; state.timeFilter.max = TIME_FILTER_MAX; } });
   const { rows } = computeTagStats();
   for (const t of state.tagFilter) chips.push({ label: t === NO_TAGS ? "No tags" : `#${rows.find(r => r.tag === t)?.label || t}`, clear: () => { state.tagFilter.delete(t); } });
@@ -1849,6 +2067,7 @@ function renderActiveFilters(){
   }));
 }
 function syncFiltersUI(){
+  renderSourceChips();
   $("#m-time-min").value = String(state.timeFilter.min);
   $("#m-time-max").value = String(state.timeFilter.max);
   $("#m-time-label").textContent = timeLabel();
@@ -1895,6 +2114,7 @@ function mealAvoided(m){
 function visibleMeals(){
   let items = state.meals.filter(m => !mealAvoided(m));
   if (state.showFavsOnly) items = items.filter(m => m.fav);
+  if (state.sourceFilter) items = items.filter(m => state.sourceFilter === "__own" ? !m.source?.name : m.source?.name === state.sourceFilter);
 
   // Search now matches title OR any ingredient name
   if (state.search){
@@ -2437,7 +2657,10 @@ function renderMealView(){
     typeof meal.cookMins === "number" ? `<span>${icon("clock", 15)}${meal.cookMins} min</span>` : "",
     steps.length ? `<span>${icon("steps", 15)}${steps.length} steps</span>` : "",
     cs.count ? `<span>${icon("star-filled", 15, "gold")}${cs.avg != null ? formatNumber(Math.round(cs.avg * 10) / 10) + " · " : ""}cooked ${cs.count}×</span>` : "",
-    hist?.count ? `<span>${icon("cart", 15)}shopped ${hist.count}×</span>` : ""
+    hist?.count ? `<span>${icon("cart", 15)}shopped ${hist.count}×</span>` : "",
+    meal.source?.name ? (meal.source.url
+      ? `<a class="mv-source" href="${escapeHtml(meal.source.url)}" target="_blank" rel="noopener">${escapeHtml(meal.source.name)}${icon("link", 13)}</a>`
+      : `<span class="mv-source">${escapeHtml(meal.source.name)}</span>`) : ""
   ].filter(Boolean).join("");
   const tab = (key, label) => `<button type="button" role="tab" class="mv-tab ${mvTab === key ? "on" : ""}" aria-selected="${mvTab === key}" data-mvtab="${key}">${label}</button>`;
   $("#mv-star").innerHTML = icon(meal.fav ? "star-filled" : "star", 20);
@@ -2460,6 +2683,8 @@ function renderMealView(){
       <section class="mv-panel" data-panel="ingredients">
         <h4 class="h4 mv-panel-head">${ings.length} ingredient${ings.length === 1 ? "" : "s"}</h4>
         <ul class="ov-ings mv-ings">${ings.map(i => `<li><span>${escapeHtml(titleCase(i.name))}</span><span class="muted">${escapeHtml(amount(i))}</span></li>`).join("")}</ul>
+        ${(meal.extras || []).length ? `<h4 class="h4 mv-panel-head mv-extras-head">I usually add</h4>
+        <ul class="ov-ings mv-ings mv-extras">${meal.extras.map(i => `<li><span>${escapeHtml(titleCase(i.name))}</span><span class="muted">${escapeHtml(amount(i))}</span></li>`).join("")}</ul>` : ""}
       </section>
       <section class="mv-panel" data-panel="method">
         <h4 class="h4 mv-panel-head">Method</h4>
@@ -2512,6 +2737,7 @@ function syncSortUI(){
 /* Forget the current shop entirely (import / clear all). */
 function clearShopState(){
   state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear(); state.doubled.clear();
+  state.listItems = [];
 }
 
 /* ===== Contains filter (search by ingredient) ===== */
@@ -2566,12 +2792,14 @@ $("#meal-sort")?.addEventListener("change", async (e) => {
 /* Clear selection = start a new shop: ticks, pulled-back staples and the
    "already counted" set all reset. Undo restores the lot. */
 $("#clear-selection")?.addEventListener("click", () => {
-  if (!state.selected.size) return;
+  if (!state.selected.size && !state.listItems.length) return;
   const before = {
     selected: new Set(state.selected), haveIt: new Set(state.haveIt),
-    pantryUse: new Set(state.pantryUse), countedIds: new Set(state.countedIds), doubled: new Set(state.doubled)
+    pantryUse: new Set(state.pantryUse), countedIds: new Set(state.countedIds), doubled: new Set(state.doubled),
+    listItems: state.listItems.slice()
   };
   state.selected.clear(); state.haveIt.clear(); state.pantryUse.clear(); state.countedIds.clear(); state.doubled.clear();
+  state.listItems = [];
   saveSession(); renderMeals(); renderShopping();
   showUndoToast("Selection cleared — new shop", () => {
     Object.assign(state, before);
@@ -2621,19 +2849,24 @@ function aggregate(){
   for (const m of state.meals){
     if (!state.selected.has(m.id)) continue;
     const mult = state.doubled.has(m.id) ? 2 : 1;   // cook once, eat twice
-    for (const i of (m.ingredients || [])){
+    const add = (i, extra) => {
       const name = canonicalName(i.name);
       const key = ingredientKey(name);
-      if (!key) continue;
+      if (!key) return;
       let row = map.get(key);
       if (!row){ row = { key, spellings:new Map(), parts:new Map() }; map.set(key, row); }
       row.spellings.set(name, (row.spellings.get(name) || 0) + 1);
       const pk = partKey(i);
       const amt = (Number(i.amount) || 0) * (pk === "spoon" ? SPOON_TSP[i.type] : 1) * mult;
       row.parts.set(pk, (row.parts.get(pk) || 0) + amt);
-    }
+      if (extra) (row.extraFor ||= new Set()).add(m.title); else row.recipe = true;
+    };
+    for (const i of (m.ingredients || [])) add(i, false);
+    for (const i of (m.extras || [])) add(i, true);      // "I usually add" — bought with the meal
   }
   const rank = pk => { const i = PART_ORDER.indexOf(pk); return i === -1 ? PART_ORDER.length : i; };
+  // things added by hand (milk, bin bags…): their own rows, not merged into recipe rows
+  const added = state.listItems.map(it => ({ key: "item:" + it.id, name: it.name, names: [it.name], parts: [], amount: it.amount || "", added: true }));
   return Array.from(map.values()).map(r => {
     const parts = Array.from(r.parts.entries())
       .filter(([, total]) => total > 0)
@@ -2644,9 +2877,11 @@ function aggregate(){
       name: mostCommon(r.spellings),
       names: Array.from(r.spellings.keys()),
       parts,
-      amount: parts.map(p => `${formatNumber(p.value)} ${p.unit}`).join(" + ") || "—"
+      amount: parts.map(p => `${formatNumber(p.value)} ${p.unit}`).join(" + ") || "—",
+      extraFor: r.extraFor ? Array.from(r.extraFor) : undefined,
+      onlyExtra: !!r.extraFor && !r.recipe
     };
-  }).sort((a, b) => a.name.localeCompare(b.name, "en-GB", { sensitivity:"base" }));
+  }).concat(added).sort((a, b) => a.name.localeCompare(b.name, "en-GB", { sensitivity:"base" }));
 }
 
 /* ============== Shopping list categories (optional grouping) ==============
@@ -2755,6 +2990,12 @@ function shoppingRow(r, opts){
   const tdName = document.createElement("td");
   tdName.className = "col-name";
   tdName.textContent = titleCase(r.name);
+  if (r.extraFor?.length || r.added){
+    const note = document.createElement("span");
+    note.className = "row-note";
+    note.textContent = r.added ? "added by hand" : `${r.onlyExtra ? "your extra" : "+ your extra"} · ${r.extraFor.join(", ")}`;
+    tdName.appendChild(note);
+  }
   if (r.names.length > 1) tdName.title = `Merged: ${r.names.join(", ")}`;
 
   const tdAmt = document.createElement("td");
@@ -2773,7 +3014,9 @@ function shoppingRow(r, opts){
     b.addEventListener("click", onClick);
     tdAct.appendChild(b);
   };
-  if (opts.staple){
+  if (r.added){
+    mk("x", `Remove ${r.name} from the list`, () => removeListItem(r.key.slice(5)));
+  } else if (opts.staple){
     mk("Need it", `Add ${r.name} to this shop`, () => {
       state.pantryUse.add(r.key); saveSession(); renderShopping();
     }, "need-btn");
@@ -2785,7 +3028,7 @@ function shoppingRow(r, opts){
   } else {
     mk("home", `Always have ${r.name} (staple)`, () => togglePantry(r.key, true));
   }
-  if (!opts.staple) mk("swap", `Merge "${r.name}" into another name`, () => openMergeDialog(r.names));
+  if (!opts.staple && !r.added) mk("swap", `Merge "${r.name}" into another name`, () => openMergeDialog(r.names));
 
   tr.append(tdTick, tdName, tdAmt, tdAct);
   return tr;
@@ -3011,7 +3254,7 @@ async function copyText(text, fallbackTitle){
 }
 function closeShopMenu(){ const m = $("#shop-menu"); if (m) m.open = false; }
 function nothingToExport(){
-  if (!state.selected.size){ status("Tick some meals first."); return true; }
+  if (!state.selected.size && !state.listItems.length){ status("Tick some meals (or add an item) first."); return true; }
   return false;
 }
 
@@ -3041,7 +3284,7 @@ $("#share")?.addEventListener("click", async () => {
   if (!rows.length){ status("Everything is ticked or a staple — nothing to share."); return; }
   const n = state.selected.size;
   const text = [`Shopping list (${n} meal${n === 1 ? "" : "s"})`, "",
-    ...rows.map(r => `• ${titleCase(r.name)} — ${r.amount}`)].join("\n");
+    ...rows.map(r => `• ${titleCase(r.name)}${r.amount ? ` — ${r.amount}` : ""}`)].join("\n");
   if (navigator.share){
     try {
       await navigator.share({ title: "Shopping list", text });
@@ -3147,12 +3390,18 @@ function migrateImport(json){
       delete clone.imageDataUrl;
     }
     // sanitise ingredients
-    clone.ingredients = (clone.ingredients || []).map(i => ({
+    const cleanIng = i => ({
       name: normaliseRaw(i.name),
       type: ["grams","ml","tsp","tbsp","cup","qty"].includes(i.type) ? i.type : "grams",
       amount: Number(i.amount) || 0,
       unit: typeof i.unit === "string" ? i.unit : ""
-    })).filter(i => i.name);
+    });
+    clone.ingredients = (clone.ingredients || []).map(cleanIng).filter(i => i.name);
+    // schema 15+: extras and source (older files: a "Source: http…" line in notes becomes the source)
+    if (Array.isArray(clone.extras) && clone.extras.length) clone.extras = clone.extras.map(cleanIng).filter(i => i.name); else delete clone.extras;
+    const src = cleanSource(clone.source);
+    if (src) clone.source = src; else delete clone.source;
+    liftSourceFromNotes(clone);
     if (!clone.id) clone.id = uid();
     return clone;
   });
@@ -3532,4 +3781,5 @@ $("#unit-add")?.addEventListener("click", async () => {
   window.appReady = true;
   document.dispatchEvent(new Event("app:ready"));
   setTimeout(maybeShowWhatsNew, 700);
+  setTimeout(liftAllSources, 1500);
 })();

@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=23" />
-  <link rel="stylesheet" href="assets/styles.css?v=23" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=24" />
+  <link rel="stylesheet" href="assets/styles.css?v=24" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v23</span>
+      <span class="pill">v24</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -55,6 +55,7 @@
 
       <!-- ============ TODAY (rendered by assets/cook.js) ============ -->
       <section id="view-today" class="view active" aria-label="Today">
+        <div id="today-date" class="today-date"></div>
         <div id="today-hero" class="today-hero"></div>
         <div class="today-row">
           <div class="today-card">
@@ -189,6 +190,10 @@
           </p>
         </div>
         <div id="shopping"></div>
+        <form id="add-item-form" class="add-item" autocomplete="off">
+          <input id="add-item-input" type="text" maxlength="100" placeholder="Add something else — milk, bin bags…" aria-label="Add an item to the shopping list" enterkeyhint="done" />
+          <button type="submit" class="btn" aria-label="Add to the list"><i data-icon="plus" data-size="18"></i>Add</button>
+        </form>
       </section>
     </div>
   </section>
@@ -507,11 +512,28 @@
       </div>
 
       <div class="form-row">
+        <label for="edit-source-name">Source</label>
+        <div class="row">
+          <input id="edit-source-name" type="text" maxlength="60" placeholder="e.g. BBC Good Food, Gousto, Mum" />
+          <input id="edit-source-url" type="url" placeholder="Link (optional)" aria-label="Source link" />
+        </div>
+      </div>
+
+      <div class="form-row">
         <label>Ingredients</label>
         <div id="edit-ingredients" class="ingredients"></div>
         <div class="group">
           <button type="button" id="edit-add-ingredient" class="btn">+ Add ingredient</button>
           <button type="button" class="btn" data-paste-into="edit-ingredients"><i data-icon="clipboard" data-size="16"></i>Paste list</button>
+        </div>
+      </div>
+
+      <div class="form-row extras-row">
+        <label>I usually add</label>
+        <p class="muted small" style="margin:0">Things you always add that aren't in the recipe (e.g. broccoli on the side). They go on the shopping list with the meal and show early in cook mode.</p>
+        <div id="edit-extras" class="ingredients"></div>
+        <div class="group">
+          <button type="button" id="edit-add-extra" class="btn">+ Add something</button>
         </div>
       </div>
 
@@ -858,6 +880,12 @@
       <span id="m-tag-active" class="muted small"></span>
     </div>
 
+    <div id="m-source-sec" hidden>
+      <hr class="sep" />
+      <h4 class="h4">Source</h4>
+      <div id="m-source-chips" class="group"></div>
+    </div>
+
     <hr class="sep" />
     <h4 class="h4">Contains ingredients</h4>
     <p class="muted small">Meals containing <strong>all</strong> of these (partial words match).</p>
@@ -905,13 +933,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=23" defer></script>
-<script src="assets/app.js?v=23" defer></script>
-<script src="assets/cook.js?v=23" defer></script>
-<script src="assets/plan.js?v=23" defer></script>
-<script src="assets/vendor/qrcode.js?v=23" defer></script>
-<script src="assets/sync.js?v=23" defer></script>
-<script src="assets/scan.js?v=23" defer></script>
-<script src="assets/pwa.js?v=23" defer></script>
+<script src="assets/icons.js?v=24" defer></script>
+<script src="assets/app.js?v=24" defer></script>
+<script src="assets/cook.js?v=24" defer></script>
+<script src="assets/plan.js?v=24" defer></script>
+<script src="assets/vendor/qrcode.js?v=24" defer></script>
+<script src="assets/sync.js?v=24" defer></script>
+<script src="assets/scan.js?v=24" defer></script>
+<script src="assets/pwa.js?v=24" defer></script>
 </body>
 </html>
