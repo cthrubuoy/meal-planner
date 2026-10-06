@@ -642,11 +642,11 @@ $("#hints-reset")?.addEventListener("click", () => {
 });
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["steps",    "Cook mode: see what's coming", "Each step now shows the step before it (faded) and the next few steps below — tap any of them to jump there. Turn it off with the list button at the top of cook mode."],
-  ["play",     "\"First up\" on the Get ready page", "See the first steps before you start, so you know what to prep."]
+  ["link",     "Join steps", "In Edit, tap Join between two steps to make them one (e.g. \"Add butter to a pan.\" + \"Once melted, add the onions.\"). Steps that start with Once…, When… or Then… are highlighted as likely joins, with a Join suggested button."],
+  ["edit",     "Edit a step's text", "Tap a step's words in Edit to change them."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -1129,6 +1129,21 @@ function addIngredientRow(container, pref = {}, opts = {}){
 }
 
 /* ============== Steps UI ============== */
+/* Steps editor (Add, Edit, scan review). v20: tap a step's text to edit it;
+   "Join" between two steps makes them one ("Add butter to a pan." + "Once
+   melted, add the onions."). A step starting "Once…/When…/Then…" is usually
+   the second half of the one before, so that join is highlighted — a
+   suggestion only, as cards don't always list steps in order. */
+const FOLLOW_ON_RE = /^(once|when|then|after (?:that|this)|until|and |as soon as|this will|it should)\b/i;
+function joinStepText(a, b){
+  a = String(a).trim(); b = String(b).trim();
+  return (/[.!?:;]$/.test(a) ? a : a + ".") + " " + b;
+}
+function suggestedJoins(steps){
+  const out = [];
+  for (let i = 1; i < steps.length; i++) if (FOLLOW_ON_RE.test(String(steps[i]).trim())) out.push(i);   // join i-1 + i
+  return out;
+}
 function renderSteps(container, steps, onChange){
   container.innerHTML = "";
   if (!steps.length){
@@ -1138,13 +1153,59 @@ function renderSteps(container, steps, onChange){
     container.appendChild(d);
     return;
   }
+  const suggested = suggestedJoins(steps);
+  if (suggested.length){
+    const bar = document.createElement("div");
+    bar.className = "steps-suggest";
+    bar.innerHTML = `<span class="muted small">${suggested.length} step${suggested.length === 1 ? "" : "s"} look${suggested.length === 1 ? "s" : ""} like the second half of the one before (highlighted).</span>`;
+    const all = document.createElement("button");
+    all.type = "button"; all.className = "btn mini";
+    all.innerHTML = `${icon("link", 16)}Join suggested (${suggested.length})`;
+    all.addEventListener("click", () => {
+      for (const i of suggested.slice().reverse()){ steps[i - 1] = joinStepText(steps[i - 1], steps[i]); steps.splice(i, 1); }
+      onChange();
+    });
+    bar.appendChild(all);
+    container.appendChild(bar);
+  }
   steps.forEach((text, idx) => {
+    if (idx > 0){
+      const join = document.createElement("button");
+      join.type = "button";
+      join.className = "step-join" + (suggested.includes(idx) ? " suggested" : "");
+      join.innerHTML = `${icon("link", 14)}Join ${idx} + ${idx + 1}`;
+      join.title = `Make steps ${idx} and ${idx + 1} one step`;
+      join.addEventListener("click", () => {
+        steps[idx - 1] = joinStepText(steps[idx - 1], steps[idx]);
+        steps.splice(idx, 1);
+        onChange();
+      });
+      container.appendChild(join);
+    }
     const row = document.createElement("div");
     row.className = "step-row";
 
     const t = document.createElement("div");
     t.className = "step-text";
-    t.textContent = `${idx + 1}. ${text}`;
+    const num = document.createElement("span");
+    num.className = "step-num";
+    num.textContent = `${idx + 1}.`;
+    const body = document.createElement("span");
+    body.className = "step-body";
+    body.textContent = text;
+    body.contentEditable = "plaintext-only";
+    body.spellcheck = true;
+    body.setAttribute("role", "textbox");
+    body.setAttribute("aria-label", `Step ${idx + 1} (tap to edit)`);
+    body.addEventListener("keydown", (e) => { if (e.key === "Enter"){ e.preventDefault(); body.blur(); } });
+    body.addEventListener("blur", () => {
+      const v = body.textContent.replace(/\s+/g, " ").trim();
+      if (v === steps[idx]) return;
+      if (v){ steps[idx] = v; body.textContent = v; return; }   // no re-render, so a tap on Join right after still lands
+      steps.splice(idx, 1);
+      onChange();
+    });
+    t.append(num, body);
 
     const up = document.createElement("button");
     up.type = "button"; up.className = "btn mini"; up.textContent = "↑";

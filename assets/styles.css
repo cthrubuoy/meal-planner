@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v19
+   Meal Planner & Shopping List — v20
    ===================================================== */
 
 :root{
@@ -1765,4 +1765,23 @@ body.modal-open .hint, body.cooking .hint{ display:none; }
 @media (max-width:839px){
   .co-next-list > :nth-child(3){ display:none; }      /* phones: the next two */
   .co-preview{ font-size:.95rem; }
+}
+
+/* =====================================================
+   v20 — STEPS EDITOR: EDIT IN PLACE, JOIN STEPS
+   ===================================================== */
+.step-row .step-text{ display:flex; gap:6px; align-items:flex-start; }
+.step-num{ flex:0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.step-body{ flex:1 1 auto; min-width:0; outline:none; border-radius:6px; cursor:text; }
+.step-body:focus{ box-shadow: 0 0 0 2px var(--accent-border); background: var(--accent-glow); }
+.step-join{
+  display:flex; align-items:center; justify-content:center; gap:5px; align-self:center; justify-self:center;
+  margin:-2px auto; padding:2px 10px; border-radius:999px; cursor:pointer; font:inherit; font-size:.75rem;
+  background:none; border:1px dashed var(--border-strong); color: var(--muted); opacity:.75;
+}
+.step-join:hover{ opacity:1; color: var(--text); border-color: var(--accent-border); }
+.step-join.suggested{ opacity:1; border-style:solid; border-color: var(--accent-border); background: var(--accent-glow); color: var(--accent-text); font-weight:600; }
+.steps-suggest{
+  display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;
+  padding:8px 10px; border:1px solid var(--accent-border); border-radius: var(--radius-sm); background: var(--accent-glow);
 }

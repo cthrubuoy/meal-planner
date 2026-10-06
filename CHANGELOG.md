@@ -3,6 +3,23 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v20 — Join steps, edit step text (2026-10-06)
+Cache `meal-planner-v22` · assets `?v=20` · export schema 14 (unchanged)
+
+### Added
+- **Join steps** (Edit, Add and the scan review):
+  - A **Join** button between every two steps makes them one step, for example "Add a knob of butter to a pan." + "Once melted, add the onions."
+  - Steps that start with "Once…", "When…" or "Then…" are usually the second half of the step before, so that join is highlighted. **Join suggested** joins all of them at once.
+  - These are only suggestions, since cards don't always list steps in order. Check the result, then press Save, or Cancel to undo.
+- **Edit a step's text:** tap its words in the steps list.
+
+### Changed (scan server — takes effect when the server is redeployed)
+- Scans keep each step **as printed on the card** (all its sentences together) instead of splitting every sentence into its own step.
+- **Fixes the "returned non-JSON" scan errors.** The cause: Gemini's hidden "thinking" used up the answer length limit, so long cards were cut off partway through.
+  - The server now turns thinking off for scans and allows longer answers.
+  - It retries once with more room if an answer is cut off, and once after a temporary Gemini error.
+  - If it still fails, it gives a clearer message.
+
 ## v19 — Cook mode shows the steps around the current one (2026-10-06)
 Cache `meal-planner-v21` · assets `?v=19` · export schema 14 (unchanged)
 
