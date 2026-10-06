@@ -136,48 +136,104 @@
   }
 
   /* ============== Cook tab ============== */
+  /* ============== This week's menu (from the planner) ==============
+     The Cook tab starts from the week's plan: Mon–Sun in order, today first in
+     focus, pinned meals included, ✓ once cooked (cook log on/after that day). */
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  function thisWeekMenu(){
+    const now = new Date(); now.setHours(12, 0, 0, 0);
+    const today = isoOf(now);
+    const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const out = [];
+    for (let i = 0; i < 7; i++){
+      const d = new Date(monday); d.setDate(monday.getDate() + i);
+      const iso = isoOf(d);
+      const raw = state.plan[iso] || [];
+      const entries = raw.filter(e => !e.skipped);
+      // pinned meals the planner hasn't written onto this day yet
+      if (iso >= today) for (const id of (state.pins?.[String(d.getDay())] || [])){
+        if (!raw.some(e => e.mealId === id)) entries.push({ mealId: id, pin: true });
+      }
+      for (const e of entries){
+        const m = mealById(e.mealId);
+        if (!m) continue;
+        const cooked = (state.cooklog[m.id] || []).some(c => c.date >= iso);
+        out.push({ iso, m, x: e.x || 1, pin: !!e.pin, isToday: iso === today, past: iso < today, cooked,
+          label: iso === today ? "Today" : `${DAYS[d.getDay()]} ${d.getDate()}` });
+      }
+    }
+    return out;
+  }
+  /* What to show first: today's uncooked meal, else the next uncooked one, else
+     anything uncooked from earlier this week, else the first shopped-for meal */
+  function suggestedCookId(menu = thisWeekMenu()){
+    const open = menu.filter(r => !r.cooked);
+    return (open.find(r => r.isToday) || open.find(r => !r.past) || open[0])?.m.id
+      || state.cookQueue.find(q => mealById(q.mealId))?.mealId || null;
+  }
+
+  let userPicked = false;   // once you choose from the list, leave your choice alone
   function populateCookSelect(){
     const dd = $("#cook-meal");
     if (!dd) return;
-    const keep = dd.value || store.get(LAST_KEY);
-    dd.innerHTML = state.meals.slice()
+    const menu = thisWeekMenu();
+    const suggested = suggestedCookId(menu);
+    const keep = userPicked ? dd.value : (suggested || dd.value || store.get(LAST_KEY));
+    const weekOpts = menu.map(r => `<option value="${escapeHtml(r.m.id)}">${escapeHtml(r.label)} · ${escapeHtml(r.m.title)}${r.cooked ? " ✓" : ""}</option>`).join("");
+    const allOpts = state.meals.slice()
       .sort((a, b) => (a.title || "").localeCompare(b.title || "", "en-GB", { sensitivity:"base" }))
       .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.title)}</option>`).join("");
+    dd.innerHTML = (weekOpts ? `<optgroup label="This week's menu">${weekOpts}</optgroup><optgroup label="All meals">${allOpts}</optgroup>` : allOpts);
     if (keep && state.meals.some(m => m.id === keep)) dd.value = keep;
     renderCookTab();
+  }
+
+  function cookCard(m, { day = "", isToday = false, cooked = false, x = 1, pin = false, dismiss = false } = {}){
+    const steps = (m.steps || []).length;
+    return `<div class="queue-card ${isToday ? "today" : ""} ${cooked ? "cooked" : ""}" data-id="${escapeHtml(m.id)}" data-x="${x}">
+      ${day ? `<div class="queue-day">${escapeHtml(day)}</div>` : ""}
+      <img alt="" loading="lazy" />
+      <div class="queue-body">
+        <button class="queue-title" data-show="${escapeHtml(m.id)}">${pin ? "📌 " : ""}${escapeHtml(m.title)}</button>
+        <div class="chips">
+          ${cooked ? `<span class="chip chip-x2">✓ Cooked</span>` : ""}
+          ${typeof m.cookMins === "number" ? `<span class="chip">⏱ ${m.cookMins} min</span>` : ""}
+          <span class="chip">${steps ? `🧾 ${plural(steps, "step")}` : "no steps yet"}</span>
+          ${x > 1 ? `<span class="chip chip-x2">×2 · leftovers</span>` : ""}
+        </div>
+      </div>
+      <button class="btn ${cooked ? "" : "primary"}" data-cook="${escapeHtml(m.id)}">▶ Cook</button>
+      ${dismiss ? `<button class="btn mini" data-dismiss="${escapeHtml(m.id)}" title="Remove from this week" aria-label="Remove ${escapeHtml(m.title)} from this week">✕</button>` : ""}
+    </div>`;
   }
 
   function renderQueue(){
     const wrap = $("#cook-queue");
     if (!wrap) return;
-    const items = state.cookQueue.map(q => ({ q, m: mealById(q.mealId) })).filter(x => x.m);
-    if (!items.length){
-      wrap.innerHTML = `<div class="empty">Meals you shop for appear here, ready to cook.</div>`;
+    const menu = thisWeekMenu();
+    const planned = new Set(menu.map(r => r.m.id));
+    const extra = state.cookQueue.map(q => ({ q, m: mealById(q.mealId) })).filter(x => x.m && !planned.has(x.m.id));
+    if (!menu.length && !extra.length){
+      wrap.innerHTML = `<div class="empty">Nothing planned this week yet.
+        <br><button type="button" class="btn mini mt8" id="cook-go-plan">📅 Plan the week</button>
+        <br><span class="small">Meals you shop for also appear here.</span></div>`;
+      $("#cook-go-plan", wrap)?.addEventListener("click", () => setView("plan"));
       return;
     }
-    wrap.innerHTML = items.map(({ q, m }) => {
-      const steps = (m.steps || []).length;
-      return `<div class="queue-card" data-id="${escapeHtml(m.id)}">
-        <img alt="" loading="lazy" />
-        <div class="queue-body">
-          <button class="queue-title" data-show="${escapeHtml(m.id)}">${escapeHtml(m.title)}</button>
-          <div class="chips">
-            ${typeof m.cookMins === "number" ? `<span class="chip">⏱ ${m.cookMins} min</span>` : ""}
-            <span class="chip">${steps ? `🧾 ${plural(steps, "step")}` : "no steps yet"}</span>
-            ${q.x > 1 ? `<span class="chip chip-x2">×2 · leftovers</span>` : ""}
-          </div>
-        </div>
-        <button class="btn primary" data-cook="${escapeHtml(m.id)}">▶ Cook</button>
-        <button class="btn mini" data-dismiss="${escapeHtml(m.id)}" title="Remove from this week" aria-label="Remove ${escapeHtml(m.title)} from this week">✕</button>
-      </div>`;
-    }).join("");
+    wrap.innerHTML =
+      (menu.length ? `<h4 class="h4 queue-head">This week's menu</h4>` + menu.map(r => cookCard(r.m, { day: r.label, isToday: r.isToday, cooked: r.cooked, x: r.x, pin: r.pin })).join("") : "")
+      + (extra.length ? `<h4 class="h4 queue-head">${menu.length ? "Also bought this week" : "Bought this week"}</h4>` + extra.map(({ q, m }) => cookCard(m, { x: q.x || 1, dismiss: true })).join("") : "");
     // images set directly (large data URLs stay out of the HTML string); grid thumbnail if there is one
     $$(".queue-card", wrap).forEach(card => {
       const m = mealById(card.dataset.id);
       card.querySelector("img").src = window.gridImageSrc ? gridImageSrc(m) : (m.image?.src || placeholderSvg(m.title));
     });
-    $$("[data-cook]", wrap).forEach(b => b.addEventListener("click", () => openGuided(b.dataset.cook)));
+    $$("[data-cook]", wrap).forEach(b => b.addEventListener("click", () => {
+      openGuided(b.dataset.cook, Number(b.closest(".queue-card")?.dataset.x) || undefined);
+    }));
     $$("[data-show]", wrap).forEach(b => b.addEventListener("click", () => {
+      userPicked = true;
       $("#cook-meal").value = b.dataset.show; renderOverview();
       $("#cook-overview")?.scrollIntoView({ behavior:"smooth", block:"start" });
     }));
@@ -248,8 +304,13 @@
     syncUnitsUI();
   }
 
-  $("#cook-meal")?.addEventListener("change", renderOverview);
-  $("#cook-start")?.addEventListener("click", () => { const id = $("#cook-meal")?.value; if (id) openGuided(id); });
+  $("#cook-meal")?.addEventListener("change", () => { userPicked = true; renderOverview(); });
+  $("#cook-start")?.addEventListener("click", () => {
+    const id = $("#cook-meal")?.value;
+    if (!id) return;
+    const r = thisWeekMenu().find(x => x.m.id === id && !x.cooked);
+    openGuided(id, r?.x > 1 ? r.x : undefined);
+  });
 
   /* ============== Units toggle ============== */
   function syncUnitsUI(){
@@ -280,12 +341,12 @@
 
   function pageCount(meal){ return (meal.steps || []).length + 2; }   // get ready + steps + done
 
-  function openGuided(id){
+  function openGuided(id, batch){
     const meal = mealById(id);
     if (!meal) return;
-    // "Cook once, eat twice": a ×2 queue entry (or a doubled meal in the current shop)
+    // "Cook once, eat twice": ×2 from the week's menu / queue entry, or a doubled meal in the current shop
     const q = state.cookQueue.find(e => e.mealId === id);
-    const factor = q?.x || (state.selected.has(id) && state.doubled.has(id) ? 2 : 1);
+    const factor = batch || q?.x || (state.selected.has(id) && state.doubled.has(id) ? 2 : 1);
     guided = { id, page: 0, gathered: new Set(), rating: 0, note: "", factor };
     overlay.hidden = false;
     overlay.classList.add("open");   // counts as an open modal for lockBodyScroll
@@ -304,7 +365,7 @@
     document.body.classList.remove("cooking");
     try { wakeLock?.release(); } catch { /* already released */ }
     wakeLock = null;
-    renderCookTab();
+    populateCookSelect();   // moves the suggestion on to the next meal once one is cooked
   }
 
   function ingredientChecklist(meal){
@@ -524,6 +585,7 @@
   window.populateCookSelect = populateCookSelect;
   window.renderCookTab = renderCookTab;
   window.openGuided = openGuided;
+  window.cookWeekMenu = thisWeekMenu;
   window.scanStepsFor = scanStepsFor;
   // Test hooks (pure helpers)
   window.cookHelpers = { parseDurations, ingredientsInStep, ingAmount, annotateStep, ovenTemps };

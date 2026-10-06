@@ -3,6 +3,19 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v17 — Cook tab follows the week's plan (2026-10-06)
+Cache `meal-planner-v19` · assets `?v=17` · export schema 14 (unchanged)
+
+### Changed
+- **The Cook tab starts with "This week's menu":** the meals planned for this week, Mon–Sun in order.
+  - **Today** is highlighted, pinned meals are included (📌), and meals you've cooked are ticked ✓ and dimmed.
+  - Meals you bought but didn't plan appear below, under "Also bought this week".
+- **The meal picker defaults to today's planned meal.** If that's cooked, it moves to the next uncooked one. It no longer picks the last meal you looked at.
+  - The list starts with this week's menu ("Tue 6 · Spaghetti Bolognese"), then all meals.
+  - Once you choose a meal yourself, it leaves your choice alone.
+- **Cooking a ×2 meal from the week's menu** shows doubled amounts in cook mode.
+- When nothing is planned, the Cook tab offers **📅 Plan the week**.
+
 ## v16 — Pins, 14-day calendar, dish photos from cards (2026-10-06)
 Cache `meal-planner-v18` · assets `?v=16` · export schema 14
 
