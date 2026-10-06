@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v27
+   Meal Planner & Shopping List — v28
    ===================================================== */
 
 :root{
@@ -955,7 +955,6 @@ body.modal-open{ overflow:hidden; }
 .co-step{ font-size: clamp(1.35rem, 1rem + 1.6vw, 2.1rem); line-height:1.45; margin:0 0 16px; }
 .co-chips{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
 .co-chip{ font-size:.95rem !important; padding:6px 12px !important; }
-.co-timer{ font-size:1.05rem; padding:12px 18px; border-color: var(--accent-border); }
 .co-temps{ font-size:1.05rem; }
 .co-hint{ margin-top:14px; }
 .co-nav{
@@ -1579,9 +1578,6 @@ h1{ font-size:1.12rem; }
 .plan-day.flash, .cal-cell.flash{ animation: dayFlash 1.1s ease-out; }
 @keyframes dayFlash{ 0%,40%{ box-shadow: 0 0 0 3px var(--accent); } 100%{ box-shadow: 0 0 0 0 transparent; } }
 
-/* Plan actions: one primary (Auto-fill); the rest outlined; less-used in ⋯ */
-.plan-actions{ flex-wrap:wrap; }
-.plan-more .menu-list{ min-width:200px; }
 
 /* E10 — calendar drag & drop */
 .cal-item{ user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
@@ -2063,3 +2059,116 @@ input[type=url]:focus{ outline:none; border-color: var(--accent-border); box-sha
 .install-warn{ color: var(--gold); }
 .install-warn[hidden]{ display:none; }
 .sync-ios-tip{ flex-basis:100%; margin:8px 0 0; }
+
+/* =====================================================
+   COOK MODE VISUALS (v28): big step number, timer cards with a ring,
+   running timers named after what they time in the header
+   ===================================================== */
+.co-stepnum{ display:flex; align-items:baseline; gap:10px; margin:0 0 12px; text-transform:none; letter-spacing:0; }
+.co-num{ font-family: var(--font-head); font-size:3.5rem; font-weight:700; line-height:1; color: var(--accent-text); }
+.co-of{ color: var(--muted); font-size:.95rem; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.co-step{ font-weight:600; }
+.co-tcard{
+  display:flex; align-items:center; gap:14px; margin:14px 0; padding:12px 14px;
+  border-radius:18px; background: var(--panel); border:1px solid var(--accent-border); max-width:560px;
+}
+.co-tcard .ring{ flex:0 0 58px; width:58px; height:58px; }
+.ring-bg{ fill:none; stroke: var(--chip); stroke-width:6; }
+.ring-fg{ fill:none; stroke: var(--accent); stroke-width:6; stroke-linecap:round; transition: stroke-dashoffset .9s linear; }
+.tc-text{ flex:1 1 auto; min-width:0; }
+.tc-time{ font-family: var(--font-head); font-size:1.75rem; font-weight:700; font-variant-numeric: tabular-nums; line-height:1.1; }
+.tc-label{ color: var(--muted); font-size:.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.co-tcard .btn{ min-height:48px; flex:0 0 auto; }
+.co-tcard.running{ background: color-mix(in oklab, var(--accent) 8%, var(--panel)); }
+.co-tcard.done{ border-color: var(--gold); animation: timerPulse 1s ease-in-out infinite; }
+.co-tcard.done .ring-fg{ stroke: var(--gold); }
+.co-timers{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; min-width:0; }
+.co-timers:empty{ display:none; }
+.co-tpill{
+  display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; cursor:pointer;
+  border:none; font:inherit; font-size:.88rem; font-weight:700; font-variant-numeric: tabular-nums;
+  background: color-mix(in oklab, var(--gold) 18%, transparent); color: var(--text);
+}
+.co-tpill.done{ background: var(--gold); color:#1a1300; animation: timerPulse 1s ease-in-out infinite; }
+body.cooking .timer-tray{ display:none; }          /* in cook mode, timers live on the page and in the header */
+.co-nav .co-navbtn:last-child{ flex:2; }
+@media (max-width:600px){
+  .co-num{ font-size:2.8rem; }
+  .co-head .co-titles{ display:none; }              /* the step page shows the title; room for timers */
+  .co-timers{ flex:1 1 auto; justify-content:flex-start; }
+}
+
+/* =====================================================
+   PLAN (v28): one control row, photo calendar, week summary, tonight
+   ===================================================== */
+.plan-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
+.plan-bar .h2{ flex:1 0 100%; }
+.plan-nav{ display:flex; align-items:center; gap:6px; }
+.plan-week-btn{ display:flex; flex-direction:column; align-items:center; min-width:150px; background:none; border:none; color: var(--text); cursor:pointer; font:inherit; }
+.plan-week-btn b{ font-family: var(--font-head); font-size:1.1rem; }
+.plan-span .segbtn{ min-width:40px; min-height:40px; }
+.plan-more .menu-list{ min-width:240px; }
+.menu-sep{ font-size:.72rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color: var(--muted); margin:6px 2px 0; }
+.plan-more .plan-cookdays{ display:flex; gap:4px; }
+.plan-more .cookday{ flex:1 1 0; min-width:0; padding:8px 0; }
+.plan-body.calendar + .plan-summary{ margin-top:14px; }
+.plan-body.calendar ~ .plan-tip{ display:block; }
+#view-plan:has(.plan-body.calendar) .plan-strip{ display:none; }   /* the calendar already shows every day */
+.plan-summary{ display:flex; align-items:center; gap:12px; margin:14px 0 0; padding:14px; border-radius:14px; background: var(--card); border:1px solid var(--border); }
+.plan-summary[hidden]{ display:none; }
+.plan-summary > div{ flex:1 1 auto; }
+.plan-tonight{ margin:12px 0 0; padding:14px; border-radius:14px; border:1px dashed var(--border-strong); }
+.plan-tonight[hidden]{ display:none; }
+.pt-row{ display:flex; align-items:center; gap:12px; margin-top:10px; }
+.pt-row img{ width:92px; height:68px; border-radius:10px; object-fit:cover; background: var(--chip); }
+.pt-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
+.plan-tip{ margin-top:12px; }
+
+/* photo calendar */
+.plan-body.calendar .cal-cell{ position:relative; padding:4px; gap:4px; min-height:170px; }
+.plan-body.calendar .cal-date{ position:absolute; z-index:2; left:8px; top:8px; padding:2px 8px; border-radius:999px; background: rgba(0,0,0,.55); color:#fff; font-size:.78rem; }
+.plan-body.calendar .cal-date .muted{ color: rgba(255,255,255,.75); }
+.plan-body.calendar .cal-cell.empty .cal-date{ position:static; background:none; color: var(--muted); align-self:flex-start; }
+.plan-body.calendar .cal-item{ position:relative; flex:1 1 0; min-height:120px; border:none; border-radius:10px; }
+.plan-body.calendar .cal-item img{ position:absolute; inset:0; width:100%; height:100%; aspect-ratio:auto; }
+.plan-body.calendar .cal-title{
+  position:absolute; left:0; right:0; bottom:0; padding:22px 7px 7px; color:#fff; font-size:.78rem; font-weight:700;
+  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.85)); -webkit-line-clamp:3;
+}
+.plan-body.calendar .cal-add{ position:absolute; z-index:2; right:8px; top:6px; width:30px; height:30px; padding:0; border-radius:50%; border:none; background: rgba(0,0,0,.5); color:#fff; }
+.plan-body.calendar .cal-cell.empty .cal-add{ position:static; align-self:center; background:none; color: var(--muted); width:auto; height:auto; padding:4px 10px; border:1px dashed var(--border-strong); border-radius:10px; }
+.cal-suggest{
+  flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+  border:1.5px dashed var(--accent-border); border-radius:10px; background:none; color: var(--accent-text); font:inherit; font-weight:700; font-size:.82rem; cursor:pointer;
+}
+.cal-suggest:hover{ background: var(--accent-glow); }
+.cal-off{ flex:1 1 auto; display:flex; align-items:center; justify-content:center; }
+.plan-body.calendar .cal-cell.today{ box-shadow: 0 0 0 2px var(--accent); }
+@media (max-width:839px){ .plan-bar .toolbar-spacer{ display:none; } .plan-nav{ flex:1 1 100%; justify-content:space-between; } }
+
+/* =====================================================
+   TABLET LANDSCAPE SIDE RAIL (v28)
+   ===================================================== */
+.rail{ display:none; }
+body.rail-on > header, body.rail-on .pane-tabs{ display:none; }
+body.rail-on .rail{
+  position:fixed; left:0; top:0; bottom:0; z-index:40; width:80px;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  padding:calc(14px + env(safe-area-inset-top, 0px)) 0 calc(14px + var(--safe-bottom));
+  background: var(--panel); border-right:1px solid var(--border);
+}
+body.rail-on .layout, body.rail-on .install-banner{ margin-left:80px; }
+body.rail-on #shop-panel{ top:12px; max-height: calc(100dvh - 24px); }
+body.rail-on .hint{ left:104px; }
+.rail-mark{ border-radius:10px; margin-bottom:10px; box-shadow: var(--shadow-soft); }
+.rail-btn{
+  position:relative; width:64px; padding:8px 0; border:none; border-radius:16px; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  background:none; color: var(--muted); font:inherit; font-size:.72rem; font-weight:600;
+}
+.rail-btn.active{ background: var(--accent-glow); color: var(--text); }
+.rail-btn.active > .ic{ color: var(--accent-text); }
+.rail-spacer{ flex:1 1 auto; }
+.rail-add{ color: var(--text); }
+.rail-add-btn{ width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--primary); color:#fff; box-shadow: 0 6px 18px rgba(27,127,76,.45); }
+.rail .sync-badge{ position:absolute; top:6px; right:14px; }

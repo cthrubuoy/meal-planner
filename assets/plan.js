@@ -190,6 +190,15 @@
     renderPlan();
   }
 
+  /* "Suggest" on an empty day: the best meal for it, as auto-fill would choose */
+  async function suggestFor(iso){
+    const dates = visibleDates();
+    const m = bestFor(new Date(iso + "T12:00:00"), weekContext(dates));
+    if (!m){ status("No more meals to suggest — add some, or check the avoid list."); return; }
+    await addToDay(iso, m.id);
+    const el = $(`#plan-body [data-day="${iso}"]`);
+    el?.classList.remove("flash"); void el?.offsetWidth; el?.classList.add("flash");
+  }
   async function addToDay(iso, mealId){
     setDay(iso, [...planned(iso), { mealId }]);
     await savePlan();
@@ -250,7 +259,7 @@
       if (e.x === 2) state.doubled.add(e.mealId);
     }));
     saveSession();
-    renderMeals(); renderShopping();
+    renderMeals(); renderShopping(); renderPlanSummary(visibleDates());
     status(n ? `Added ${n} meal${n === 1 ? "" : "s"} to the shopping list` : "These meals are already on the shopping list.");
     if (n && isMobile()) setView("shopping");
   }
@@ -274,6 +283,7 @@
     </div>`;
   }
   /* Calendar cell item: compact; its actions are in a menu */
+  /* Calendar cell item (v28): the photo fills the card, title over it; actions in a menu */
   function calItem(e, iso, idx){
     const m = mealById(e.mealId);
     if (!m) return "";
@@ -283,6 +293,28 @@
       <span class="cal-title">${pinned ? icon("pin", 13, "pin-ic") : ""}${escapeHtml(m.title)}</span>
       ${e.x === 2 ? `<span class="chip chip-x2 cal-x2">×2</span>` : ""}
     </button>`;
+  }
+  /* Under the week: how many are planned, how many aren't on the list yet; tonight's meal */
+  function renderPlanSummary(dates){
+    const box = $("#plan-summary");
+    if (!box) return;
+    const ids = [];
+    dates.forEach(d => planned(localISO(d)).forEach(e => { if (mealById(e.mealId)) ids.push(e.mealId); }));
+    const notListed = new Set(ids.filter(id => !state.selected.has(id))).size;
+    box.hidden = !ids.length;
+    $("#plan-sum-title").textContent = `${ids.length} meal${ids.length === 1 ? "" : "s"} planned`;
+    $("#plan-sum-sub").textContent = notListed ? `${notListed} ${notListed === 1 ? "isn't" : "aren't"} on the shopping list yet` : "All on the shopping list";
+    $("#plan-shop").disabled = !notListed;
+    const t = $("#plan-tonight");
+    const todayIso = localISO(new Date());
+    const tonight = weekOffset === 0 ? planned(todayIso).map(e => mealById(e.mealId)).filter(Boolean)[0] : null;
+    t.hidden = !tonight;
+    if (!tonight) return;
+    t.innerHTML = `<div class="h3">Tonight · ${new Date().toLocaleDateString("en-GB", { weekday: "long" })}</div>
+      <div class="pt-row"><img alt="" /><div class="pt-text"><b>${escapeHtml(tonight.title)}</b>${typeof tonight.cookMins === "number" ? `<span class="muted small">${tonight.cookMins} min</span>` : ""}</div>
+      <button type="button" class="btn primary" data-cook-tonight>${icon("play", 16)}Cook</button></div>`;
+    t.querySelector("img").src = gridImageSrc(tonight);
+    t.querySelector("[data-cook-tonight]").addEventListener("click", () => window.openGuided?.(tonight.id));
   }
   function calMenu(anchor, iso, idx){
     const e = planned(iso)[idx];
@@ -428,6 +460,7 @@
     $$("[data-layout]").forEach(b => b.classList.toggle("on", b.dataset.layout === (calendar ? "calendar" : "list")));
     wrap.classList.toggle("calendar", calendar);
     renderPlanStrip(dates);
+    renderPlanSummary(dates);
     window.renderToday?.();   // cook.js
 
     if (calendar){
@@ -435,14 +468,18 @@
       wrap.innerHTML = heads + dates.map(d => {
         const iso = localISO(d);
         const cooking = (state.prefs.planDays || []).includes(d.getDay());
-        return `<div class="cal-cell ${iso === today ? "today" : ""} ${cooking ? "" : "off"} ${iso < today ? "past" : ""}" data-day="${iso}">
+        const items = planned(iso);
+        return `<div class="cal-cell ${iso === today ? "today" : ""} ${cooking ? "" : "off"} ${iso < today ? "past" : ""} ${items.length ? "" : "empty"}" data-day="${iso}">
           <div class="cal-date">${d.getDate()} <span class="muted small">${d.toLocaleDateString("en-GB", { month: "short" })}</span></div>
-          ${planned(iso).map((e, i) => calItem(e, iso, i)).join("")}
-          <button type="button" class="cal-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">${icon("plus", 16)}</button>
+          ${items.map((e, i) => calItem(e, iso, i)).join("")}
+          ${!items.length && cooking && iso >= today ? `<button type="button" class="cal-suggest" data-suggest="${iso}">${icon("sparkles", 18)}<span>Suggest</span></button>` : ""}
+          ${!items.length && !cooking ? `<span class="cal-off muted small">Not cooking</span>` : ""}
+          <button type="button" class="cal-add" data-add="${iso}" aria-label="Choose a meal for ${dayLabel(d)}">${icon("plus", 16)}</button>
         </div>`;
       }).join("");
       $$("img[data-img]", wrap).forEach(img => { img.src = gridImageSrc(mealById(img.dataset.img)); });
       $$("[data-add]", wrap).forEach(b => b.addEventListener("click", () => openPicker(b.dataset.add)));
+      $$("[data-suggest]", wrap).forEach(b => b.addEventListener("click", () => suggestFor(b.dataset.suggest)));
       $$(".cal-item", wrap).forEach(b => {
         b.addEventListener("click", (ev) => { ev.stopPropagation(); if (b.dataset.dragged) return; calMenu(b, b.dataset.iso, Number(b.dataset.idx)); });
         attachCalDrag(b);

@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=27" />
-  <link rel="stylesheet" href="assets/styles.css?v=27" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=28" />
+  <link rel="stylesheet" href="assets/styles.css?v=28" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v27</span>
+      <span class="pill">v28</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -41,6 +41,17 @@
   <span id="hint-text"></span>
   <button id="hint-ok" class="btn mini">Got it</button>
 </div>
+
+<!-- Tablet landscape (touch, ≥ 840px wide): a side rail replaces the header and the Today/Meals/Plan tabs -->
+<nav id="rail" class="rail" aria-label="Main">
+  <img src="icons/icon-192.png" alt="" class="rail-mark" width="38" height="38" />
+  <button type="button" class="rail-btn" data-rail="today"><i data-icon="today" data-size="22"></i><span>Today</span></button>
+  <button type="button" class="rail-btn" data-rail="meals"><i data-icon="meals" data-size="22"></i><span>Meals</span></button>
+  <button type="button" class="rail-btn" data-rail="plan"><i data-icon="plan" data-size="22"></i><span>Plan</span></button>
+  <span class="rail-spacer"></span>
+  <button type="button" class="rail-btn rail-add" data-rail="add"><span class="rail-add-btn"><i data-icon="plus" data-size="24"></i></span><span>Add</span></button>
+  <button type="button" class="rail-btn" data-rail="settings"><i data-icon="settings" data-size="22"></i><span>Settings</span><span class="sync-badge" hidden></span></button>
+</nav>
 
 <div id="install-banner" class="install-banner" hidden>
   <i data-icon="info" data-size="18"></i>
@@ -131,37 +142,39 @@
 
       <!-- ============ PLAN VIEW (rendered by assets/plan.js) ============ -->
       <section id="view-plan" class="view" aria-label="Plan">
-        <div class="plan-head">
+        <div class="plan-bar">
           <h2 class="h2 phone-only">Plan</h2>
-          <div class="group plan-nav">
-            <button id="plan-prev" class="btn mini icon-btn" aria-label="Previous week"><i data-icon="back" data-size="18"></i></button>
-            <button id="plan-today" class="plan-week-btn" title="Back to this week"><b id="plan-week">This week</b><br><span id="plan-range" class="muted small"></span></button>
-            <button id="plan-next" class="btn mini icon-btn" aria-label="Next week"><i data-icon="next" data-size="18"></i></button>
+          <div class="plan-nav">
+            <button id="plan-prev" class="btn icon-btn" aria-label="Previous week"><i data-icon="back" data-size="18"></i></button>
+            <button id="plan-today" class="plan-week-btn" title="Back to this week"><b id="plan-week">This week</b><span id="plan-range" class="muted small"></span></button>
+            <button id="plan-next" class="btn icon-btn" aria-label="Next week"><i data-icon="next" data-size="18"></i></button>
           </div>
-        </div>
-        <div id="plan-strip" class="week-strip plan-strip"></div>
-        <div class="group plan-actions">
+          <span class="toolbar-spacer"></span>
           <button id="plan-autofill" class="btn primary"><i data-icon="sparkles" data-size="18"></i>Auto-fill</button>
-          <button id="plan-swipe" class="btn"><i data-icon="cards" data-size="18"></i>Swipe to pick</button>
-          <button id="plan-shop" class="btn"><i data-icon="cart" data-size="18"></i>Add to list</button>
+          <span class="seg plan-span" role="group" aria-label="Days shown"><button class="segbtn" data-span="7">7</button><button class="segbtn" data-span="14">14</button></span>
           <details class="menu plan-more">
             <summary class="btn icon-btn" aria-label="More plan actions"><i data-icon="more"></i></summary>
             <div class="menu-list">
+              <button id="plan-swipe" class="btn"><i data-icon="cards" data-size="16"></i>Swipe to pick</button>
               <button id="plan-copy" class="btn"><i data-icon="copy" data-size="16"></i>Copy last week</button>
               <button id="plan-clear" class="btn"><i data-icon="trash" data-size="16"></i>Clear week</button>
+              <div class="menu-sep tablet-only">Layout</div>
+              <span class="seg tablet-only" role="group" aria-label="Layout"><button class="segbtn" data-layout="list"><i data-icon="list" data-size="16"></i>List</button><button class="segbtn" data-layout="calendar"><i data-icon="grid" data-size="16"></i>Calendar</button></span>
+              <div class="menu-sep">Cook on</div>
+              <div class="plan-cookdays" aria-label="Days to plan meals for">
+                <button class="cookday" data-cookday="1">M</button><button class="cookday" data-cookday="2">T</button><button class="cookday" data-cookday="3">W</button><button class="cookday" data-cookday="4">T</button><button class="cookday" data-cookday="5">F</button><button class="cookday" data-cookday="6">S</button><button class="cookday" data-cookday="0">S</button>
+              </div>
             </div>
           </details>
         </div>
-        <div class="group plan-view-opts">
-          <span class="seg" role="group" aria-label="Days shown"><button class="segbtn" data-span="7">7 days</button><button class="segbtn" data-span="14">14 days</button></span>
-          <span class="seg tablet-only" role="group" aria-label="Layout"><button class="segbtn" data-layout="list"><i data-icon="list" data-size="16"></i>List</button><button class="segbtn" data-layout="calendar"><i data-icon="grid" data-size="16"></i>Calendar</button></span>
-        </div>
-        <div class="group plan-cookdays" aria-label="Days to plan meals for">
-          <span class="muted small">Cook on:</span>
-          <button class="cookday" data-cookday="1">Mon</button><button class="cookday" data-cookday="2">Tue</button><button class="cookday" data-cookday="3">Wed</button><button class="cookday" data-cookday="4">Thu</button><button class="cookday" data-cookday="5">Fri</button><button class="cookday" data-cookday="6">Sat</button><button class="cookday" data-cookday="0">Sun</button>
-        </div>
+        <div id="plan-strip" class="week-strip plan-strip"></div>
         <div id="plan-body" class="plan-body"></div>
-        <p class="muted small">Auto-fill uses your own meals: favourites and good ratings first, nothing you've had in the last two weeks, quicker meals Mon–Thu. Swap gives the next suggestion — as many times as you like. In the calendar, drag a meal to another day.</p>
+        <div id="plan-summary" class="plan-summary" hidden>
+          <div><b id="plan-sum-title"></b><div id="plan-sum-sub" class="muted small"></div></div>
+          <button id="plan-shop" class="btn primary"><i data-icon="cart" data-size="18"></i>Add to list</button>
+        </div>
+        <div id="plan-tonight" class="plan-tonight" hidden></div>
+        <p class="muted small plan-tip">Tap a meal for Open · Swap · ×2 · Pin · Remove. In the calendar, hold and drag a meal to another day. Auto-fill picks favourites and good ratings first, nothing from the last two weeks, quicker meals Mon–Thu.</p>
       </section>
     </div>
   </section>
@@ -233,6 +246,7 @@
       <option value="metric">Metric</option>
       <option value="us">US</option>
     </select>
+    <div id="co-timers" class="co-timers" aria-label="Running timers"></div>
     <button id="co-context" class="btn icon-btn co-context" aria-pressed="true" title="Show the steps around this one" aria-label="Show the steps around this one"><i data-icon="steps"></i></button>
     <button id="co-ing-toggle" class="btn co-ing-toggle">Ingredients</button>
   </div>
@@ -1044,13 +1058,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=27" defer></script>
-<script src="assets/app.js?v=27" defer></script>
-<script src="assets/cook.js?v=27" defer></script>
-<script src="assets/plan.js?v=27" defer></script>
-<script src="assets/vendor/qrcode.js?v=27" defer></script>
-<script src="assets/sync.js?v=27" defer></script>
-<script src="assets/scan.js?v=27" defer></script>
-<script src="assets/pwa.js?v=27" defer></script>
+<script src="assets/icons.js?v=28" defer></script>
+<script src="assets/app.js?v=28" defer></script>
+<script src="assets/cook.js?v=28" defer></script>
+<script src="assets/plan.js?v=28" defer></script>
+<script src="assets/vendor/qrcode.js?v=28" defer></script>
+<script src="assets/sync.js?v=28" defer></script>
+<script src="assets/scan.js?v=28" defer></script>
+<script src="assets/pwa.js?v=28" defer></script>
 </body>
 </html>

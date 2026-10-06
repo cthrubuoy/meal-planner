@@ -88,10 +88,50 @@
       const label = m[2] ? `${m[1]}–${m[2]} ${short}` : `${m[1]} ${short}`;
       if (!lo || seen.has(label)) continue;
       seen.add(label);
-      out.push({ label, secs: Math.round(lo * mult) });
+      out.push({ label, secs: Math.round(lo * mult), at: m.index });
     }
     return out;
   }
+
+  /* v28: a timer is named after what it's timing — "Rice simmer", "Chicken bake" —
+     from the ingredient mentioned nearest before the time, and the cooking verb. */
+  const TIMER_VERB_RE = /\b(simmer|boil|bake|roast|fry|sear|grill|steam|rest|marinate|reduce|toast|soften|brown|blanch|poach|chill|stew|braise|cook|leave)/gi;
+  const MEAT_WORDS = new Set(["chicken", "beef", "pork", "lamb", "turkey", "duck", "salmon", "cod", "fish", "prawn"]);
+  function timerName(meal, text, t, step){
+    const lower = stepWords(String(text).slice(0, t.at ?? String(text).length));      // the words before the time
+    const sentence = stepWords(String(text).slice(0, t.at ?? String(text).length).split(/[.;!?]\s/).pop());
+    const whole = stepWords(text);                                                   // …and after it, as a last resort
+    const where = word => { const k = lower.lastIndexOf(` ${word} `); return k >= 0 ? k + 1000 + (sentence.includes(` ${word} `) ? 1e5 : 0) : whole.includes(` ${word} `) ? 1 : -1; };
+    let name = "", best = -1;
+    const used = new Set(ingredientsInStep(meal, text));
+    for (const ing of meal.ingredients || []){
+      const w = ingredientKey(ing.name).split(" ");
+      const head = w[w.length - 1];
+      let label = head, pos = where(head);
+      if (CUTS.has(head)){                                   // "pork loin steak": the meat if it's named, else the cut
+        const meat = w.find(x => MEAT_WORDS.has(x));
+        const pm = meat ? where(meat) : -1;
+        if (pm >= 0 || pos < 0){ label = meat || w[0]; pos = Math.max(pm, pos); }
+      } else if (GENERIC_HEADS.has(head) && w.length > 1){   // "soy sauce", "chicken stock": keep the phrase
+        const phrase = w.slice(-2).join(" ");
+        if (whole.includes(` ${phrase} `)){ label = phrase; pos = Math.max(pos, where(w[w.length - 2])); }
+      }
+      if (pos < 0) continue;
+      // the main thing being cooked wins over seasonings: meat/fish, then rice/pasta, then veg
+      const rank = { "Meat & fish": 4, "Pasta, rice & grains": 3, "Fruit & veg": 2, "Dairy, eggs & chilled": 2, "Bakery": 1 }[shopCategory(ing.name)] || 0;
+      const score = rank * 1e6 + pos + (used.has(ing) ? 5e4 : 0);
+      if (score > best){ best = score; name = label; }
+    }
+    // "put the dish in the oven for 30 min (until the cheese melts)": the oven, not what's named after the time
+    if ((!name || best % 1e6 < 1000) && / (oven|grill) /.test(sentence)) name = / grill /.test(sentence) ? "grill" : "oven";
+    let verb = "";
+    for (const m of sentence.matchAll(TIMER_VERB_RE)) verb = m[1].toLowerCase();
+    if (verb === "leave" || verb === "cook" || name === verb) verb = !name && verb === "cook" ? "cook" : "";
+    const short = name ? titleCase(name) : verb ? titleCase(verb) : `Step ${step}`;
+    const full = name && verb && name !== "oven" && name !== "grill" ? `${titleCase(name)} ${verb}` : short;
+    return { short, full };
+  }
+
 
   /* Oven settings as written, e.g. "220°C/ 200°C (fan)/ gas 7": from the
      first temperature to the end of that sentence. */
@@ -581,10 +621,10 @@
       html = `
         ${extrasReminder(meal)}
         ${contextOn() && p > 1 ? stepPreview(meal, p - 1, "co-prev-step") : ""}
-        <div class="co-kicker">Step ${p}</div>
+        <div class="co-stepnum co-kicker"><span class="co-num">${p}</span><span class="co-of">of ${steps.length} · ${escapeHtml(meal.title)}</span></div>
         <p class="co-step">${annotateStep(text)}</p>
         ${used.length ? `<div class="co-chips">${used.map(i => { const a = ingAmount(i, undefined, guided.factor); return `<span class="chip co-chip">${escapeHtml(titleCase(i.name))}${a ? ` · <b>${escapeHtml(a)}</b>` : ""}</span>`; }).join("")}</div>` : ""}
-        ${timers.length ? `<div class="co-chips">${timers.map(t => `<button class="btn co-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}">${icon("timer", 18)}Start ${escapeHtml(t.label)}</button>`).join("")}</div>` : ""}
+        ${timers.map((t, k) => timerCard(meal, text, t, p, k)).join("")}
         ${contextOn() ? upNext(meal, p) : ""}`;
     }
     const page = $("#co-page");
@@ -609,8 +649,13 @@
     }));
     $("#co-scan")?.addEventListener("click", () => { const id = guided.id; closeGuided(); scanStepsFor(id); });
     $$("[data-goto]", page).forEach(b => b.addEventListener("click", () => goTo(Number(b.dataset.goto))));
-    $$(".co-timer", page).forEach(b => b.addEventListener("click", () =>
-      startTimer(Number(b.dataset.secs), `${meal.title.slice(0, 28)} — step ${p} (${b.dataset.label})`)));
+    $$(".co-timer", page).forEach(b => b.addEventListener("click", () => {
+      const card = b.closest(".co-tcard");
+      startTimer(Number(b.dataset.secs), card.dataset.full, { name: card.dataset.short, key: card.dataset.tkey, meal: meal.title, step: p });
+      renderGuided();
+    }));
+    $$("[data-tadd]", page).forEach(b => b.addEventListener("click", () => addMinute(b.dataset.tadd)));
+    $$("[data-tstop]", page).forEach(b => b.addEventListener("click", () => { stopTimer(b.dataset.tstop); renderGuided(); }));
     $$("[data-star]", page).forEach(b => b.addEventListener("click", () => {
       guided.note = $("#co-note")?.value || "";
       guided.rating = Number(b.dataset.star) === guided.rating ? 0 : Number(b.dataset.star);
@@ -624,6 +669,22 @@
       status(`🍳 Logged "${title}" as cooked`);
     });
     $("#co-skip")?.addEventListener("click", closeGuided);
+  }
+
+  /* A timer card: ring, time left, what it's timing; Start → +1 / Stop while running */
+  const RING = 2 * Math.PI * 24;
+  function timerCard(meal, text, t, p, k){
+    const nm = timerName(meal, text, t, p);
+    const key = `${meal.id}:${p}:${k}`;
+    const run = timers.find(x => x.key === key);
+    const left = run ? (run.done ? 0 : run.end - Date.now()) : t.secs * 1000;
+    const frac = run ? Math.max(0, Math.min(1, left / (run.total || t.secs * 1000))) : 1;
+    return `<div class="co-tcard ${run ? (run.done ? "done" : "running") : ""}" data-tkey="${key}" data-short="${escapeHtml(nm.short)}" data-full="${escapeHtml(nm.full)}">
+      <svg class="ring" viewBox="0 0 58 58" aria-hidden="true"><circle cx="29" cy="29" r="24" class="ring-bg"/><circle cx="29" cy="29" r="24" class="ring-fg" stroke-dasharray="${RING.toFixed(1)}" stroke-dashoffset="${(RING * (1 - frac)).toFixed(1)}" transform="rotate(-90 29 29)"/></svg>
+      <div class="tc-text"><div class="tc-time">${run?.done ? "Done!" : fmtLeft(left)}</div><div class="tc-label">${escapeHtml(nm.full)} · ${escapeHtml(t.label)}</div></div>
+      ${run ? `${run.done ? "" : `<button type="button" class="btn" data-tadd="${run.id}" aria-label="Add a minute">+1</button>`}<button type="button" class="btn" data-tstop="${run.id}">${run.done ? "Dismiss" : "Stop"}</button>`
+        : `<button type="button" class="btn primary co-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}">${icon("play", 16)}Start</button>`}
+    </div>`;
   }
 
   function go(delta){ if (guided) goTo(guided.page + delta); }
@@ -676,13 +737,13 @@
   let tick = null, audio = null;
   const saveTimers = () => store.set(TIMERS_KEY, JSON.stringify(timers));
 
-  function startTimer(secs, label){
+  function startTimer(secs, label, extra = {}){
     if (!audio){ try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch { audio = null; } }
     audio?.resume?.();
     if ("Notification" in window && Notification.permission === "default"){
       try { Notification.requestPermission(); } catch { /* unsupported */ }
     }
-    timers.push({ id: uid(), label, end: Date.now() + secs * 1000, done: false });
+    timers.push({ id: uid(), label: extra.meal ? `${label} — ${extra.meal.slice(0, 28)}` : label, name: extra.name || "", key: extra.key || "", step: extra.step || 0, total: secs * 1000, end: Date.now() + secs * 1000, done: false });
     saveTimers();
     renderTimers();
   }
@@ -729,13 +790,30 @@
         ${t.done ? "" : `<button class="btn mini" data-add="${t.id}" aria-label="Add a minute">+1</button>`}
         <button class="btn mini" data-stop="${t.id}" aria-label="${t.done ? "Dismiss" : "Cancel"} timer">${icon("x", 16)}</button>
       </div>`).join("");
-    $$("[data-add]", tray).forEach(b => b.addEventListener("click", () => {
-      const t = timers.find(x => x.id === b.dataset.add); if (t){ t.end += 60000; saveTimers(); tickTimers(); }
-    }));
-    $$("[data-stop]", tray).forEach(b => b.addEventListener("click", () => {
-      timers = timers.filter(x => x.id !== b.dataset.stop); saveTimers(); renderTimers();
-    }));
+    $$("[data-add]", tray).forEach(b => b.addEventListener("click", () => addMinute(b.dataset.add)));
+    $$("[data-stop]", tray).forEach(b => b.addEventListener("click", () => stopTimer(b.dataset.stop)));
+    renderTimerPills();
     tickTimers();
+  }
+  function addMinute(id){
+    const t = timers.find(x => x.id === id);
+    if (!t) return;
+    t.end += 60000; t.total = (t.total || 0) + 60000;
+    saveTimers(); tickTimers();
+  }
+  function stopTimer(id){ timers = timers.filter(x => x.id !== id); saveTimers(); renderTimers(); }
+  /* Cook mode header: every running timer as "Rice 08:42"; tap to go to its step */
+  function renderTimerPills(){
+    const wrap = $("#co-timers");
+    if (!wrap) return;
+    wrap.innerHTML = timers.map(t => `<button type="button" class="co-tpill ${t.done ? "done" : ""}" data-tpill="${t.id}" title="${escapeHtml(t.label)}">
+      ${icon("timer", 14)}<span>${escapeHtml(t.name || "Timer")}</span> <b class="tp-left">${t.done ? "Done" : fmtLeft(t.end - Date.now())}</b></button>`).join("");
+    $$("[data-tpill]", wrap).forEach(b => b.addEventListener("click", () => {
+      const t = timers.find(x => x.id === b.dataset.tpill);
+      if (!t) return;
+      if (guided && t.key.startsWith(guided.id + ":")) goTo(t.step);
+      else if (t.done) stopTimer(t.id);
+    }));
   }
   function tickTimers(){
     const now = Date.now();
@@ -743,10 +821,20 @@
     for (const t of timers){
       if (!t.done && t.end <= now){ t.done = true; finished = true; alarm(t); }
     }
-    if (finished){ saveTimers(); renderTimers(); return; }
+    if (finished){ saveTimers(); renderTimers(); if (guided) renderGuided(); return; }
     for (const t of timers){
+      if (t.done) continue;
+      const left = fmtLeft(t.end - now);
       const el = $(`[data-timer="${t.id}"] .timer-left`);
-      if (el && !t.done) el.textContent = fmtLeft(t.end - now);
+      if (el) el.textContent = left;
+      const pill = $(`[data-tpill="${t.id}"] .tp-left`);
+      if (pill) pill.textContent = left;
+      const card = t.key && document.querySelector(`.co-tcard[data-tkey="${CSS.escape(t.key)}"]`);
+      if (card){
+        card.querySelector(".tc-time").textContent = left;
+        const frac = Math.max(0, Math.min(1, (t.end - now) / (t.total || 1)));
+        card.querySelector(".ring-fg")?.setAttribute("stroke-dashoffset", (RING * (1 - frac)).toFixed(1));
+      }
     }
     const running = timers.some(t => !t.done);
     if (running && !tick) tick = setInterval(tickTimers, 1000);

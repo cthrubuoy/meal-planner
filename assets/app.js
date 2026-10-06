@@ -604,6 +604,7 @@ function setView(view){
   if (state.leftView === "today") window.populateCookSelect?.();
   if (state.leftView === "plan") window.renderPlan?.();
   showHintFor(view);
+  syncRail?.();
 }
 /* Tab switches animate (cross-fade) where the browser supports View Transitions */
 function switchView(view){
@@ -773,12 +774,13 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["settings", "Settings is one list", "Everything on one page with what it's set to now (Theme · Dark, Never suggest · 2 ingredients). Tap a row to change it; the expert tools are under Advanced."],
-  ["sparkles", "A welcome for new devices", "A phone with no meals now opens on four clear routes: someone gave me a code, I've used it before, start fresh, or restore a backup file."],
-  ["info", "Help, install & tips", "How to install the app on iPhone, Android or a computer, quick answers to \"how do I…\", and what doesn't work on iPhone."]
+  ["timer", "Timers named after what they time", "Cook mode now shows a timer card on the step, with a ring and a name like \"Rice simmer\". Running timers sit in the header (\"Rice 08:42\"); tap one to jump to its step."],
+  ["steps", "Bigger, clearer steps", "A big step number and the step in bold, with the previous and next steps still around it."],
+  ["plan", "A simpler Plan", "One row of controls; Swipe to pick, Copy, Clear, layout and cook days are under ⋯. The calendar shows each meal's photo, an empty day offers Suggest, and Add to list sits under the week."],
+  ["grid", "Tablet in landscape: a side rail", "On the tablet held sideways, a rail on the left replaces the header and tabs, so meals and the list get the full height."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -900,6 +902,29 @@ $$("[data-route]").forEach(b => b.addEventListener("click", () => {
   else if (r === "file") $("#import")?.click();
 }));
 if (platform.ios && !platform.installed) $("#sync-join-ios")?.removeAttribute("hidden");
+
+/* Tablet landscape (v28): a side rail instead of the header and the pane tabs.
+   Touch screens only, so a desktop keeps its header. localStorage "force-rail" = "1"/"0" overrides. */
+const railMQ = matchMedia(`(min-width:${SPLIT_MIN_PX}px) and (orientation: landscape) and (pointer: coarse)`);
+function applyRail(){
+  const force = local.get("force-rail");
+  const on = force === "1" ? !isMobile() : force === "0" ? false : railMQ.matches;
+  document.body.classList.toggle("rail-on", on);
+  syncRail();
+  syncHeaderHeight();
+}
+function syncRail(){
+  $$("[data-rail]").forEach(b => b.classList.toggle("active", b.dataset.rail === state.leftView));
+  const src = $("#settings .sync-badge"), dst = $("#rail .sync-badge");
+  if (src && dst){ dst.hidden = src.hidden; dst.dataset.state = src.dataset.state || ""; }
+}
+railMQ.addEventListener?.("change", applyRail);
+$$("[data-rail]").forEach(b => b.addEventListener("click", () => {
+  const r = b.dataset.rail;
+  if (r === "add") openAddSheet();
+  else if (r === "settings") openSettings();
+  else { setView(r); syncRail(); }
+}));
 
 /* Header height feeds the sticky shopping pane's offset. */
 function syncHeaderHeight(){
@@ -4061,7 +4086,7 @@ $("#unit-add")?.addEventListener("click", async () => {
   applyTextSize();
   syncViewToggle();
   syncSortUI();
-  syncHeaderHeight();
+  applyRail();
 
   updateIngredientSuggestions();
   refreshTagSuggestions();

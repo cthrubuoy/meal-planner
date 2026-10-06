@@ -545,6 +545,8 @@
   function renderStatus(){
     const dot = $("#settings .sync-badge");
     if (dot){ dot.hidden = !auth; dot.dataset.state = sync.state; }
+    const rd = $("#rail .sync-badge");
+    if (rd){ rd.hidden = !auth; rd.dataset.state = sync.state; }
     const t = $("#sync-status-text");
     if (t) t.textContent = statusText();
     const d = $("#sync-dot");

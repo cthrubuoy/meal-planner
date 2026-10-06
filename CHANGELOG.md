@@ -3,6 +3,25 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v28 — Cook mode visuals, simpler Plan, tablet landscape rail (2026-10-06)
+Cache `meal-planner-v30` · assets `?v=28` · export schema 15 (unchanged)
+
+### Changed
+- **Cook mode:**
+  - A **big step number** ("6 of 21 · title") and the step in bold.
+  - **Timer cards** on the step with a ring that empties as it runs, named after what they time, e.g. **"Rice simmer · 10–12 min"** (from the ingredient and cooking word near the time). Start, then +1 or Stop on the card.
+  - **Running timers in the header** as "Rice 08:42"; tap one to go back to its step. When one finishes it flashes there and on its card (Dismiss).
+  - The bottom timer tray is hidden while cooking (it still shows on the other screens). Next is the bigger button.
+- **Plan:**
+  - **One row of controls:** ‹ This week › · Auto-fill · 7 / 14 · ⋯. Swipe to pick, Copy last week, Clear week, List/Calendar and **Cook on** days moved under ⋯.
+  - **Photo calendar:** each meal fills its day with its photo and title; the date sits on the photo. An empty cooking day offers **Suggest** (picks the best meal for that day, like auto-fill); ＋ still lets you choose.
+  - **Under the week:** "4 meals planned · 2 aren't on the shopping list yet" with **Add to list**, and **Tonight** with a Cook button.
+  - The week strip is hidden in the calendar (the calendar already shows every day).
+- **Tablet in landscape: a side rail** (touch screens 840 px wide and up, held sideways) replaces the header and the Today/Meals/Plan tabs: Today, Meals, Plan, ＋ Add and Settings down the left edge, so meals and the shopping list use the full height. Computers keep the header.
+
+### Removed
+- The old plan action rows and the timer-button style (replaced, not layered).
+
 ## v27 — Settings as one list, welcome screen, install help (2026-10-06)
 Cache `meal-planner-v29` · assets `?v=27` · export schema 15 (unchanged)
 
