@@ -3,6 +3,25 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v25 — Data safety: restore without another device, sync safety brake (2026-10-06)
+Cache `meal-planner-v27` · assets `?v=25` · export schema 15 (unchanged) · sync server 1.1
+
+**Why:** on 6 Oct the tablet's app storage was wiped after a normal force-close. Everything was safe on the sync server, but getting it back needed a code from the phone. The cause wasn't found in the app; the most likely explanation is the browser clearing the site's storage.
+
+### Added
+- **Restore my meals:** on an empty app, the first button on the Meals tab and in Settings › Sync.
+  - It brings everything back from your household using the key saved in your password manager. If none is saved, you can type or paste the key.
+  - No other device is needed.
+- **Save your household key:** offered straight after turning on sync or joining, and available any time in Settings › Sync.
+  - It saves the key in the browser's **password manager** (Brave or Google on Android; iCloud Keychain on iPhone), which survives the app's storage being cleared. Copy is there as a fallback.
+- **Sync safety brake.** If a device tries to delete more than 3 meals (or more than 25 other things) in one go, sync pauses and asks.
+  - **Cancel** (the default) deletes nothing and puts everything back on that device from the household.
+  - **OK** goes ahead.
+  - Normal single deletes and clearing the shopping list are unaffected.
+- **Protected storage:** the app asks the browser to keep its storage instead of clearing it to free space. Settings › Advanced › Check now shows whether it's protected.
+- **Start-up line in the diagnostics log** each time the app opens: version, number of meals, sync on/off, storage protected or not. A wiped device now shows up clearly.
+- **Rename devices** (Settings › Sync › Rename). Brave on a tablet often runs in desktop mode, so it was being named "Computer"; it's now recognised as a tablet.
+
 ## v24 — "I usually add", add anything to the list, split steps, source, dates (2026-10-06)
 Cache `meal-planner-v26` · assets `?v=24` · export schema **15** (adds `source` and `extras` to meals; older backups still import)
 

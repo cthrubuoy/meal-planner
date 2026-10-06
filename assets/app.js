@@ -740,22 +740,46 @@ $("#diag-check")?.addEventListener("click", async () => {
     check("Scan server", "https://meal-planner-backend.meal-planner-backend.workers.dev/health"),
     check("Sync server", "https://meal-planner-sync.meal-planner-backend.workers.dev/health")
   ]);
-  out.textContent = [`App v${APP_VERSION} · ${navigator.onLine ? "online" : "offline"}`, ...lines].join("\n");
+  const p = await protectStorage();
+  out.textContent = [`App v${APP_VERSION} · ${navigator.onLine ? "online" : "offline"}`, ...lines,
+    `Storage on this device: ${p ? "protected from automatic clean-up" : p === false ? "NOT protected (the browser may clear it to free space)" : "unknown"}${storageInfo.usageMB != null ? ` · using ${storageInfo.usageMB} MB` : ""}`].join("\n");
 });
 $$('[data-stab="advanced"]').forEach(b => b.addEventListener("click", () => {
   $("#settings")?.classList.remove("has-errors");
   renderDiag();
 }));
 
+/* ============== Storage protection + start-up record (v25) ==============
+   The app asks the browser to keep its storage (so it isn't cleared to free
+   space), and writes one line per start: version, meals, sync, protection. A
+   wiped device then shows up as "Started … 0 meals · sync off". */
+let storageInfo = { persisted: null, usageMB: null, quotaMB: null };
+async function protectStorage(){
+  try {
+    if (!navigator.storage?.persisted) return null;
+    let p = await navigator.storage.persisted();
+    if (!p && navigator.storage.persist) p = await navigator.storage.persist();
+    storageInfo.persisted = p;
+    const est = await navigator.storage.estimate?.();
+    if (est){ storageInfo.usageMB = Math.round(est.usage / 1e5) / 10; storageInfo.quotaMB = Math.round(est.quota / 1e6); }
+    return p;
+  } catch { return null; }
+}
+async function logStartup(){
+  const p = await protectStorage();
+  logEvent(p === false ? "warn" : "info", "app",
+    `Started v${APP_VERSION} · ${state.meals.length} meals · sync ${window.syncIsOn?.() ? "on" : "off"} · storage ${p ? "protected" : p === false ? "NOT protected" : "protection unknown"}`,
+    { ...storageInfo, installed: matchMedia("(display-mode: standalone)").matches, swControlled: !!navigator.serviceWorker?.controller, ua: navigator.userAgent });
+}
+
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["plus",     "\"I usually add\"", "In Edit, add what you always have with a meal that isn't in the recipe (e.g. broccoli). It goes on the shopping list with the meal, and cook mode shows \"You usually add\" at the start so it can be prepped and ticked off."],
-  ["cart",     "Add anything to the shopping list", "Milk, bin bags, \"2 loaves bread\" — type it in the box under the list. It syncs and clears with the shop."],
-  ["scissors", "Split long steps", "Imported recipes often have a whole paragraph as one step. Edit offers to split it sensibly, every sentence, or exactly where you tap."],
-  ["link",     "Where a recipe came from", "Each meal can have a Source (e.g. BBC Good Food) with its link — shown on the meal page, filled in on import, and you can filter by it."],
-  ["today",    "Today's full date", "Today shows the full date, and the plan calendar shows the dates over each day."]
+  ["refresh",  "Restore my meals", "If this device ever loses its meals, Settings › Sync › Restore my meals brings everything back from your household — with the key saved in your password manager, no other device needed."],
+  ["save",     "Save your household key", "Settings › Sync › Save to password manager. Do this once on each device."],
+  ["info",     "A safety brake on sync", "If a device suddenly tries to delete lots of meals, sync stops and asks first — so one emptied device can never wipe everyone's meals."],
+  ["edit",     "Rename devices", "Settings › Sync › Rename (your tablet may show as \"Computer\" — Brave runs in desktop mode)."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -2466,13 +2490,14 @@ function firstRunPanel(){
   d.className = "first-run";
   d.innerHTML = `
     <h3 class="h3">Welcome 👋</h3>
-    <p>Your meals are stored in this browser on this device. If you use Meal Planner on another device,
-       export a backup there (Settings › Data) and import it here to bring everything across.</p>
+    <p>Used Meal Planner before, here or on another device? <b>Restore my meals</b> brings everything back from your household (it uses the key saved in your password manager). New here? Scan a recipe card or add a meal to get started.</p>
     <div class="group">
-      <button type="button" class="btn primary" data-fr="import">${icon("save", 18)}Import a backup</button>
+      <button type="button" class="btn primary" data-fr="restore">${icon("refresh", 18)}Restore my meals</button>
+      <button type="button" class="btn" data-fr="import">${icon("save", 18)}Import a backup</button>
       <button type="button" class="btn" data-fr="scan">${icon("camera", 18)}Scan a recipe card</button>
       <button type="button" class="btn" data-fr="add">＋ Add a meal</button>
     </div>`;
+  d.querySelector('[data-fr="restore"]').addEventListener("click", () => window.syncRestore?.());
   d.querySelector('[data-fr="import"]').addEventListener("click", () => $("#import")?.click());
   d.querySelector('[data-fr="scan"]').addEventListener("click", () => { openAddSheet(); $("#scan-card-btn")?.click(); });
   d.querySelector('[data-fr="add"]').addEventListener("click", openAddSheet);
@@ -3782,4 +3807,5 @@ $("#unit-add")?.addEventListener("click", async () => {
   document.dispatchEvent(new Event("app:ready"));
   setTimeout(maybeShowWhatsNew, 700);
   setTimeout(liftAllSources, 1500);
+  setTimeout(logStartup, 1200);
 })();

@@ -23,7 +23,13 @@
   const ENDPOINT_DEFAULT = "https://meal-planner-sync.meal-planner-backend.workers.dev";
   const POLL_MS = 15000;
   const PUSH_DELAY_MS = 1500;
-  const PUSH_CHUNK = 40;   // records per push: one D1 transaction each, kept well under the free plan's per-request query limit
+  const PUSH_CHUNK = 40;
+  /* Safety brake (v25): a device that suddenly wants to delete lots — e.g. its
+     storage was emptied — must not wipe the household. Shopping ticks don't count
+     (clearing a big shop legitimately deletes dozens). */
+  const MEAL_DELETE_BRAKE = 3, OTHER_DELETE_BRAKE = 25;
+  let bulkDeleteOk = false, heldAsking = false;
+  const KEY_ID = "Meal Planner household";      // the "username" the household key is saved under   // records per push: one D1 transaction each, kept well under the free plan's per-request query limit
   const K = { auth: "syncAuth", meta: "syncMeta", outbox: "syncOutbox" };   // IndexedDB keys (not exported)
 
   // which app IndexedDB key holds which record collections
@@ -273,6 +279,11 @@
 
   async function pushOutbox(progress){
     if (!outbox.size) return;
+    const dels = [...outbox.values()].filter(e => e.deleted && e.coll !== "shop");
+    const mealDels = dels.filter(e => e.coll === "meal").length;
+    if (!bulkDeleteOk && (mealDels > MEAL_DELETE_BRAKE || dels.length > OTHER_DELETE_BRAKE)){
+      throw Object.assign(new Error(`Sync paused to protect your meals: this device wants to delete ${mealDels} meal${mealDels === 1 ? "" : "s"}${dels.length > mealDels ? ` (and ${dels.length - mealDels} other items)` : ""} for everyone.`), { held: true, mealDels, dels: dels.length });
+    }
     // photos referenced by meals in the outbox, uploaded once
     const uploaded = new Set(meta.uploaded);
     const want = [...new Set([...outbox.values()].filter(e => e.coll === "meal" && !e.deleted && e.data?.image?.hash).map(e => e.data.image.hash))].filter(h => !uploaded.has(h));
@@ -297,6 +308,33 @@
       progress?.(`Uploading meals and lists…`, Math.min(1, (i + chunk.length) / all.length));
       await saveLocal();
     }
+    bulkDeleteOk = false;
+  }
+  /* The brake tripped: ask. "No" (the default) drops the deletions and puts
+     everything back on this device from the household. */
+  function handleHeld(e){
+    sync.state = "error"; sync.error = "Paused to protect your meals";
+    logEvent("warn", "sync", e.message, { mealDeletes: e.mealDels, otherDeletes: e.dels - e.mealDels });
+    if (heldAsking) return;
+    heldAsking = true;
+    setTimeout(async () => {
+      const yes = confirm(`${e.message}\n\nOK — yes, I deleted them on purpose: delete them for everyone.\n\nCancel — no (for example the app lost its data): nothing is deleted, and this device gets everything back from your household.`);
+      heldAsking = false;
+      if (yes){ bulkDeleteOk = true; logEvent("info", "sync", "Bulk delete confirmed"); schedule(0); }
+      else await restoreFromHousehold();
+    }, 50);
+  }
+  async function restoreFromHousehold(){
+    for (const [k, e] of [...outbox]) if (e.deleted) outbox.delete(k);
+    meta.cursor = 0; meta.hashes = {};          // re-apply every record: the household wins
+    await saveLocal();
+    paused = true;
+    try { await pullAll(); await diffAll(); }
+    catch (err){ logEvent("error", "sync", `Restore didn't finish: ${err.message}`); }
+    finally { paused = false; }
+    logEvent("info", "sync", "Put everything back on this device from the household", { meals: state.meals.length });
+    status(`Restored ${state.meals.length} meals from your household.`, 5000);
+    schedule(500);
   }
   async function pullAll(){
     let more = true, applied = 0;
@@ -333,6 +371,7 @@
       sync.state = "ok"; sync.last = Date.now(); sync.error = "";
     } catch (e){
       if (e.unlinked){ await unlinkedByServer(); return; }
+      if (e.held){ handleHeld(e); return; }
       failures++;
       const was = sync.state, wasErr = sync.error;
       sync.state = e.offline ? "offline" : "error";
@@ -385,6 +424,7 @@
   function guessDeviceName(){
     const ua = navigator.userAgent;
     if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? "Phone" : "Tablet";
+    if (/Linux/i.test(ua) && navigator.maxTouchPoints > 1) return "Tablet";      // Android browser in desktop mode
     if (/iPhone/i.test(ua)) return "iPhone";
     if (/iPad|Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) return "iPad";
     if (/Windows|Macintosh|Linux/i.test(ua)) return "Computer";
@@ -423,7 +463,8 @@
         await pullAll();
         sync.state = "ok"; sync.last = Date.now();
         logEvent("info", "sync", "Sync turned on (new household)", { records: Object.keys(meta.hashes).length });
-        status("Sync is on. Add your other devices with \"Show a code\".", 5000);
+        status("Sync is on. Save your household key, then add your other devices with \"Show a code\".", 6000);
+        offerSaveKey();
         schedule(POLL_MS);
       } catch (e){
         logEvent("error", "sync", `Couldn't turn on sync: ${e.message}`, { status: e.status });
@@ -459,6 +500,7 @@
         sync.state = "ok"; sync.last = Date.now();
         logEvent("info", "sync", "Joined the household", { meals: state.meals.length });
         status("Linked — this device is now in sync.", 4000);
+        offerSaveKey();
         schedule(POLL_MS);
         rerender(new Set(Object.keys(KEY_COLLS)));
       } catch (e){
@@ -517,6 +559,7 @@
     renderStatus();
     if (!on) return;
     $("#sync-recovery").textContent = auth.recoveryKey || "";
+    renderSaveKey();
     try {
       household = await api("GET", "/v1/household");
       if (household.recoveryKey && household.recoveryKey !== auth.recoveryKey){ auth.recoveryKey = household.recoveryKey; idbSet(K.auth, auth); $("#sync-recovery").textContent = auth.recoveryKey; }
@@ -524,8 +567,18 @@
         <li>
           <span class="sync-dev-name">${icon(/phone/i.test(d.name) ? "today" : "grid", 16)}${escapeHtml(d.name)}${d.you ? ` <span class="chip">this device</span>` : ""}</span>
           <span class="muted small">active ${escapeHtml(ago(d.lastSeen))}</span>
+          <button type="button" class="btn mini ghost" data-rename="${escapeHtml(d.id)}" data-name="${escapeHtml(d.name)}">Rename</button>
           ${d.you ? "" : `<button type="button" class="btn mini ghost" data-unlink="${escapeHtml(d.id)}">Unlink</button>`}
         </li>`).join("");
+      $$("[data-rename]", $("#sync-devices")).forEach(b => b.addEventListener("click", async () => {
+        const name = prompt("Name for this device", b.dataset.name || "");
+        if (name == null || !name.trim()) return;
+        try {
+          await api("PATCH", `/v1/devices/${encodeURIComponent(b.dataset.rename)}`, { body: { name: name.trim().slice(0, 40) } });
+          if (b.dataset.rename === auth.deviceId){ auth.deviceName = name.trim().slice(0, 40); idbSet(K.auth, auth); }
+          renderPanel();
+        } catch (e){ alert(`Couldn't rename: ${e.message}`); }
+      }));
       $$("[data-unlink]", $("#sync-devices")).forEach(b => b.addEventListener("click", async () => {
         const name = household.devices.find(d => d.id === b.dataset.unlink)?.name || "this device";
         if (!confirm(`Unlink "${name}"? It keeps its data but stops syncing.`)) return;
@@ -560,6 +613,58 @@
       alert(`Couldn't make a code: ${e.message}`);
     }
   }
+
+  /* ---------- the household key: save it where an app wipe can't reach, restore with it ----------
+     Saved in the browser's password manager (Brave/Chrome: Google/Brave Password
+     Manager; iPhone: iCloud Keychain via the form), so if this app's storage is
+     ever cleared, "Restore my meals" brings everything back with no other device. */
+  const keySavedFlag = () => `sync-key-saved-${auth?.householdId || ""}`;
+  function renderSaveKey(){
+    const box = $("#sync-key-box");
+    if (!box || !auth) return;
+    $("#sync-key-pass").value = auth.recoveryKey || "";
+    box.hidden = !!localStorageGet(keySavedFlag());
+  }
+  function offerSaveKey(){
+    try { localStorage.removeItem(keySavedFlag()); } catch { /* ok */ }
+    renderSaveKey();
+    $("#sync-key-box")?.scrollIntoView({ block: "nearest" });
+  }
+  function markKeySaved(how){
+    try { localStorage.setItem(keySavedFlag(), how); } catch { /* ok */ }
+    logEvent("info", "sync", `Household key saved (${how})`);
+    renderSaveKey();
+  }
+  async function saveKeyToPasswordManager(){
+    if (!auth?.recoveryKey) return;
+    if (window.PasswordCredential && navigator.credentials?.store){
+      try {
+        await navigator.credentials.store(new PasswordCredential({ id: KEY_ID, password: auth.recoveryKey, name: "Meal Planner household key" }));
+        markKeySaved("password manager");
+        status("Saved — your password manager now has your household key.", 5000);
+        return;
+      } catch (e){ logEvent("warn", "sync", `Password manager didn't take the key: ${e.message}`); }
+    }
+    // Safari / others: they offer to save when a password form is submitted (this one);
+    // if nothing appears, the Copy button is the fallback.
+    status("If your phone offered to save the password, choose Save. If not, use Copy and keep the key somewhere safe.", 8000);
+  }
+  /* "Restore my meals": the saved key from the password manager, or typed/pasted */
+  async function restoreFlow(){
+    let key = "";
+    if (window.PasswordCredential && navigator.credentials?.get){
+      try { const c = await navigator.credentials.get({ password: true, mediation: "optional" }); if (c?.password) key = c.password; }
+      catch (e){ logEvent("warn", "sync", `Couldn't read the saved key: ${e.message}`); }
+    }
+    if (key){ logEvent("info", "sync", "Restoring with the key from the password manager"); return join(key); }
+    $("#sync-restore-form").hidden = false;
+    $("#sync-restore-key").focus();
+  }
+  window.syncRestore = () => {
+    openSettings();
+    $('[data-stab="sync"]')?.click();
+    restoreFlow();
+  };
 
   /* In-app QR scanning where the browser supports it (Chrome/Brave on Android) */
   let scanStream = null;
@@ -611,6 +716,15 @@
       try { await navigator.clipboard.writeText(auth?.recoveryKey || ""); status("Recovery key copied — keep it somewhere safe."); } catch { alert(auth?.recoveryKey || ""); }
     });
     $("#sync-leave")?.addEventListener("click", () => leave());
+    $("#sync-key-box")?.addEventListener("submit", (e) => { e.preventDefault(); saveKeyToPasswordManager(); });
+    $("#sync-key-copy")?.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(auth?.recoveryKey || ""); markKeySaved("copied"); status("Key copied — paste it somewhere safe (e.g. Google Keep, a note, an email to yourself)."); }
+      catch { alert(auth?.recoveryKey || ""); }
+    });
+    $("#sync-key-done")?.addEventListener("click", () => markKeySaved("user confirmed"));
+    $("#sync-key-again")?.addEventListener("click", () => offerSaveKey());
+    $("#sync-restore")?.addEventListener("click", restoreFlow);
+    $("#sync-restore-form")?.addEventListener("submit", (e) => { e.preventDefault(); join($("#sync-restore-key").value); });
     $$('[data-stab="sync"]').forEach(b => b.addEventListener("click", renderPanel));
   }
 

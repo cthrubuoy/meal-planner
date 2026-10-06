@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=24" />
-  <link rel="stylesheet" href="assets/styles.css?v=24" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=25" />
+  <link rel="stylesheet" href="assets/styles.css?v=25" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v24</span>
+      <span class="pill">v25</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -743,6 +743,19 @@
     <section class="spanel" data-spanel="sync" role="tabpanel" hidden>
       <div id="sync-panel">
         <div id="sync-off">
+          <div class="sync-restore-box">
+            <b>Used Meal Planner on this device before?</b>
+            <p class="muted small">If its meals disappeared, bring everything back from your household — using the key saved in your password manager, or typed in.</p>
+            <button type="button" id="sync-restore" class="btn primary"><i data-icon="refresh" data-size="16"></i>Restore my meals</button>
+            <form id="sync-restore-form" class="sync-restore-form" hidden>
+              <input type="text" name="username" autocomplete="username" value="Meal Planner household" class="visually-hidden" tabindex="-1" aria-hidden="true" />
+              <label for="sync-restore-key">Household key (Settings › Sync › Recovery key on another device, or your saved copy)</label>
+              <div class="group">
+                <input id="sync-restore-key" name="password" type="password" autocomplete="current-password" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" />
+                <button type="submit" class="btn primary">Restore</button>
+              </div>
+            </form>
+          </div>
           <h4 class="h4">Sync across devices</h4>
           <p class="muted small">Share your meals, photos, plan and shopping list between your tablet, phone and PC — and with your household. Each device keeps its own copy, so the app still works without signal; changes send when you're online.</p>
           <label for="sync-device-name">Name for this device</label>
@@ -771,6 +784,18 @@
             <button type="button" id="sync-now" class="btn mini ghost"><i data-icon="refresh" data-size="14"></i>Sync now</button>
           </div>
 
+          <form id="sync-key-box" class="sync-key-box" hidden>
+            <b>Save your household key now</b>
+            <p class="muted small">If this app's storage is ever cleared, the key brings all your meals back — no other device needed. Save it in your password manager (or copy it somewhere safe).</p>
+            <input type="text" name="username" autocomplete="username" value="Meal Planner household" class="visually-hidden" tabindex="-1" aria-hidden="true" readonly />
+            <input id="sync-key-pass" name="password" type="password" autocomplete="new-password" class="visually-hidden" tabindex="-1" aria-hidden="true" readonly />
+            <div class="group">
+              <button type="submit" class="btn primary"><i data-icon="save" data-size="16"></i>Save in my password manager</button>
+              <button type="button" id="sync-key-copy" class="btn"><i data-icon="copy" data-size="16"></i>Copy key</button>
+              <button type="button" id="sync-key-done" class="btn ghost">I've saved it</button>
+            </div>
+          </form>
+
           <h4 class="h4">Add a device or person</h4>
           <p class="muted small">Show a code here. On the other device, open Meal Planner › Settings › Sync › <b>Join with a code</b>, then tap Scan QR or type the code. (If the app isn't installed there yet, scanning the QR with the camera opens it in the browser.)</p>
           <button type="button" id="sync-invite" class="btn primary"><i data-icon="plus" data-size="16"></i>Show a code</button>
@@ -792,6 +817,7 @@
             <code id="sync-recovery" class="sync-code small" hidden></code>
             <button type="button" id="sync-recovery-show" class="btn mini">Show</button>
             <button type="button" id="sync-recovery-copy" class="btn mini"><i data-icon="copy" data-size="14"></i>Copy</button>
+            <button type="button" id="sync-key-again" class="btn mini"><i data-icon="save" data-size="14"></i>Save to password manager</button>
           </div>
 
           <hr class="sep" />
@@ -933,13 +959,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=24" defer></script>
-<script src="assets/app.js?v=24" defer></script>
-<script src="assets/cook.js?v=24" defer></script>
-<script src="assets/plan.js?v=24" defer></script>
-<script src="assets/vendor/qrcode.js?v=24" defer></script>
-<script src="assets/sync.js?v=24" defer></script>
-<script src="assets/scan.js?v=24" defer></script>
-<script src="assets/pwa.js?v=24" defer></script>
+<script src="assets/icons.js?v=25" defer></script>
+<script src="assets/app.js?v=25" defer></script>
+<script src="assets/cook.js?v=25" defer></script>
+<script src="assets/plan.js?v=25" defer></script>
+<script src="assets/vendor/qrcode.js?v=25" defer></script>
+<script src="assets/sync.js?v=25" defer></script>
+<script src="assets/scan.js?v=25" defer></script>
+<script src="assets/pwa.js?v=25" defer></script>
 </body>
 </html>
