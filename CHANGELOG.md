@@ -3,6 +3,24 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v27 — Settings as one list, welcome screen, install help (2026-10-06)
+Cache `meal-planner-v29` · assets `?v=27` · export schema 15 (unchanged)
+
+### Changed
+- **Settings is one list** instead of eight tabs, showing what each setting is now (Theme · Dark, Never suggest · 2 ingredients, Backup · Last file 6 Oct, About · v27). Tap a row for its page; **‹** goes back.
+  - **Sync card at the top:** "In sync" with your devices, or "Sync is off".
+  - **Plain words:** "Ingredient normaliser" is now **Same ingredient, different names** (with an example); "Unit defaults" is **Usual units**; "Avoid ingredients" is **Never suggest** with its own page; "Pantry staples" is **Always in the cupboard**.
+  - **Advanced:** Ingredient names & units, and Diagnostics.
+
+### Added
+- **Welcome screen** on a device with no meals and sync off, with four routes: **Someone gave me a code** (opens Join), **I've used it before** (Restore my meals), **Start fresh** (Add a meal), **Restore a backup file**.
+- **iPhone/iPad in a Safari tab:** the welcome starts with **Add Meal Planner to your Home Screen first** (the three steps), and a slim banner stays until it's installed (or you choose Not now for a week). On Android, the banner offers **Install** when the browser allows it.
+- **Joining:** the Join box now says what you'll share (meals, plan and shopping list; your theme and text size stay your own), and warns iPhone users to join from the installed app. The invite code has a tip for people joining on an iPhone.
+- **Help, install & tips** page (Settings): install steps for this device (and others), short answers to "How do I…", and **Known limitations on iPhone and iPad** (install first; the QR opens Safari, so type the code; timers may not ring in the background; no vibration; links can't be shared into the app). Show tips again and the welcome screen are there too.
+
+### Removed
+- The settings tab row and its CSS (replaced, not layered).
+
 ## v26 — Shopping list and Edit meal redesign (2026-10-06)
 Cache `meal-planner-v28` · assets `?v=26` · export schema 15 (unchanged)
 

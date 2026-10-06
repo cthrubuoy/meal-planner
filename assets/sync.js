@@ -549,6 +549,7 @@
     if (t) t.textContent = statusText();
     const d = $("#sync-dot");
     if (d) d.dataset.state = sync.state;
+    window.renderSyncCard?.();
   }
   async function renderPanel(){
     const on = !!auth;
@@ -734,6 +735,7 @@
     if (!m) return;
     history.replaceState(null, "", location.pathname + location.search);
     if (auth){ status("This device is already linked to sync.", 4000); return; }
+    document.getElementById("welcome")?.classList.contains("open") && document.getElementById("welcome-skip")?.click();
     openSettings();
     $('[data-stab="sync"]')?.click();
     $("#sync-join").hidden = false;
@@ -757,6 +759,7 @@
   window.syncNoteChange = noteChange;
   window.syncLeave = leave;
   window.syncIsOn = () => !!auth;
+  window.syncSummary = () => ({ on: !!auth, state: sync.state, text: statusText(), devices: household?.devices?.map(d => d.name) });
   window.syncNow = () => schedule(0);
   window.syncDebug = () => ({ auth: auth && { ...auth, deviceToken: "…" }, cursor: meta.cursor, records: Object.keys(meta.hashes).length, outbox: outbox.size, status: { ...sync } });
 

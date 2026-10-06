@@ -773,13 +773,12 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["cart", "A new shopping list", "Round ticks you can hit with a thumb, a \"3 of 40 got\" bar, and under each item the meal it's for. Tap an item (or swipe it right) when it's in the trolley."],
-  ["list", "By aisle · A–Z · By meal", "Switch at the top of the list. By meal shows what each meal needs, with shared items first."],
-  ["swap", "Swipe left for the rest", "\"Always have\" and \"same as another ingredient\" moved off the rows: swipe an item left (or ⋯ on a computer)."],
-  ["edit", "A cleaner Edit meal", "The photo at the top (change it, or take it from a card), time quick-picks, and ingredients that read like the meal page: tap one to change it."]
+  ["settings", "Settings is one list", "Everything on one page with what it's set to now (Theme · Dark, Never suggest · 2 ingredients). Tap a row to change it; the expert tools are under Advanced."],
+  ["sparkles", "A welcome for new devices", "A phone with no meals now opens on four clear routes: someone gave me a code, I've used it before, start fresh, or restore a backup file."],
+  ["info", "Help, install & tips", "How to install the app on iPhone, Android or a computer, quick answers to \"how do I…\", and what doesn't work on iPhone."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -805,6 +804,102 @@ function maybeShowWhatsNew(){
 $("#whatsnew-close")?.addEventListener("click", closeWhatsNew);
 $("#whatsnew")?.addEventListener("click", (e) => { if (e.target.id === "whatsnew") closeWhatsNew(); });
 $("#whatsnew-open")?.addEventListener("click", () => { closeSettings(); openWhatsNew(); });
+
+/* ============== Welcome + installing (v27) ==============
+   A device with no meals and no sync opens on a welcome screen with the four
+   ways in. iPhone/iPad in a Safari tab: install first (Safari can clear a
+   tab's data after ~7 days, and the installed app keeps a separate copy). */
+const platform = (() => {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const android = /Android/i.test(ua) || (/Linux/i.test(ua) && navigator.maxTouchPoints > 1);
+  const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  return { ios, android, installed, brave: !!navigator.brave };
+})();
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; renderInstallBanner(); });
+window.addEventListener("appinstalled", () => { installPrompt = null; platform.installed = true; renderInstallBanner(); });
+const INSTALL_STEPS = {
+  ios: ["Tap <b>Share</b> (the square with an arrow) at the bottom of Safari", "Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>", "Open <b>Meal Planner</b> from your Home Screen — not from Safari"],
+  android: ["Tap the browser's menu (<b>⋮</b>, top right — on Brave it's at the bottom)", "Tap <b>Install app</b> or <b>Add to Home screen</b>", "Open <b>Meal Planner</b> from your home screen"],
+  desktop: ["In Chrome, Edge or Brave, click the <b>install</b> icon at the right of the address bar", "Or open the browser menu › <b>Install Meal Planner</b>"]
+};
+const installStepsHtml = (k) => `<ol class="install-list">${INSTALL_STEPS[k].map(s => `<li>${s}</li>`).join("")}</ol>`;
+function installKind(){ return platform.ios ? "ios" : platform.android ? "android" : "desktop"; }
+function renderHelpInstall(){
+  const k = installKind();
+  const box = $("#help-install");
+  if (box) box.innerHTML = platform.installed ? `<p class="small">${icon("check", 16)} Installed on this device — you're using the app.</p>`
+    : (installPrompt ? `<button type="button" class="btn primary" data-install-now>${icon("plus", 16)}Install Meal Planner</button>` : "") + installStepsHtml(k);
+  box?.querySelector("[data-install-now]")?.addEventListener("click", installNow);
+  const all = $("#help-install-all");
+  if (all) all.innerHTML = `<b>iPhone / iPad (Safari)</b>${installStepsHtml("ios")}<b>Android (Chrome, Brave)</b>${installStepsHtml("android")}<b>Computer</b>${installStepsHtml("desktop")}`;
+}
+async function installNow(){
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  try { await installPrompt.userChoice; } catch { /* ok */ }
+  installPrompt = null;
+  renderHelpInstall(); renderInstallBanner();
+}
+/* iPhone in a Safari tab: a slim banner until it's installed (or dismissed for a week) */
+const INSTALL_BANNER_KEY = "install-banner-snooze";
+function renderInstallBanner(){
+  const b = $("#install-banner");
+  if (!b) return;
+  const snoozed = Number(local.get(INSTALL_BANNER_KEY) || 0) > Date.now();
+  const show = !platform.installed && !snoozed && (platform.ios || !!installPrompt);
+  b.hidden = !show;
+  if (!show) return;
+  $("#install-banner-text").textContent = platform.ios
+    ? "Add Meal Planner to your Home Screen — in a Safari tab, your meals can be cleared."
+    : "Install Meal Planner as an app — it opens full screen and keeps your meals safe.";
+  $("#install-banner-go").textContent = platform.ios ? "How?" : "Install";
+  syncHeaderHeight();
+}
+$("#install-banner-go")?.addEventListener("click", () => {
+  if (installPrompt) installNow();
+  else { openSettings(); showSettingsTab("help"); }
+});
+$("#install-banner-x")?.addEventListener("click", () => { local.set(INSTALL_BANNER_KEY, String(Date.now() + 7 * 864e5)); renderInstallBanner(); });
+
+const welcomeModal = $("#welcome");
+function openWelcome(){
+  const card = $("#welcome-install");
+  if (card){
+    const needsInstall = platform.ios && !platform.installed;
+    card.hidden = !needsInstall;
+    if (needsInstall) card.innerHTML = `<b>Add Meal Planner to your Home Screen first</b>
+      <p class="small">On iPhone, the app keeps your meals safely only once it's on your Home Screen. In a Safari tab they can be cleared.</p>
+      ${installStepsHtml("ios")}
+      <p class="small muted">Got a code from someone? Enter it in the app after step 3 — the app and Safari keep separate copies.</p>`;
+  }
+  welcomeModal.classList.add("open");
+  welcomeModal.setAttribute("aria-hidden", "false");
+  lockBodyScroll(true);
+}
+function closeWelcome(){
+  welcomeModal.classList.remove("open");
+  welcomeModal.setAttribute("aria-hidden", "true");
+  lockBodyScroll(false);
+  local.set("welcome-seen", "1");
+}
+function maybeShowWelcome(){
+  if (state.meals.length || window.syncIsOn?.() || local.get("welcome-seen") || location.hash.startsWith("#join=")) return;
+  if ($(".modal.open")) return;
+  openWelcome();
+}
+$("#welcome-skip")?.addEventListener("click", closeWelcome);
+$("#welcome-open")?.addEventListener("click", () => { closeSettings(); openWelcome(); });
+$$("[data-route]").forEach(b => b.addEventListener("click", () => {
+  const r = b.dataset.route;
+  closeWelcome();
+  if (r === "code"){ openSettings(); showSettingsTab("sync"); $("#sync-join-open")?.click(); }
+  else if (r === "restore") window.syncRestore?.();
+  else if (r === "fresh") openAddSheet();
+  else if (r === "file") $("#import")?.click();
+}));
+if (platform.ios && !platform.installed) $("#sync-join-ios")?.removeAttribute("hidden");
 
 /* Header height feeds the sticky shopping pane's offset. */
 function syncHeaderHeight(){
@@ -2574,14 +2669,16 @@ function firstRunPanel(){
   const d = document.createElement("div");
   d.className = "first-run";
   d.innerHTML = `
-    <h3 class="h3">Welcome 👋</h3>
-    <p>Used Meal Planner before, here or on another device? <b>Restore my meals</b> brings everything back from your household (it uses the key saved in your password manager). New here? Scan a recipe card or add a meal to get started.</p>
+    <h3 class="h3">No meals here yet</h3>
+    <p>Joining someone's meals? Use their code. Used Meal Planner before? <b>Restore my meals</b> brings everything back from your household. New here? Scan a recipe card or add a meal.</p>
     <div class="group">
       <button type="button" class="btn primary" data-fr="restore">${icon("refresh", 18)}Restore my meals</button>
-      <button type="button" class="btn" data-fr="import">${icon("save", 18)}Import a backup</button>
+      <button type="button" class="btn" data-fr="code">${icon("link", 18)}I have a code</button>
       <button type="button" class="btn" data-fr="scan">${icon("camera", 18)}Scan a recipe card</button>
       <button type="button" class="btn" data-fr="add">＋ Add a meal</button>
+      <button type="button" class="btn ghost" data-fr="import">${icon("save", 18)}Import a backup file</button>
     </div>`;
+  d.querySelector('[data-fr="code"]').addEventListener("click", () => { openSettings(); showSettingsTab("sync"); $("#sync-join-open")?.click(); });
   d.querySelector('[data-fr="restore"]').addEventListener("click", () => window.syncRestore?.());
   d.querySelector('[data-fr="import"]').addEventListener("click", () => $("#import")?.click());
   d.querySelector('[data-fr="scan"]').addEventListener("click", () => { openAddSheet(); $("#scan-card-btn")?.click(); });
@@ -2589,7 +2686,7 @@ function firstRunPanel(){
   return d;
 }
 
-/* ============== Avoid ingredients (Settings › Ingredients) ============== */
+/* ============== Avoid ingredients (Settings › Never suggest) ============== */
 const avoidEditor = $("#avoid-editor") ? tokenEditor($("#avoid-editor"), $("#avoid-input"), []) : null;
 function syncAvoidEditor(){ avoidEditor?.set(state.prefs.avoid || []); }
 if (avoidEditor){
@@ -3658,30 +3755,58 @@ $("#clear-all")?.addEventListener("click", async () => {
 const settingsModal = $("#settings-modal");
 function openSettings(){
   renderSettings();
-  showSettingsTab(state.prefs.settingsTab || "appearance");
+  showSettingsTab("home");
   syncAvoidEditor();
   renderBackupBanner();   // fills the Data tab's "last backup" line
   settingsModal.classList.add("open");
   settingsModal.setAttribute("aria-hidden", "false");
   lockBodyScroll(true);
 }
-/* Settings tabs: Appearance | Ingredients | Pantry | History | Data (last one remembered) */
+/* Settings (v27): one list showing current values; each row opens a page in plain words. */
+const SETTINGS_TITLES = { home: "Settings", sync: "Sync & household", avoid: "Never suggest", pantry: "Always in the cupboard",
+  history: "Meal history", appearance: "Look", data: "Backup & restore", help: "Help", about: "About",
+  ingredients: "Ingredient names & units", advanced: "Diagnostics" };
 function showSettingsTab(tab){
-  if (!$(`[data-spanel="${tab}"]`)) tab = "appearance";
-  $$("[data-stab]").forEach(b => {
-    const on = b.dataset.stab === tab;
-    b.classList.toggle("active", on);
-    b.setAttribute("aria-selected", String(on));
-    if (on) b.scrollIntoView({ block: "nearest", inline: "nearest" });   // the tab row scrolls sideways on phones
-  });
+  if (!$(`[data-spanel="${tab}"]`)) tab = "home";
   $$("[data-spanel]").forEach(p => { p.hidden = p.dataset.spanel !== tab; });
+  $("#settings-title").textContent = SETTINGS_TITLES[tab] || "Settings";
+  $("#settings-back").hidden = tab === "home";
+  settingsModal.dataset.page = tab;
+  if (tab === "home") renderSettingsHome();
+  if (tab === "help") renderHelpInstall();
   settingsModal.querySelector(".dialog").scrollTop = 0;
 }
-$$("[data-stab]").forEach(b => b.addEventListener("click", () => {
-  state.prefs.settingsTab = b.dataset.stab;
-  showSettingsTab(b.dataset.stab);
-  idbSet(IDB_KEYS.prefs, state.prefs);
-}));
+$$("[data-stab]").forEach(b => b.addEventListener("click", () => showSettingsTab(b.dataset.stab)));
+$("#settings-back")?.addEventListener("click", () => showSettingsTab("home"));
+const THEME_NAMES = { auto: "Automatic", light: "Light", dark: "Dark", black: "Black" };
+const TEXT_NAMES = { normal: "Normal text", large: "Large text", xlarge: "Extra large text" };
+function renderSettingsHome(){
+  const set = (k, v) => { const el = $(`[data-sval="${k}"]`); if (el) el.textContent = v; };
+  const avoid = (state.prefs.avoid || []).length;
+  set("avoid", avoid ? `${avoid} ingredient${avoid === 1 ? "" : "s"}` : "Nothing");
+  set("pantry", state.pantry.size ? `${state.pantry.size} item${state.pantry.size === 1 ? "" : "s"}` : "None yet");
+  const cooked = Object.values(state.cooklog).reduce((n, l) => n + (l?.length || 0), 0);
+  set("history", cooked ? `${cooked} cooked` : "");
+  set("theme", THEME_NAMES[state.prefs.theme] || "Automatic");
+  set("text", TEXT_NAMES[state.prefs.textSize] || "Normal text");
+  const last = lastBackupDate();
+  set("backup", last ? `Last file ${formatShortDate(last.toISOString().slice(0, 10))}` : "No file yet");
+  set("version", `v${APP_VERSION}`);
+  set("rules", state.normaliser.length ? `${state.normaliser.length} name rule${state.normaliser.length === 1 ? "" : "s"}` : "");
+  const errs = diagRead().filter(e => e.level === "error").length;
+  set("diag", errs ? `${errs} error${errs === 1 ? "" : "s"} logged` : "log, server check");
+  renderSyncCard();
+}
+function renderSyncCard(){
+  const s = window.syncSummary?.();
+  const dot = $("#sh-sync-dot");
+  if (!dot) return;
+  dot.dataset.state = s?.on ? s.state : "off";
+  $("#sh-sync-title").textContent = !s?.on ? "Sync is off" : s.state === "ok" ? "In sync" : s.state === "syncing" ? "Syncing…" : s.state === "offline" ? "Offline — will sync later" : "Sync needs a look";
+  $("#sh-sync-sub").textContent = !s?.on ? "Share meals, the plan and the list between your devices and your household"
+    : [s.devices?.length ? s.devices.join(", ") : "", s.text].filter(Boolean).join(" · ");
+}
+window.renderSyncCard = renderSyncCard;
 function closeSettings(){
   settingsModal.classList.remove("open");
   settingsModal.setAttribute("aria-hidden", "true");
@@ -3942,6 +4067,8 @@ $("#unit-add")?.addEventListener("click", async () => {
   refreshTagSuggestions();
   syncShopSort();
   $("#about-version") && ($("#about-version").textContent = `v${APP_VERSION}`);
+  renderInstallBanner();
+  setTimeout(maybeShowWelcome, 900);
   setView("today");
   syncFiltersUI();
 

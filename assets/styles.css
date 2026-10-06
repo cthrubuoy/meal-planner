@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v26
+   Meal Planner & Shopping List — v27
    ===================================================== */
 
 :root{
@@ -1091,14 +1091,6 @@ body.cooking .toast{ top:calc(70px + env(safe-area-inset-top, 0px)); bottom:auto
 .mv-stars{ color: var(--gold); letter-spacing:1px; }
 
 /* Settings tabs */
-.settings-bar{ display:flex; flex-direction:column; gap:8px; }
-.settings-tabs{ display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; }
-.settings-tabs::-webkit-scrollbar{ display:none; }
-.stab{
-  flex:0 0 auto; padding:7px 14px; border-radius:999px; cursor:pointer; font:inherit; font-size:.9rem;
-  border:1px solid var(--border-strong); background: var(--card); color: var(--text);
-}
-.stab.active{ background: var(--accent-glow); border-color: var(--accent-border); font-weight:600; }
 .spanel[hidden]{ display:none; }
 [data-text-size-set].active, [data-theme-set].active{ background: var(--accent-glow); border-color: var(--accent-border); }
 
@@ -2002,3 +1994,72 @@ input[type=url]:focus{ outline:none; border-color: var(--accent-border); box-sha
 .ingredient-row.folded > .drag-handle{ order:-1; }
 .ingredients:has(.folded){ gap:0; }
 .ingredients:has(.folded) > .ingredient-row:not(.folded){ margin:8px 0; }
+
+/* =====================================================
+   SETTINGS AS ONE LIST (v27 — replaces the v14 tab row)
+   ===================================================== */
+.settings-bar{ display:flex; align-items:center; gap:10px; }
+.settings-bar .h3{ flex:1 1 auto; font-size:1.25rem; }
+#settings-back[hidden]{ display:none; }
+#settings-modal .dialog{ width:min(640px, 96vw); }
+.sync-card{
+  width:100%; display:flex; align-items:center; gap:12px; padding:14px; margin:4px 0 6px; cursor:pointer; text-align:left;
+  border-radius:16px; background: var(--accent-glow); border:1px solid var(--accent-border); color: var(--text); font:inherit;
+}
+.sync-card-text{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.sync-card .sync-dot{ flex:0 0 10px; }
+#sh-sync-dot[data-state="off"]{ background: var(--muted); }
+.set-group{ margin:18px 4px 6px; font-size:.75rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color: var(--muted); }
+.set-list{ border-radius:16px; background: var(--card); border:1px solid var(--border); overflow:hidden; }
+.set-row{
+  width:100%; display:flex; align-items:center; gap:12px; min-height:52px; padding:0 14px; cursor:pointer; text-align:left;
+  background:none; border:none; border-bottom:1px solid var(--border); color: var(--text); font:inherit; font-size:1rem;
+}
+.set-row:last-child{ border-bottom:none; }
+.set-row:hover{ background: color-mix(in oklab, var(--text) 4%, transparent); }
+.set-ic{ flex:0 0 32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center; background: var(--chip); color: var(--chip-text); }
+.set-label{ flex:1 1 auto; min-width:0; }
+.set-val{ color: var(--muted); font-size:.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:45%; }
+.chev{ color: var(--muted); flex:0 0 auto; }
+.set-example{ margin:8px 0 12px; padding:10px 12px; border-radius:12px; background: var(--card); border:1px solid var(--border); font-size:.92rem; line-height:1.5; }
+.spanel > .small:first-child{ margin-top:0; }
+
+/* Help page */
+.install-list{ margin:6px 0 10px; padding-left:22px; display:grid; gap:6px; }
+.help-more{ margin:4px 0 8px; }
+.help-more summary{ cursor:pointer; color: var(--accent-text); font-weight:600; }
+.help-faq{ margin:0; display:grid; gap:4px; }
+.help-faq dt{ font-weight:700; margin-top:8px; }
+.help-faq dd{ margin:0; color: var(--muted); }
+.help-limits{ padding-left:20px; display:grid; gap:8px; margin:6px 0; }
+
+/* Welcome (first run) */
+.welcome-dialog{ width:min(520px, 96vw); text-align:center; padding:22px 18px; }
+.welcome-mark{ border-radius:16px; box-shadow: var(--shadow-soft); margin:6px auto 8px; display:block; }
+.welcome-title{ font-family: var(--font-head); font-size:1.6rem; margin:4px 0; }
+.routes{ display:grid; gap:10px; margin:18px 0 10px; text-align:left; }
+.route{
+  display:flex; align-items:center; gap:14px; padding:14px; min-height:64px; cursor:pointer;
+  border-radius:16px; background: var(--card); border:1px solid var(--border-strong); color: var(--text); font:inherit; text-align:left;
+}
+.route:hover{ border-color: var(--accent-border); }
+.route > span:nth-child(2){ flex:1 1 auto; display:flex; flex-direction:column; gap:2px; }
+.route-ic{ flex:0 0 44px; height:44px; border-radius:14px; display:flex; align-items:center; justify-content:center; background: var(--accent-glow); color: var(--accent-text); }
+.install-card{ text-align:left; margin:0 0 14px; padding:14px; border-radius:16px; border:1px solid var(--gold); background: color-mix(in oklab, var(--gold) 10%, transparent); }
+.install-card p{ margin:6px 0; }
+@media (max-width:839px){
+  #welcome .welcome-dialog{ margin-top:0; max-height:100dvh; padding-top:calc(18px + env(safe-area-inset-top, 0px)); }
+}
+
+/* Install banner (iPhone in a Safari tab; Android when the browser offers to install) */
+.install-banner{
+  display:flex; align-items:center; gap:10px; margin:10px 18px 0; padding:10px 12px;
+  border-radius:14px; border:1px solid var(--gold); background: color-mix(in oklab, var(--gold) 10%, var(--panel)); font-size:.9rem;
+}
+.install-banner[hidden]{ display:none; }
+.install-banner > span{ flex:1 1 auto; }
+@media (max-width:839px){ .install-banner{ margin:10px 12px 0; } }
+.sync-share-note{ margin:10px 0; padding:10px 12px; border-radius:12px; background: var(--card); border:1px solid var(--border); font-size:.9rem; line-height:1.5; }
+.install-warn{ color: var(--gold); }
+.install-warn[hidden]{ display:none; }
+.sync-ios-tip{ flex-basis:100%; margin:8px 0 0; }

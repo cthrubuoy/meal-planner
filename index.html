@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=26" />
-  <link rel="stylesheet" href="assets/styles.css?v=26" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=27" />
+  <link rel="stylesheet" href="assets/styles.css?v=27" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v26</span>
+      <span class="pill">v27</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -40,6 +40,13 @@
   <i data-icon="bulb" data-size="18"></i>
   <span id="hint-text"></span>
   <button id="hint-ok" class="btn mini">Got it</button>
+</div>
+
+<div id="install-banner" class="install-banner" hidden>
+  <i data-icon="info" data-size="18"></i>
+  <span id="install-banner-text"></span>
+  <button type="button" id="install-banner-go" class="btn mini primary">How?</button>
+  <button type="button" id="install-banner-x" class="btn mini ghost" aria-label="Not now"><i data-icon="x" data-size="16"></i></button>
 </div>
 
 <main class="layout">
@@ -579,27 +586,66 @@
   </div>
 </div>
 
-<!-- ================== SETTINGS MODAL (tabs) ================== -->
+<!-- ================== WELCOME (first run: no meals, no sync) ================== -->
+<div id="welcome" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+  <div class="dialog welcome-dialog">
+    <div id="welcome-install" class="install-card" hidden></div>
+    <img src="icons/icon-192.png" alt="" class="welcome-mark" width="56" height="56" />
+    <h2 id="welcome-title" class="welcome-title">Welcome to Meal Planner</h2>
+    <p class="muted">Plan the week, shop from one list, and cook step by step.</p>
+    <div class="routes">
+      <button type="button" class="route" data-route="code"><span class="route-ic"><i data-icon="link" data-size="22"></i></span><span><b>Someone gave me a code</b><span class="muted small">Share their meals, plan and shopping list</span></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      <button type="button" class="route" data-route="restore"><span class="route-ic"><i data-icon="refresh" data-size="22"></i></span><span><b>I've used it before</b><span class="muted small">Bring my meals back with my household key</span></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      <button type="button" class="route" data-route="fresh"><span class="route-ic"><i data-icon="plus" data-size="22"></i></span><span><b>Start fresh</b><span class="muted small">Scan a recipe card, paste a link, or type one in</span></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      <button type="button" class="route" data-route="file"><span class="route-ic"><i data-icon="save" data-size="22"></i></span><span><b>Restore a backup file</b><span class="muted small">A .json file you exported before</span></span><i data-icon="next" data-size="18" class="chev"></i></button>
+    </div>
+    <button type="button" id="welcome-skip" class="btn ghost">Just look around</button>
+  </div>
+</div>
+
+<!-- ================== SETTINGS (one list; each row opens a page) ================== -->
 <div id="settings-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="dialog">
     <div class="stickybar settings-bar">
-      <div class="group space-between">
-        <h3 id="settings-title" class="h3">Settings</h3>
-        <button id="settings-close" class="btn" aria-label="Close">✕</button>
-      </div>
-      <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
-        <button class="stab" role="tab" data-stab="appearance">Appearance</button>
-        <button class="stab" role="tab" data-stab="ingredients">Ingredients</button>
-        <button class="stab" role="tab" data-stab="pantry">Pantry</button>
-        <button class="stab" role="tab" data-stab="history">History</button>
-        <button class="stab" role="tab" data-stab="data">Data</button>
-        <button class="stab" role="tab" data-stab="sync">Sync</button>
-        <button class="stab" role="tab" data-stab="advanced">Advanced</button>
-        <button class="stab" role="tab" data-stab="about">About</button>
-      </nav>
+      <button type="button" id="settings-back" class="btn icon-btn" aria-label="Back to Settings" hidden><i data-icon="back"></i></button>
+      <h3 id="settings-title" class="h3">Settings</h3>
+      <button id="settings-close" class="btn icon-btn" aria-label="Close"><i data-icon="x"></i></button>
     </div>
 
-    <section class="spanel" data-spanel="appearance" role="tabpanel">
+    <section class="spanel" data-spanel="home">
+      <button type="button" class="sync-card" data-stab="sync">
+        <span id="sh-sync-dot" class="sync-dot"></span>
+        <span class="sync-card-text"><b id="sh-sync-title">Sync is off</b><span id="sh-sync-sub" class="muted small">Share meals, the plan and the list between your devices and your household</span></span>
+        <i data-icon="next" data-size="18" class="chev"></i>
+      </button>
+      <div class="set-group">Shopping &amp; cooking</div>
+      <div class="set-list">
+        <button type="button" class="set-row" data-stab="avoid"><span class="set-ic"><i data-icon="x" data-size="18"></i></span><span class="set-label">Never suggest</span><span class="set-val" data-sval="avoid"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+        <button type="button" class="set-row" data-stab="pantry"><span class="set-ic"><i data-icon="home" data-size="18"></i></span><span class="set-label">Always in the cupboard</span><span class="set-val" data-sval="pantry"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+        <button type="button" class="set-row" data-stab="history"><span class="set-ic"><i data-icon="clock" data-size="18"></i></span><span class="set-label">Meal history</span><span class="set-val" data-sval="history"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      </div>
+      <div class="set-group">Look</div>
+      <div class="set-list">
+        <button type="button" class="set-row" data-stab="appearance"><span class="set-ic"><i data-icon="moon" data-size="18"></i></span><span class="set-label">Theme</span><span class="set-val" data-sval="theme"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+        <button type="button" class="set-row" data-stab="appearance"><span class="set-ic"><i data-icon="scale" data-size="18"></i></span><span class="set-label">Text size and meal cards</span><span class="set-val" data-sval="text"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      </div>
+      <div class="set-group">Your data</div>
+      <div class="set-list">
+        <button type="button" class="set-row" data-stab="data"><span class="set-ic"><i data-icon="save" data-size="18"></i></span><span class="set-label">Backup &amp; restore</span><span class="set-val" data-sval="backup"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      </div>
+      <div class="set-group">Help &amp; more</div>
+      <div class="set-list">
+        <button type="button" class="set-row" data-stab="help"><span class="set-ic"><i data-icon="info" data-size="18"></i></span><span class="set-label">Help, install &amp; tips</span><span class="set-val"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+        <button type="button" class="set-row" data-stab="about"><span class="set-ic"><i data-icon="gift" data-size="18"></i></span><span class="set-label">About &amp; what's new</span><span class="set-val" data-sval="version"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      </div>
+      <div class="set-group">Advanced</div>
+      <div class="set-list">
+        <button type="button" class="set-row" data-stab="ingredients"><span class="set-ic"><i data-icon="swap" data-size="18"></i></span><span class="set-label">Ingredient names &amp; units</span><span class="set-val" data-sval="rules"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+        <button type="button" class="set-row" data-stab="advanced"><span class="set-ic"><i data-icon="bulb" data-size="18"></i></span><span class="set-label">Diagnostics</span><span class="set-val" data-sval="diag"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+      </div>
+    </section>
+
+    <section class="spanel" data-spanel="appearance" role="tabpanel" hidden>
       <h4 class="h4">Theme</h4>
       <div class="group">
         <button class="btn" data-theme-set="auto">Auto (system)</button>
@@ -633,15 +679,16 @@
     </section>
 
     <section class="spanel" data-spanel="ingredients" role="tabpanel" hidden>
-      <h4 class="h4">Ingredient normaliser</h4>
-      <p class="muted small">Map ingredient aliases to a canonical name. The shopping list and tags use the canonical name.</p>
+      <h4 class="h4">Same ingredient, different names</h4>
+      <p class="small">Tell the app two names mean the same thing, so the shopping list adds them together instead of listing both.</p>
+      <div class="set-example"><span class="muted">Example:</span> <b>spring onion</b> = scallion, green onion<br><span class="muted">→ one line on the list: Spring onion · 6</span></div>
       <div class="row">
         <div>
-          <label for="norm-canonical">Canonical</label>
+          <label for="norm-canonical">Name to use</label>
           <input id="norm-canonical" type="text" placeholder="e.g. spring onion" />
         </div>
         <div>
-          <label for="norm-aliases">Aliases (comma-separated)</label>
+          <label for="norm-aliases">Other names for it (comma-separated)</label>
           <input id="norm-aliases" type="text" placeholder="e.g. spring onions, scallion, scallions" />
         </div>
       </div>
@@ -653,13 +700,13 @@
         </label>
       </div>
       <table id="norm-table" class="table mt8">
-        <thead><tr><th>Canonical</th><th>Aliases</th><th></th></tr></thead>
+        <thead><tr><th>Name to use</th><th>Other names</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
   
       <hr class="sep" />
-      <h4 class="h4">Unit defaults</h4>
-      <p class="muted small">Pre-set default units per ingredient. Lock to prevent accidental changes.</p>
+      <h4 class="h4">Usual units</h4>
+      <p class="muted small">How an ingredient is usually measured (e.g. garlic in cloves, milk in ml), picked automatically when you type it in a meal. Lock it to stop it being changed by accident.</p>
       <div class="row">
         <div>
           <label for="unit-name">Ingredient</label>
@@ -698,7 +745,7 @@
       </table>
   
       <hr class="sep" />
-      <h4 class="h4">Tidy ingredients</h4>
+      <h4 class="h4">Tidy ingredient names</h4>
       <p class="muted small">The shopping list already merges plurals (e.g. "cashew nut" and "cashew nuts"). This goes further and rewrites your saved meals: merges known spellings, makes names singular, fixes mixed units and updates unit defaults. Review first — nothing changes until you press Apply, and you can undo.</p>
       <div class="group">
         <button id="tidy-preview" class="btn">Review suggestions</button>
@@ -707,33 +754,31 @@
       <div id="tidy-results" class="small mt8 tidy-results" hidden></div>
   
       <hr class="sep" />
-      <h4 class="h4">Avoid ingredients</h4>
-      <p class="muted small">Meals containing any of these are hidden and never suggested by the planner (e.g. "mushroom", "nut").</p>
-      <div id="avoid-editor" class="token-editor"></div>
-      <input id="avoid-input" type="text" list="ingredient-suggestions" placeholder="Type an ingredient and press Enter" />
-      <hr class="sep" />
       <h4 class="h4">Tags from ingredients</h4>
       <p class="muted small">Add each meal's ingredient names to its tags.</p>
       <button id="backfill-tags" class="btn">Backfill tags</button>
     </section>
 
+    <section class="spanel" data-spanel="avoid" role="tabpanel" hidden>
+      <p class="small">Meals containing any of these are hidden and never suggested by the planner — e.g. "mushroom" or "nut". Shared with your household.</p>
+      <div id="avoid-editor" class="token-editor"></div>
+      <input id="avoid-input" type="text" list="ingredient-suggestions" placeholder="Type an ingredient and press Enter" />
+    </section>
+
     <section class="spanel" data-spanel="pantry" role="tabpanel" hidden>
-      <h4 class="h4">Pantry staples</h4>
-      <p class="muted small">Items you always have. They're left out of Ocado, Share, TSV and Print, and listed under "Usually in the cupboard".</p>
+      <p class="small">Things you always have in. They're left off what you copy for Ocado, Share and Print, and sit under "Usually in the cupboard" on the list. Mark one by swiping an item left on the shopping list.</p>
       <div id="pantry-list" class="token-list"></div>
   
     </section>
 
     <section class="spanel" data-spanel="history" role="tabpanel" hidden>
-      <h4 class="h4">Meal history</h4>
       <p class="muted small">How often each meal has been chosen for a shop (counts once per shop when you use Ocado, Share, Copy as TSV or Print; "Clear selection" starts a new shop), and how often it's actually been cooked and rated in cook mode.</p>
       <div id="history-wrap"></div>
   
     </section>
 
     <section class="spanel" data-spanel="data" role="tabpanel" hidden>
-      <h4 class="h4">Backup</h4>
-      <p class="muted small">Your meals live in this browser only. Export to back up or move to another device, then Import there.</p>
+      <p class="small">With sync on, your meals are also kept on your household's sync server. A backup file is an extra copy you control: <b>Export</b> saves one; <b>Import</b> replaces what's here with a file.</p>
       <p id="backup-last" class="small"></p>
       <div class="group">
         <button type="button" id="export" class="btn primary">Export (back up)</button>
@@ -777,6 +822,8 @@
               <button type="button" id="sync-join-go" class="btn primary">Join</button>
             </div>
             <video id="sync-video" class="sync-video" hidden playsinline muted></video>
+            <div class="sync-share-note"><b>What you'll share</b><br>Meals and photos, the week's plan and the shopping list. If you tick off milk, it's ticked for everyone. Your theme and text size stay your own.</div>
+            <p id="sync-join-ios" class="install-warn small" hidden><b>On iPhone:</b> do this in the app on your Home Screen, not in Safari — they keep separate copies. Not installed yet? Settings › Help shows how.</p>
             <p class="muted small">If this device already has meals, a backup downloads first. Meals on both keep the household's version; meals only here are added for everyone.</p>
           </div>
         </div>
@@ -810,6 +857,7 @@
               <p id="sync-invite-exp" class="muted small"></p>
               <button type="button" id="sync-invite-share" class="btn mini"><i data-icon="share" data-size="14"></i>Share link</button>
             </div>
+            <p class="muted small sync-ios-tip"><b>Joining on an iPhone?</b> Add the app to the Home Screen first (Safari › Share › Add to Home Screen), open it from the icon, then type this code — scanning the QR opens Safari, which keeps a separate copy.</p>
           </div>
 
           <h4 class="h4">Linked devices</h4>
@@ -836,7 +884,7 @@
     </section>
 
     <section class="spanel" data-spanel="advanced" role="tabpanel" hidden>
-      <h4 class="h4">Diagnostics log</h4>
+      <h4 class="h4">Log</h4>
       <p class="muted small">What the app did behind the scenes — scans, sync and errors — newest first. Tap a line for the details. Kept on this device only (the last 300 events). When something goes wrong, <b>Copy</b> and paste it to Claude.</p>
       <div class="group diag-tools">
         <label class="diag-filter"><input type="checkbox" id="diag-errors-only" /> Errors only</label>
@@ -857,11 +905,43 @@
 
     <section class="spanel" data-spanel="about" role="tabpanel" hidden>
       <h4 class="h4">Meal Planner <span id="about-version"></span></h4>
-      <p class="muted small">Your meals, plans and shopping list stay in this browser on this device.</p>
+      <p class="muted small">Each device keeps its own copy of your meals, plan and list, so it works without signal. With sync on, they're shared with your other devices and your household.</p>
       <div class="group">
         <button type="button" id="whatsnew-open" class="btn"><i data-icon="gift" data-size="16"></i>What's new</button>
         <a class="btn" href="https://github.com/cthrubuoy/meal-planner/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Full changelog</a>
-        <button type="button" id="hints-reset" class="btn">Show tips again</button>
+      </div>
+    </section>
+
+    <section class="spanel help-page" data-spanel="help" role="tabpanel" hidden>
+      <h4 class="h4">Install it on your phone or tablet</h4>
+      <div id="help-install" class="install-steps"></div>
+      <details class="help-more">
+        <summary>Other devices</summary>
+        <div id="help-install-all"></div>
+      </details>
+
+      <h4 class="h4">How do I…</h4>
+      <dl class="help-faq">
+        <dt>Add a meal?</dt><dd>Tap <b>＋ Add</b>. Scan a recipe card with the camera, paste a recipe link, or type it in.</dd>
+        <dt>Plan the week?</dt><dd><b>Plan</b> › <b>Auto-fill</b> picks from your own meals (favourites and good ratings first, quicker ones Mon–Thu). Tap a day to choose or swap.</dd>
+        <dt>Make the shopping list?</dt><dd>Tick meals with their round <b>＋</b> button, or <b>Plan</b> › <b>Add to list</b>. Add anything else (milk, bin bags) at the bottom of the list.</dd>
+        <dt>Shop?</dt><dd>Tap an item (or swipe it right) when it's in the trolley. <b>Copy for Ocado</b> copies the names for Ocado's "Find a list of products".</dd>
+        <dt>Cook?</dt><dd><b>Today</b> › <b>Cook</b>. One step at a time in big text, with timers named after what they're timing.</dd>
+        <dt>Share with someone?</dt><dd>Settings › <b>Sync</b> › <b>Show a code</b> on your device, then <b>Join with a code</b> on theirs. You share meals, the plan and the shopping list; theme and text size stay your own.</dd>
+      </dl>
+
+      <h4 class="h4">Known limitations on iPhone and iPad</h4>
+      <ul class="help-limits">
+        <li><b>Install it first.</b> In a Safari tab, Safari can clear the app's data after about a week without a visit. On the Home Screen it's kept.</li>
+        <li><b>The invite QR code opens Safari, not the app.</b> The app and Safari keep separate copies, so type the code into the app instead (Settings › Sync › Join with a code). The app can't scan QR codes itself on iPhone.</li>
+        <li><b>Cook-mode timers may not ring</b> when the app is in the background or the screen is locked. Keep it open on the timer (the screen stays on in cook mode).</li>
+        <li><b>No vibration</b> when you tick things off.</li>
+        <li><b>You can't share a link into the app.</b> Copy the recipe link, then paste it into ＋ Add › Import from a link.</li>
+      </ul>
+
+      <div class="group mt8">
+        <button type="button" id="hints-reset" class="btn"><i data-icon="bulb" data-size="16"></i>Show tips again</button>
+        <button type="button" id="welcome-open" class="btn"><i data-icon="sparkles" data-size="16"></i>Show the welcome screen</button>
       </div>
     </section>
   </div>
@@ -964,13 +1044,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=26" defer></script>
-<script src="assets/app.js?v=26" defer></script>
-<script src="assets/cook.js?v=26" defer></script>
-<script src="assets/plan.js?v=26" defer></script>
-<script src="assets/vendor/qrcode.js?v=26" defer></script>
-<script src="assets/sync.js?v=26" defer></script>
-<script src="assets/scan.js?v=26" defer></script>
-<script src="assets/pwa.js?v=26" defer></script>
+<script src="assets/icons.js?v=27" defer></script>
+<script src="assets/app.js?v=27" defer></script>
+<script src="assets/cook.js?v=27" defer></script>
+<script src="assets/plan.js?v=27" defer></script>
+<script src="assets/vendor/qrcode.js?v=27" defer></script>
+<script src="assets/sync.js?v=27" defer></script>
+<script src="assets/scan.js?v=27" defer></script>
+<script src="assets/pwa.js?v=27" defer></script>
 </body>
 </html>
