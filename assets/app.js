@@ -801,13 +801,11 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["user", "Who's cooking tonight", "Add the people who cook (Settings › Who cooks), with a photo. Tap a planned meal to give it to someone; Today says \"Chris is cooking\" and the cook log remembers who made it."],
-  ["moon2", "Not cooking? Say why", "Tap ＋ on a day: Takeaway (home late), Out with friends, Away… It shows on the calendar and Today, and auto-fill leaves that day alone."],
-  ["plan", "Leftovers", "Put a ×2 meal's leftovers on a later day — nothing extra on the shopping list."],
-  ["refresh", "A new week", "The first time you open the app in a new week, last week's uncooked meals can be moved to this week, marked as cooked after all, or let go."]
+  ["swap", "Swap an ingredient", "On a meal's ⋯ menu: swap the chicken for turkey mince (or anything). Gemini reworks the amounts and the steps that mention it, you check the changes, then save it as a version."],
+  ["cards", "Versions of a meal", "The meal page switches between Original and e.g. Turkey mince. Shopping, the plan and cook mode follow the one you choose."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -2607,6 +2605,7 @@ function openMenu(anchor, items){
 }
 function mealMenuItems(id, anchor){
   return [
+    ...(window.swapAvailable?.() ? [{ icon: "swap", label: "Swap an ingredient…", run: () => window.openSwap?.(id) }] : []),
     { icon: "plan", label: "Add to plan…", run: () => openMenu(anchor, window.planMenuItems?.(id) || []) },
     { icon: "edit", label: "Edit", run: () => { closeMealView(); openEdit(id); } },
     { icon: "copy", label: "Duplicate", run: () => duplicateMeal(id) },
@@ -3029,6 +3028,41 @@ $("#backup-later")?.addEventListener("click", () => {
   renderBackupBanner();
 });
 
+/* ============== Versions of a meal (v30): e.g. Original · Turkey mince ==============
+   The meal's own title/ingredients/steps/cookMins are always the version in use;
+   switching saves them back into their slot and loads the other one. */
+const VERSION_FIELDS = ["title", "ingredients", "steps", "cookMins"];
+function versionSnapshot(m, id, name){ return { id, name, ...JSON.parse(JSON.stringify(Object.fromEntries(VERSION_FIELDS.map(k => [k, m[k]])))) }; }
+async function useVersion(mealId, vid){
+  const m = state.meals.find(x => x.id === mealId);
+  const v = m?.versions?.find(x => x.id === vid);
+  if (!m || !v || m.version === vid) return;
+  const cur = m.versions.find(x => x.id === m.version);
+  if (cur) Object.assign(cur, versionSnapshot(m, cur.id, cur.name));
+  for (const k of VERSION_FIELDS) m[k] = JSON.parse(JSON.stringify(v[k] ?? (k === "cookMins" ? null : k === "title" ? m.title : [])));
+  m.version = vid;
+  await saveAll();
+  renderMeals(); renderShopping(); populateCookSelect(); refreshMealView(); window.renderPlan?.(); window.renderToday?.();
+  status(`Using "${v.name}"`);
+}
+async function addVersion(mealId, data){
+  const m = state.meals.find(x => x.id === mealId);
+  if (!m) return;
+  if (!m.versions?.length){ m.versions = [versionSnapshot(m, "orig", "Original")]; m.version = "orig"; }
+  const id = uid();
+  m.versions.push({ id, name: data.name, title: data.title || m.title, ingredients: data.ingredients, steps: data.steps, cookMins: data.cookMins ?? m.cookMins ?? null });
+  await saveAll();
+  await useVersion(mealId, id);
+}
+async function deleteVersion(mealId, vid){
+  const m = state.meals.find(x => x.id === mealId);
+  if (!m?.versions || vid === "orig") return;
+  if (m.version === vid) await useVersion(mealId, "orig");
+  m.versions = m.versions.filter(x => x.id !== vid);
+  if (m.versions.length < 2){ delete m.versions; delete m.version; }
+  await saveAll(); refreshMealView();
+}
+
 /* ============== Meal page (tap a card) ============== */
 const mealViewModal = $("#meal-view");
 let viewingId = null;
@@ -3091,6 +3125,7 @@ function renderMealView(){
         ${meta ? `<div class="mv-meta">${meta}</div>` : ""}
       </div>
     </div>
+    ${meal.versions?.length > 1 ? `<div class="mv-versions" role="group" aria-label="Versions">${meal.versions.map(v => `<button type="button" class="tchip ${v.id === meal.version ? "on" : ""}" data-version="${escapeHtml(v.id)}" aria-pressed="${v.id === meal.version}">${escapeHtml(v.name)}</button>`).join("")}${meal.version !== "orig" ? `<button type="button" class="btn mini ghost" data-version-del="${escapeHtml(meal.version)}" title="Delete this version">${icon("trash", 14)}</button>` : ""}</div>` : ""}
     <div class="mv-tabs" role="tablist" aria-label="Recipe sections">
       ${tab("ingredients", "Ingredients")}${tab("method", "Method")}${tab("notes", "Notes")}
     </div>
@@ -3124,6 +3159,11 @@ function renderMealView(){
     <button type="button" id="mv-plan" class="btn">${icon("plan", 18)}Plan</button>
     <button type="button" id="mv-cook" class="btn">${icon("play", 16)}Cook</button>`;
   $$("[data-mvtab]", $("#mv-body")).forEach(b => b.addEventListener("click", () => { mvTab = b.dataset.mvtab; renderMealView(); }));
+  $$("[data-version]", $("#mv-body")).forEach(b => b.addEventListener("click", () => useVersion(meal.id, b.dataset.version)));
+  $("[data-version-del]", $("#mv-body"))?.addEventListener("click", (e) => {
+    const v = meal.versions.find(x => x.id === e.currentTarget.dataset.versionDel);
+    if (v && confirm(`Delete the "${v.name}" version? The original stays.`)) deleteVersion(meal.id, v.id);
+  });
   $("#mv-pick")?.addEventListener("click", () => { haptic(); setSelected(meal.id, !state.selected.has(meal.id)); });
   $("#mv-x2")?.addEventListener("click", () => { haptic(); toggleDoubled(meal.id); });
   $("#mv-plan")?.addEventListener("click", (e) => openMenu(e.currentTarget, window.planMenuItems?.(meal.id) || []));
@@ -3880,6 +3920,12 @@ function migrateImport(json){
     const src = cleanSource(clone.source);
     if (src) clone.source = src; else delete clone.source;
     liftSourceFromNotes(clone);
+    // schema 16+: versions (Original · Turkey mince…)
+    if (Array.isArray(clone.versions) && clone.versions.length > 1){
+      clone.versions = clone.versions.filter(v => v && v.id && v.name).map(v => ({ id: String(v.id), name: String(v.name).slice(0, 40), title: String(v.title || clone.title || ""),
+        ingredients: (v.ingredients || []).map(cleanIng).filter(i => i.name), steps: Array.isArray(v.steps) ? v.steps.map(String) : [], cookMins: typeof v.cookMins === "number" ? v.cookMins : null }));
+      if (!clone.versions.some(v => v.id === clone.version)) clone.version = clone.versions[0]?.id;
+    } else { delete clone.versions; delete clone.version; }
     if (!clone.id) clone.id = uid();
     return clone;
   });

@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=29" />
-  <link rel="stylesheet" href="assets/styles.css?v=29" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=30" />
+  <link rel="stylesheet" href="assets/styles.css?v=30" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v29</span>
+      <span class="pill">v30</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -604,6 +604,38 @@
   </div>
 </div>
 
+<!-- ================== SWAP AN INGREDIENT (saved as a version) ================== -->
+<div id="swap-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="swap-title">
+  <div class="dialog swap-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="swap-title" class="h3">Swap an ingredient</h3>
+      <button type="button" id="swap-close" class="btn icon-btn" aria-label="Close"><i data-icon="x"></i></button>
+    </div>
+    <section id="swap-pick">
+      <p id="swap-meal" class="muted"></p>
+      <div class="sec-label">Swap</div>
+      <div id="swap-from" class="swap-from" role="radiogroup" aria-label="Ingredient to swap"></div>
+      <div class="sec-label">For</div>
+      <div id="swap-to" class="pp-off-chips"></div>
+      <input id="swap-to-own" type="text" maxlength="60" placeholder="Or type something else" aria-label="Replacement" />
+      <button type="button" id="swap-go" class="btn primary swap-go"><i data-icon="sparkles" data-size="18"></i>Rework the recipe</button>
+      <p class="muted small">Gemini adjusts the amounts and the steps that mention it. You check the changes before anything is saved.</p>
+    </section>
+    <section id="swap-wait" class="swap-wait" hidden><div class="spinner"></div><p>Reworking the recipe…</p></section>
+    <section id="swap-review" hidden>
+      <h4 id="swap-head" class="h3"></h4>
+      <div id="swap-summary" class="swap-summary"></div>
+      <div id="swap-diff"></div>
+      <p id="swap-why" class="swap-why"></p>
+      <div class="group swap-btns">
+        <button type="button" id="swap-save-version" class="btn primary"><i data-icon="save" data-size="16"></i>Save as a version</button>
+        <button type="button" id="swap-save-new" class="btn"><i data-icon="copy" data-size="16"></i>Save as a new meal</button>
+        <button type="button" id="swap-back" class="btn ghost">Change the swap</button>
+      </div>
+    </section>
+  </div>
+</div>
+
 <!-- ================== WEEK ROLLOVER (first open in a new week) ================== -->
 <div id="rollover" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="ro-title">
   <div class="dialog rollover-dialog">
@@ -1087,13 +1119,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=29" defer></script>
-<script src="assets/app.js?v=29" defer></script>
-<script src="assets/cook.js?v=29" defer></script>
-<script src="assets/plan.js?v=29" defer></script>
-<script src="assets/vendor/qrcode.js?v=29" defer></script>
-<script src="assets/sync.js?v=29" defer></script>
-<script src="assets/scan.js?v=29" defer></script>
-<script src="assets/pwa.js?v=29" defer></script>
+<script src="assets/icons.js?v=30" defer></script>
+<script src="assets/app.js?v=30" defer></script>
+<script src="assets/cook.js?v=30" defer></script>
+<script src="assets/plan.js?v=30" defer></script>
+<script src="assets/vendor/qrcode.js?v=30" defer></script>
+<script src="assets/sync.js?v=30" defer></script>
+<script src="assets/scan.js?v=30" defer></script>
+<script src="assets/pwa.js?v=30" defer></script>
 </body>
 </html>

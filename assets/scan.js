@@ -190,6 +190,112 @@
     .catch(() => false);
   importReady.then(ok => { const row = $("#link-import"); if (row) row.hidden = !ok; });
 
+  /* ============== Swap an ingredient (v30, needs scan server 2.8 POST /swap) ============== */
+  let swapOk = false, swapMeal = null, swapResult = null, swapFrom = "", swapTo = "";
+  fetch(`${SCAN_BASE}/health`).then(r => r.json()).then(j => { swapOk = Array.isArray(j.endpoints) && j.endpoints.includes("POST /swap"); }).catch(() => {});
+  window.swapAvailable = () => swapOk;
+  const SWAP_IDEAS = ["Turkey mince", "Chicken thigh", "Chicken breast", "Beef mince", "Pork loin", "Prawns", "Salmon", "Halloumi", "Chickpeas", "Tofu"];
+  const PROTEIN_RE = /\b(chicken|beef|pork|lamb|turkey|duck|sausage|chorizo|bacon|salmon|cod|basa|haddock|prawn|fish|tofu|halloumi|paneer|mince|steak|fillet)\b/;
+  const swapModal = $("#swap-modal");
+  function swapShow(which){ ["pick", "wait", "review"].forEach(k => { $(`#swap-${k}`).hidden = k !== which; }); }
+  window.openSwap = (id) => {
+    swapMeal = state.meals.find(m => m.id === id);
+    if (!swapMeal) return;
+    closeMealView();
+    $("#swap-meal").textContent = swapMeal.title;
+    const ings = swapMeal.ingredients || [];
+    // the main protein: a meat/fish line first (not "chicken stock cube"), else any protein word
+    const notStock = i => !/stock|gravy|bouillon|cube|powder|seasoning/.test(ingredientKey(i.name));
+    let main = ings.findIndex(i => notStock(i) && shopCategory(i.name) === "Meat & fish");
+    if (main < 0) main = ings.findIndex(i => notStock(i) && PROTEIN_RE.test(ingredientKey(i.name)));
+    $("#swap-from").innerHTML = ings.map((i, k) => `<label class="swap-ing"><input type="radio" name="swap-from" value="${k}" ${k === Math.max(0, main) ? "checked" : ""} />
+      <span>${escapeHtml(titleCase(i.name))}</span><span class="muted">${escapeHtml(formatNumber(i.amount))} ${escapeHtml(i.type === "qty" ? (i.unit === "piece" ? "" : i.unit) : i.type === "grams" ? "g" : i.type)}</span></label>`).join("");
+    renderSwapIdeas();
+    $("#swap-to-own").value = "";
+    swapShow("pick");
+    swapModal.classList.add("open"); swapModal.setAttribute("aria-hidden", "false"); lockBodyScroll(true);
+  };
+  function renderSwapIdeas(){
+    const fromName = swapFromName().toLowerCase();
+    $("#swap-to").innerHTML = SWAP_IDEAS.filter(t => !fromName.includes(t.toLowerCase())).map(t => `<button type="button" class="tchip ${swapTo === t ? "on" : ""}" data-swap-to="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("");
+    $$("[data-swap-to]", $("#swap-to")).forEach(b => b.addEventListener("click", () => { swapTo = b.dataset.swapTo; $("#swap-to-own").value = ""; renderSwapIdeas(); }));
+  }
+  const swapFromName = () => { const k = Number($('#swap-from input:checked')?.value ?? -1); return swapMeal?.ingredients?.[k]?.name || ""; };
+  $("#swap-from")?.addEventListener("change", renderSwapIdeas);
+  $("#swap-to-own")?.addEventListener("input", (e) => { if (e.target.value.trim()){ swapTo = ""; renderSwapIdeas(); } });
+  function closeSwap(){ swapModal.classList.remove("open"); swapModal.setAttribute("aria-hidden", "true"); lockBodyScroll(false); swapResult = null; }
+  $("#swap-close")?.addEventListener("click", closeSwap);
+  $("#swap-back")?.addEventListener("click", () => swapShow("pick"));
+  $("#swap-go")?.addEventListener("click", async () => {
+    swapFrom = swapFromName();
+    const to = $("#swap-to-own").value.trim() || swapTo;
+    if (!swapFrom || !to){ status("Choose what to swap, and what for."); return; }
+    swapShow("wait");
+    let resp, data;
+    try {
+      resp = await loggedFetch("swap", `${swapFrom} → ${to}`, `${SCAN_BASE}/swap`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meal: { title: swapMeal.title, ingredients: swapMeal.ingredients, steps: swapMeal.steps, cookMins: swapMeal.cookMins }, from: swapFrom, to })
+      });
+      data = await resp.json();
+    } catch (err) {
+      swapShow("pick"); status(err?.timedOut ? SLOW_MSG : "Couldn't reach the server. Check your connection and try again.", 6000); return;
+    }
+    if (!resp.ok || data.error){ swapShow("pick"); status(data?.error === "bad_swap" ? data.reason : scanReason(data), 7000); return; }
+    swapResult = { ...data, to };
+    renderSwapReview();
+    swapShow("review");
+  });
+  function renderSwapReview(){
+    const r = swapResult, m = swapMeal;
+    const amt = i => `${formatNumber(i.amount)} ${i.type === "qty" ? (i.unit === "piece" ? "" : i.unit) : i.type === "grams" ? "g" : i.type}`.trim();
+    const oldBy = new Map((m.ingredients || []).map(i => [ingredientKey(i.name), i]));
+    const newBy = new Map(r.ingredients.map(i => [ingredientKey(i.name), i]));
+    const gone = [...oldBy].filter(([k]) => !newBy.has(k)).map(([, i]) => i);
+    const added = [...newBy].filter(([k]) => !oldBy.has(k)).map(([, i]) => i);
+    const toWords = ingredientKey(r.to).split(" ");
+    added.sort((x, y) => toWords.filter(w => ingredientKey(y.name).includes(w)).length - toWords.filter(w => ingredientKey(x.name).includes(w)).length);   // the replacement pairs with what it replaces
+    const changedAmt = [...newBy].filter(([k, i]) => oldBy.has(k) && amt(oldBy.get(k)) !== amt(i)).map(([k, i]) => [oldBy.get(k), i]);
+    const swapped = Math.min(gone.length, added.length);
+    const os = m.steps || [], ns = r.steps || [];
+    const stepRows = [];
+    for (let k = 0; k < Math.max(os.length, ns.length); k++) if ((os[k] || "") !== (ns[k] || "")) stepRows.push(k);
+    const dMins = (typeof r.cookMins === "number" && typeof m.cookMins === "number") ? r.cookMins - m.cookMins : 0;
+    $("#swap-head").textContent = `${titleCase(r.to)} instead of ${swapFrom}`;
+    $("#swap-summary").innerHTML = [`${swapped || gone.length || 1} ingredient${(swapped || 1) === 1 ? "" : "s"} swapped`, added.length > swapped ? `${added.length - swapped} added` : "", changedAmt.length ? `${changedAmt.length} amount${changedAmt.length === 1 ? "" : "s"} changed` : "",
+      `${stepRows.length} step${stepRows.length === 1 ? "" : "s"} changed`, dMins ? `${dMins > 0 ? "+" : ""}${dMins} min` : ""].filter(Boolean).map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("");
+    $("#swap-diff").innerHTML = `
+      <h4 class="h4">Ingredients</h4>
+      <ul class="swap-list">
+        ${gone.map((i, k) => `<li><span class="was">${escapeHtml(titleCase(i.name))} · ${escapeHtml(amt(i))}</span>${added[k] ? `<span class="now">${escapeHtml(titleCase(added[k].name))} · ${escapeHtml(amt(added[k]))}</span>` : ""}</li>`).join("")}
+        ${added.slice(gone.length).map(i => `<li><span class="now">+ ${escapeHtml(titleCase(i.name))} · ${escapeHtml(amt(i))}</span></li>`).join("")}
+        ${changedAmt.map(([a, b]) => `<li><span>${escapeHtml(titleCase(b.name))}</span> <span class="was">${escapeHtml(amt(a))}</span> <span class="now">${escapeHtml(amt(b))}</span></li>`).join("")}
+      </ul>
+      <h4 class="h4">Steps</h4>
+      ${stepRows.length ? `<ol class="swap-steps">${stepRows.map(k => `<li value="${k + 1}">${os[k] ? `<span class="was">${escapeHtml(os[k])}</span>` : ""}${ns[k] ? `<span class="now">${escapeHtml(ns[k])}</span>` : `<span class="muted small">(removed)</span>`}</li>`).join("")}</ol>` : `<p class="muted small">No step changes.</p>`}`;
+    $("#swap-why").innerHTML = r.why ? `<b>Why:</b> ${escapeHtml(r.why)}` : "";
+  }
+  $("#swap-save-version")?.addEventListener("click", async () => {
+    if (!swapResult) return;
+    const r = swapResult, id = swapMeal.id;
+    closeSwap();
+    await addVersion(id, { name: r.versionName || titleCase(r.to), title: r.title, ingredients: r.ingredients, steps: r.steps, cookMins: r.cookMins });
+    openMealView(id);
+  });
+  $("#swap-save-new")?.addEventListener("click", async () => {
+    if (!swapResult) return;
+    const r = swapResult, src = swapMeal;
+    const copy = { ...JSON.parse(JSON.stringify(src)), id: uid(), title: r.title && r.title !== src.title ? r.title : `${src.title} (${r.versionName || titleCase(r.to)})`,
+      ingredients: r.ingredients, steps: r.steps, cookMins: r.cookMins ?? src.cookMins, fav: false };
+    delete copy.versions; delete copy.version;
+    state.meals.unshift(copy);
+    closeSwap();
+    await saveAll();
+    renderMeals(); populateCookSelect();
+    openMealView(copy.id);
+    status(`Saved "${copy.title}"`);
+  });
+
   const firstUrl = text => (String(text || "").match(/https?:\/\/[^\s<>"']+/) || [])[0] || "";
 
   async function runImport(url) {

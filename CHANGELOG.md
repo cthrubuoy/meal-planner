@@ -3,6 +3,17 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v30 — Swap an ingredient, saved as a version (2026-10-06)
+Cache `meal-planner-v32` · assets `?v=30` · export schema 16 (meals can have `versions` and `version`) · scan server 2.8 (`POST /swap`)
+
+### Added
+- **Swap an ingredient** (a meal's ⋯ menu): choose what to swap (the main protein is picked for you) and what for (Turkey mince, Chicken thigh, Prawns, Halloumi, Chickpeas… or type it). **Rework the recipe** asks Gemini to:
+  - replace it with a sensible amount, and add anything it really needs (e.g. oil to brown mince);
+  - rewrite only the steps that depend on it (method, times, "cooked through" cues), leaving the others word for word.
+- **Review before saving:** what changed ("1 ingredient swapped · 3 steps changed · +4 min"), each changed ingredient and step (old crossed out, new underneath) and a one-line **Why**.
+- **Save as a version** (or **Save as a new meal**). The meal page then shows **Original · Turkey mince**; tap to switch. The shopping list, plan, cook mode and Edit all use the version you've chosen. A version can be deleted; the original always stays.
+- Only shown when the scan server supports it (2.8 or later).
+
 ## v29 — Who's cooking, not-cooking days, leftovers, week rollover (2026-10-06)
 Cache `meal-planner-v31` · assets `?v=29` · export schema **16** (adds `chefs` and `offDays`; plan entries can have `chef` and `left`; cook log entries can have `by`; older backups still import)
 

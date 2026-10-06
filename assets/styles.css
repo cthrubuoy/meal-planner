@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v29
+   Meal Planner & Shopping List — v30
    ===================================================== */
 
 :root{
@@ -2209,3 +2209,33 @@ body.rail-on .hint{ left:104px; }
 .ro-move select{ min-height:40px; width:auto; }
 /* an avatar is never a cover photo, whatever card it sits on (the hero/calendar img rules) */
 img.chef-av{ position:static !important; inset:auto !important; aspect-ratio:1 / 1; flex:0 0 auto; }
+
+/* =====================================================
+   SWAP AN INGREDIENT · VERSIONS (v30)
+   ===================================================== */
+.swap-dialog{ width:min(640px, 96vw); }
+.swap-from{ display:grid; gap:4px; max-height:38vh; overflow:auto; margin:6px 0 12px; }
+.swap-ing{ display:flex; align-items:center; gap:10px; min-height:44px; padding:0 10px; border-radius:12px; border:1px solid var(--border); cursor:pointer; }
+.swap-ing:has(input:checked){ border-color: var(--accent-border); background: var(--accent-glow); }
+.swap-ing input{ accent-color: var(--accent); width:20px; height:20px; }
+.swap-ing span:nth-of-type(1){ flex:1 1 auto; }
+#swap-to{ margin:6px 0 8px; }
+#swap-to-own{ margin-bottom:12px; }
+.swap-go{ width:100%; min-height:48px; justify-content:center; }
+.swap-wait{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:40px 0; }
+.swap-wait[hidden]{ display:none; }
+.swap-summary{ display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
+.swap-list{ list-style:none; padding:0; margin:4px 0 10px; display:grid; gap:6px; }
+.swap-list li{ display:flex; flex-direction:column; gap:3px; }
+.swap-steps li .was, .swap-steps li .now{ display:block; margin-top:3px; }
+.swap-steps li::marker{ color: var(--accent-text); font-weight:700; }
+.swap-list li{ padding:8px 10px; border-radius:10px; background: var(--card); }
+.swap-steps{ padding-left:24px; display:grid; gap:10px; }
+.was{ color: var(--muted); text-decoration: line-through; }
+.now{ color: var(--text); font-weight:600; }
+.now::before{ content:"→ "; color: var(--accent-text); }
+.swap-list .now:first-child::before{ content:""; }
+.swap-why{ padding:10px 12px; border-radius:12px; background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.swap-why:empty{ display:none; }
+.swap-btns{ margin-top:10px; }
+.mv-versions{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:12px 0 0; }
