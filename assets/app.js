@@ -659,9 +659,10 @@ function openWhatsNew(){
   $("#whatsnew").classList.add("open");
   $("#whatsnew").setAttribute("aria-hidden", "false");
   lockBodyScroll(true);
-  local.set(WHATS_NEW_KEY, String(APP_VERSION));
 }
+/* Marked as seen only when closed, so an update reload while it's open shows it again */
 function closeWhatsNew(){
+  local.set(WHATS_NEW_KEY, String(APP_VERSION));
   $("#whatsnew").classList.remove("open");
   $("#whatsnew").setAttribute("aria-hidden", "true");
   lockBodyScroll(false);

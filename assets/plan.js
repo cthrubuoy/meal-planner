@@ -344,36 +344,46 @@
   function attachCalDrag(item){
     item.addEventListener("pointerdown", (e) => {
       if (e.button > 0) return;
-      drag = { item, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType === "touch", on: false, timer: null };
-      if (drag.touch) drag.timer = setTimeout(() => { if (drag && drag.item === item) startDrag(e.clientX, e.clientY); }, 320);
+      drag = { item, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType === "touch", armed: false, on: false, timer: null };
+      // touch: a hold arms the drag (buzz + lift); the ghost appears on the first move
+      if (drag.touch) drag.timer = setTimeout(() => { if (drag && drag.item === item){ drag.armed = true; item.classList.add("drag-armed"); haptic(10); } }, 320);
     });
     item.addEventListener("pointermove", (e) => {
       if (!drag || drag.item !== item || e.pointerId !== drag.id) return;
       const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
       if (!drag.on){
-        if (drag.touch){ if (dist > 8){ clearTimeout(drag.timer); drag = null; } return; }   // a scroll
-        if (dist > 6) startDrag(e.clientX, e.clientY); else return;
+        if (drag.touch && !drag.armed){ if (dist > 8){ clearTimeout(drag.timer); drag = null; } return; }   // a scroll
+        if (dist > (drag.touch ? 4 : 6)) startDrag(e.clientX, e.clientY); else return;
       }
       try { item.setPointerCapture(e.pointerId); } catch { /* ok */ }
       moveGhost(e.clientX, e.clientY);
     });
-    item.addEventListener("touchmove", (e) => { if (drag?.on) e.preventDefault(); }, { passive: false });
+    item.addEventListener("touchmove", (e) => { if (drag?.armed || drag?.on) e.preventDefault(); }, { passive: false });
     const end = async (e, cancelled) => {
       if (!drag || drag.item !== item) return;
       clearTimeout(drag.timer);
       const d = drag; drag = null;
-      if (!d.on) return;
+      item.classList.remove("drag-armed");
+      if (!d.on){
+        // held, then let go without moving: treat it as a tap
+        if (d.armed && !cancelled){ swallowClick(item); calMenu(item, item.dataset.iso, Number(item.dataset.idx)); }
+        return;
+      }
       d.ghost.remove();
       item.classList.remove("drag-src");
       $$(".cal-cell.drop").forEach(c => c.classList.remove("drop"));
-      item.dataset.dragged = "1";                 // swallow the click that follows
-      setTimeout(() => delete item.dataset.dragged, 0);
+      swallowClick(item);
       const cell = !cancelled && cellAt(e.clientX, e.clientY);
       if (cell) await moveMeal(item.dataset.iso, Number(item.dataset.idx), cell.dataset.day);
     };
     item.addEventListener("pointerup", e => end(e, false));
     item.addEventListener("pointercancel", e => end(e, true));
     item.addEventListener("contextmenu", e => { if (drag) e.preventDefault(); });
+  }
+  /* The click that follows a drag (or a handled hold) must not open the menu */
+  function swallowClick(item){
+    item.dataset.dragged = "1";
+    setTimeout(() => delete item.dataset.dragged, 350);
   }
   function startDrag(x, y){
     if (!drag) return;
@@ -386,7 +396,7 @@
     document.body.appendChild(g);
     drag.ghost = g;
     drag.item.classList.add("drag-src");
-    haptic(10);
+    if (!drag.touch) haptic(10);
     moveGhost(x, y);
   }
   function cellAt(x, y){

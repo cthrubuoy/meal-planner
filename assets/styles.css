@@ -1690,7 +1690,7 @@ h1{ font-size:1.12rem; }
 .hint > .ic{ color: var(--gold); }
 .hint span{ flex:1 1 auto; }
 .hint .btn{ flex:0 0 auto; }
-@media (min-width:840px){ .hint{ left:24px; right:auto; bottom:88px; max-width:440px; } }
+@media (min-width:840px){ .hint{ left:24px; right:auto; bottom:124px; max-width:440px; } }
 body.modal-open .hint, body.cooking .hint{ display:none; }
 
 /* ============== E13 — What's new ============== */
@@ -1736,3 +1736,4 @@ body.modal-open .hint, body.cooking .hint{ display:none; }
 }
 .today-kicker{ align-self:flex-start; background: rgba(0,0,0,.42); padding:3px 9px; border-radius:999px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
 .today-hero-empty .today-kicker{ background: var(--accent-glow); backdrop-filter:none; }
+.cal-item.drag-armed{ transform: scale(1.04); box-shadow: 0 0 0 2px var(--accent), 0 10px 24px rgba(0,0,0,.35); transition: transform .12s ease; }
