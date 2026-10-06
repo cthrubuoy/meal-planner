@@ -3,6 +3,20 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v31 — Tidy-up: unused and overridden styles removed (2026-10-06)
+Cache `meal-planner-v33` · assets `?v=31` · export schema 16 (unchanged)
+
+### Changed
+- **The style sheet was tidied (T1)**, with no visible change:
+  - **25 rules removed** for things the app no longer has (the old search sheet, the "contains" bar, the old meal-page columns, the old plan rows, the scan icon), and 3 selector lists trimmed.
+  - **38 declarations removed** that a later copy of the same rule always overrode (the "layered" fixes from earlier versions). 16 more were folded into that later copy where nothing in between could change the result.
+  - **Checked:** 80 screenshots (20 screens × phone, tablet portrait, tablet landscape, computer) before and after. 74 are byte-identical, and the other 6 differ exactly as much as two "before" runs do (the random meal picker and background thumbnail loading).
+- No unused JavaScript functions were found.
+
+### Fixed
+- Dragging a meal to another day in the calendar kept the meal but lost who was cooking it (and its leftovers mark). It keeps both now, and a "not cooking" reason on the day it lands on is cleared.
+- The What's new list keeps the v30 items (swap an ingredient), for anyone updating straight from v29.
+
 ## v30 — Swap an ingredient, saved as a version (2026-10-06)
 Cache `meal-planner-v32` · assets `?v=30` · export schema 16 (meals can have `versions` and `version`) · scan server 2.8 (`POST /swap`)
 

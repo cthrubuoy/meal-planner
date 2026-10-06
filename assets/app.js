@@ -801,11 +801,12 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
   ["swap", "Swap an ingredient", "On a meal's ⋯ menu: swap the chicken for turkey mince (or anything). Gemini reworks the amounts and the steps that mention it, you check the changes, then save it as a version."],
-  ["cards", "Versions of a meal", "The meal page switches between Original and e.g. Turkey mince. Shopping, the plan and cook mode follow the one you choose."]
+  ["cards", "Versions of a meal", "The meal page switches between Original and e.g. Turkey mince. Shopping, the plan and cook mode follow the one you choose."],
+  ["sparkles", "Tidier under the hood", "Old styles that nothing used any more were removed. Nothing should look different."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

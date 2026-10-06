@@ -427,7 +427,8 @@
     const before = JSON.stringify(state.plan);
     if (e.pin) items.push({ mealId: e.mealId, pin: true, skipped: true });   // a pinned meal is skipped on its old day this week
     setDay(fromIso, items);
-    setDay(toIso, [...planned(toIso), { mealId: e.mealId, ...(e.x === 2 ? { x: 2 } : {}) }]);
+    setDay(toIso, [...planned(toIso), { mealId: e.mealId, ...(e.x === 2 ? { x: 2 } : {}), ...(e.chef ? { chef: e.chef } : {}), ...(e.left ? { left: 1 } : {}) }]);
+    if (state.offDays[toIso]){ delete state.offDays[toIso]; idbSet(IDB_KEYS.offDays, state.offDays); }   // cooking there after all
     await savePlan();
     renderPlan();
     haptic(15);
