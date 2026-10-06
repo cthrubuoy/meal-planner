@@ -444,7 +444,7 @@ async function idbSet(k, v){
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE, "readwrite");
     const rq = tx.objectStore(STORE).put(v, k);
-    rq.onsuccess = () => res();
+    rq.onsuccess = () => { res(); window.syncNoteChange?.(k); };   // sync.js: send this change to linked devices
     rq.onerror   = () => rej(rq.error);
   });
 }
@@ -642,11 +642,12 @@ $("#hints-reset")?.addEventListener("click", () => {
 });
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["link",     "Join steps", "In Edit, tap Join between two steps to make them one (e.g. \"Add butter to a pan.\" + \"Once melted, add the onions.\"). Steps that start with Once…, When… or Then… are highlighted as likely joins, with a Join suggested button."],
-  ["edit",     "Edit a step's text", "Tap a step's words in Edit to change them."]
+  ["refresh",  "Sync across devices", "Settings › Sync: turn it on here, then link your phone, PC and your household with a QR code or a short code. Meals, photos, the plan and the shopping list stay the same everywhere."],
+  ["cart",     "Shop together", "Tick items off on your phone in the shop and the tablet catches up within seconds. Works offline too — changes send when you're back online."],
+  ["info",     "Your own copy stays", "Each device keeps all the data, so the app still works without signal. Theme, text size and layout stay per device."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -3101,7 +3102,10 @@ $("#import")?.addEventListener("change", async (e) => {
     const migrated = migrateImport(json);
     if (!migrated) throw new Error("Invalid file");
 
-    if (!confirm(`Import will REPLACE current data with ${migrated.meals.length} meal${migrated.meals.length === 1 ? "" : "s"}. Continue?`)){
+    const everyone = window.syncIsOn?.() ? "\n\nSync is on: this replaces the meals, plan and lists for EVERYONE in your household (meals not in the file are deleted for them too)." : "";
+    if (!confirm(`Import will REPLACE current data with ${migrated.meals.length} meal${migrated.meals.length === 1 ? "" : "s"}.${everyone}
+
+Continue?`)){
       e.target.value = ""; return;
     }
     state.meals = migrated.meals;
@@ -3132,7 +3136,11 @@ $("#import")?.addEventListener("change", async (e) => {
 
 $("#clear-all")?.addEventListener("click", async () => {
   if (!state.meals.length){ status("Nothing to clear."); return; }
-  if (!confirm("Delete ALL saved meals? This cannot be undone (export first if needed).")) return;
+  if (window.syncIsOn?.()){
+    // never wipe the household: stop syncing first, then clear this device only
+    if (!confirm("This device is in sync. Clear all will turn sync off on this device and clear only this device — your other devices and household keep everything. Continue?")) return;
+    await window.syncLeave({ quiet: true });
+  } else if (!confirm("Delete ALL saved meals? This cannot be undone (export first if needed).")) return;
   state.meals = [];
   state.history = {};
   state.cooklog = {};
@@ -3166,6 +3174,7 @@ function showSettingsTab(tab){
     const on = b.dataset.stab === tab;
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", String(on));
+    if (on) b.scrollIntoView({ block: "nearest", inline: "nearest" });   // the tab row scrolls sideways on phones
   });
   $$("[data-spanel]").forEach(p => { p.hidden = p.dataset.spanel !== tab; });
   settingsModal.querySelector(".dialog").scrollTop = 0;

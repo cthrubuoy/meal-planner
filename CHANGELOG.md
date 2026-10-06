@@ -3,6 +3,29 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v21 — Sync across devices and your household (2026-10-06)
+Cache `meal-planner-v23` · assets `?v=21` · export schema 14 (unchanged)
+
+### Added
+- **Settings › Sync.** Turn it on on one device, then link your other devices and your household:
+  - Tap **Show a code** for a QR code and a short code. A code works once, for 15 minutes.
+  - Scan the QR with the other device's camera, or type the code in Settings › Sync › **Join with a code**. Chrome and Brave on Android can also scan inside the app.
+- **What syncs:** meals and photos, plan and pins, cook log, shop history, staples, "This week", the ingredient normaliser and unit defaults, the avoid list and cook days.
+- **The current shopping list syncs too:** ticked meals, "got it" ticks and ×2. Tick items off on your phone in the shop and the tablet catches up within about 15 seconds.
+- **Works offline:** each device keeps its own full copy. Changes wait until you're back online, and survive closing the app.
+- **Joining with existing data:** a backup downloads first. Then, for meals on both, the household's version wins, and meals only on that device are added for everyone.
+- **Linked devices list:** shows when each was last active, with **Unlink**.
+- **Recovery key:** links a device if you ever lose all of yours. Any linked device can show it.
+- **Status dot** on the Settings button: green when synced, amber while syncing, grey when offline, red if there's a problem.
+
+### Changed
+- **Clear all on a synced device** turns sync off on that device first and only clears that device. Your household keeps everything.
+- **Import on a synced device** warns that it replaces the data for everyone.
+
+### Notes
+- Stays per device: theme, text size, layout and units.
+- Your data is stored in your own Cloudflare account (a sync server separate from the scan server).
+
 ## v20 — Join steps, edit step text (2026-10-06)
 Cache `meal-planner-v22` · assets `?v=20` · export schema 14 (unchanged)
 

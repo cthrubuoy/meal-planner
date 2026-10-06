@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=20" />
-  <link rel="stylesheet" href="assets/styles.css?v=20" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=21" />
+  <link rel="stylesheet" href="assets/styles.css?v=21" />
 </head>
 <body>
 
@@ -24,12 +24,12 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v20</span>
+      <span class="pill">v21</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
       <button id="search-open" class="btn icon-btn" title="Search meals" aria-label="Search meals"><i data-icon="search"></i></button>
-      <button id="settings" class="btn icon-btn" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button>
+      <button id="settings" class="btn icon-btn" title="Settings" aria-label="Settings"><i data-icon="settings"></i><span class="sync-badge" hidden></span></button>
     </div>
   </div>
 </header>
@@ -562,6 +562,7 @@
         <button class="stab" role="tab" data-stab="pantry">Pantry</button>
         <button class="stab" role="tab" data-stab="history">History</button>
         <button class="stab" role="tab" data-stab="data">Data</button>
+        <button class="stab" role="tab" data-stab="sync">Sync</button>
         <button class="stab" role="tab" data-stab="about">About</button>
       </nav>
     </div>
@@ -711,6 +712,71 @@
       </div>
     </section>
 
+    <section class="spanel" data-spanel="sync" role="tabpanel" hidden>
+      <div id="sync-panel">
+        <div id="sync-off">
+          <h4 class="h4">Sync across devices</h4>
+          <p class="muted small">Share your meals, photos, plan and shopping list between your tablet, phone and PC — and with your household. Each device keeps its own copy, so the app still works without signal; changes send when you're online.</p>
+          <label for="sync-device-name">Name for this device</label>
+          <input id="sync-device-name" type="text" maxlength="40" placeholder="e.g. Tablet" />
+          <div class="group mt8">
+            <button type="button" id="sync-create" class="btn primary"><i data-icon="refresh" data-size="16"></i>Turn on sync</button>
+            <button type="button" id="sync-join-open" class="btn"><i data-icon="link" data-size="16"></i>Join with a code</button>
+          </div>
+          <p class="muted small">Turn on sync on the device with your most up-to-date meals (your tablet). Then link the others with a code.</p>
+          <div id="sync-join" class="sync-join" hidden>
+            <label for="sync-code">Code from a linked device (or your recovery key)</label>
+            <div class="group">
+              <input id="sync-code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. K7QD2-MXP4R" />
+              <button type="button" id="sync-scan" class="btn" hidden><i data-icon="camera" data-size="16"></i>Scan QR</button>
+              <button type="button" id="sync-join-go" class="btn primary">Join</button>
+            </div>
+            <video id="sync-video" class="sync-video" hidden playsinline muted></video>
+            <p class="muted small">If this device already has meals, a backup downloads first. Meals on both keep the household's version; meals only here are added for everyone.</p>
+          </div>
+        </div>
+
+        <div id="sync-on" hidden>
+          <div class="sync-status">
+            <span id="sync-dot" class="sync-dot"></span>
+            <span id="sync-status-text" class="small"></span>
+            <button type="button" id="sync-now" class="btn mini ghost"><i data-icon="refresh" data-size="14"></i>Sync now</button>
+          </div>
+
+          <h4 class="h4">Add a device or person</h4>
+          <p class="muted small">Show a code here, then on the other device scan the QR with its camera, or open Settings › Sync › Join with a code.</p>
+          <button type="button" id="sync-invite" class="btn primary"><i data-icon="plus" data-size="16"></i>Show a code</button>
+          <div id="sync-invite-box" class="sync-invite" hidden>
+            <div id="sync-qr" class="sync-qr" aria-label="QR code to join"></div>
+            <div class="sync-invite-text">
+              <div id="sync-invite-code" class="sync-code"></div>
+              <p id="sync-invite-exp" class="muted small"></p>
+              <button type="button" id="sync-invite-share" class="btn mini"><i data-icon="share" data-size="14"></i>Share link</button>
+            </div>
+          </div>
+
+          <h4 class="h4">Linked devices</h4>
+          <ul id="sync-devices" class="sync-devices"></ul>
+
+          <h4 class="h4">Recovery key</h4>
+          <p class="muted small">Links a new device if you ever lose all of yours. Keep it somewhere safe (Google Keep, a password manager).</p>
+          <div class="group">
+            <code id="sync-recovery" class="sync-code small" hidden></code>
+            <button type="button" id="sync-recovery-show" class="btn mini">Show</button>
+            <button type="button" id="sync-recovery-copy" class="btn mini"><i data-icon="copy" data-size="14"></i>Copy</button>
+          </div>
+
+          <hr class="sep" />
+          <button type="button" id="sync-leave" class="btn">Turn off sync on this device</button>
+        </div>
+
+        <div id="sync-progress" class="sync-progress" hidden>
+          <div class="sync-bar"><div id="sync-progress-bar"></div></div>
+          <span id="sync-progress-text" class="small"></span>
+        </div>
+      </div>
+    </section>
+
     <section class="spanel" data-spanel="about" role="tabpanel" hidden>
       <h4 class="h4">Meal Planner <span id="about-version"></span></h4>
       <p class="muted small">Your meals, plans and shopping list stay in this browser on this device.</p>
@@ -826,11 +892,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=20" defer></script>
-<script src="assets/app.js?v=20" defer></script>
-<script src="assets/cook.js?v=20" defer></script>
-<script src="assets/plan.js?v=20" defer></script>
-<script src="assets/scan.js?v=20" defer></script>
-<script src="assets/pwa.js?v=20" defer></script>
+<script src="assets/icons.js?v=21" defer></script>
+<script src="assets/app.js?v=21" defer></script>
+<script src="assets/cook.js?v=21" defer></script>
+<script src="assets/plan.js?v=21" defer></script>
+<script src="assets/vendor/qrcode.js?v=21" defer></script>
+<script src="assets/sync.js?v=21" defer></script>
+<script src="assets/scan.js?v=21" defer></script>
+<script src="assets/pwa.js?v=21" defer></script>
 </body>
 </html>

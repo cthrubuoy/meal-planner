@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v20
+   Meal Planner & Shopping List — v21
    ===================================================== */
 
 :root{
@@ -1785,3 +1785,42 @@ body.modal-open .hint, body.cooking .hint{ display:none; }
   display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;
   padding:8px 10px; border:1px solid var(--accent-border); border-radius: var(--radius-sm); background: var(--accent-glow);
 }
+
+/* =====================================================
+   v21 — SYNC (Settings › Sync, status dot on the Settings button)
+   ===================================================== */
+#settings{ position:relative; }
+.sync-badge{
+  position:absolute; top:5px; right:5px; width:9px; height:9px; border-radius:50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--panel);
+}
+.sync-badge[hidden]{ display:none; }
+.sync-badge[data-state="offline"], .sync-dot[data-state="offline"]{ background: var(--muted); }
+.sync-badge[data-state="error"], .sync-dot[data-state="error"]{ background: var(--danger); }
+.sync-badge[data-state="syncing"], .sync-dot[data-state="syncing"]{ background: var(--gold); }
+.sync-status{
+  display:flex; align-items:center; gap:10px; padding:10px 12px; margin-bottom:8px;
+  border:1px solid var(--border); border-radius: var(--radius-sm); background: var(--card);
+}
+.sync-status #sync-status-text{ flex:1 1 auto; min-width:0; }
+.sync-dot{ flex:0 0 10px; height:10px; border-radius:50%; background: var(--accent); }
+.sync-join{ margin-top:12px; padding:12px; border:1px dashed var(--accent-border); border-radius: var(--radius-sm); }
+.sync-join .group input{ flex:1 1 180px; min-width:0; text-transform:uppercase; letter-spacing:.08em; }
+.sync-video{ width:100%; max-height:260px; margin-top:8px; border-radius: var(--radius-sm); background:#000; object-fit:cover; }
+.sync-video[hidden]{ display:none; }
+.sync-invite{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:12px; padding:12px; border:1px solid var(--accent-border); border-radius: var(--radius-sm); background: var(--accent-glow); }
+.sync-invite[hidden]{ display:none; }
+.sync-qr{ width:180px; height:180px; padding:8px; background:#fff; border-radius:12px; flex:0 0 auto; }
+.sync-qr svg{ width:100%; height:100%; display:block; }
+.sync-invite.expired .sync-qr, .sync-invite.expired .sync-code{ opacity:.3; }
+.sync-invite-text{ flex:1 1 160px; min-width:0; }
+.sync-code{ font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size:1.6rem; font-weight:700; letter-spacing:.12em; overflow-wrap:anywhere; }
+code.sync-code.small{ font-size:.95rem; padding:6px 10px; background: var(--chip); border-radius:8px; }
+code.sync-code[hidden]{ display:none; }
+.sync-devices{ list-style:none; margin:0; padding:0; }
+.sync-devices li{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 0; border-bottom:1px dashed var(--border); }
+.sync-dev-name{ flex:1 1 auto; display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+.sync-progress{ margin-top:12px; }
+.sync-progress[hidden]{ display:none; }
+.sync-bar{ height:6px; border-radius:999px; background: var(--chip); overflow:hidden; margin-bottom:6px; }
+#sync-progress-bar{ height:100%; width:0; background: var(--accent); transition: width .2s ease; }
