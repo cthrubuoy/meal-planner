@@ -3,6 +3,25 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v23 — Diagnostics log (2026-10-06)
+Cache `meal-planner-v25` · assets `?v=23` · export schema 14 (unchanged)
+
+### Added
+- **Settings › Advanced › Diagnostics log.** What happened behind the scenes, newest first; tap a line for the details:
+  - **every scan** (card, back of card, dish photo, link import): when it started, how long it took, the photo size, and the result
+  - **failed scans:** the exact reason, including each attempt the scan server made with Gemini (which model, and whether it was busy, rate-limited or declined)
+  - a scan that **started but never finished**, e.g. because the app was closed mid-scan
+  - **sync problems** and recoveries, joining and unlinking
+  - **any unexpected app error**
+- **Log controls:** an "Errors only" filter, plus Copy, Share and Clear. The log is kept on the device only (the last 300 events).
+- **A red dot on the Settings button** when a new error has been logged. It clears when you open Advanced.
+- **Check now** (Settings › Advanced): checks whether the scan and sync servers are reachable and which versions they're running.
+- **Scan error messages** now end with "details in Settings › Advanced".
+
+### Changed (scan server v2.5)
+- When a scan fails, the server sends back the list of Gemini attempts for the log.
+- Cloudflare now keeps the scan server's request logs for a few days, so failures can be looked at afterwards.
+
 ## v22 — Live search, save while the back of a card scans (2026-10-06)
 Cache `meal-planner-v24` · assets `?v=22` · export schema 14 (unchanged)
 

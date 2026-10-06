@@ -641,13 +641,114 @@ $("#hints-reset")?.addEventListener("click", () => {
   status("Tips will show again on each screen.");
 });
 
+/* ============== Diagnostics log (Settings › Advanced) ==============
+   What happened behind the scenes — scans, sync, errors — so a brief toast
+   isn't the only record. Kept on this device only (localStorage), last 300.
+   logEvent(level, area, message, detail?) is used by scan.js and sync.js too. */
+const DIAG_KEY = "diag-log-v1";
+const DIAG_MAX = 300;
+function diagRead(){ try { return JSON.parse(localStorage.getItem(DIAG_KEY) || "[]"); } catch { return []; } }
+function logEvent(level, area, message, detail){
+  const e = { t: new Date().toISOString(), level, area, message: String(message ?? "").slice(0, 400) };
+  if (detail !== undefined){
+    let s;
+    try { s = JSON.stringify(detail); } catch { s = String(detail); }
+    e.detail = s && s.length > 4000 ? s.slice(0, 4000) + "…" : s;
+  }
+  const list = diagRead();
+  list.push(e);
+  while (list.length > DIAG_MAX) list.shift();
+  try { localStorage.setItem(DIAG_KEY, JSON.stringify(list)); } catch { /* full or private mode */ }
+  if (level === "error") $("#settings")?.classList.add("has-errors");
+  if (!$('[data-spanel="advanced"]')?.hidden) renderDiag();
+}
+window.addEventListener("error", (e) => {
+  if (!e.message) return;                    // resource load errors (images etc.) have no message
+  logEvent("error", "app", e.message, { at: `${(e.filename || "").split("/").pop()}:${e.lineno}:${e.colno}` });
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  logEvent("error", "app", `Unhandled: ${r?.message || r}`, r?.stack ? { stack: String(r.stack).slice(0, 800) } : undefined);
+});
+
+function diagText(list){
+  return list.map(e => `${e.t}  ${e.level.toUpperCase().padEnd(5)} ${e.area.padEnd(5)} ${e.message}${e.detail ? `\n    ${e.detail}` : ""}`).join("\n");
+}
+function renderDiag(){
+  const ul = $("#diag-list");
+  if (!ul) return;
+  const errorsOnly = $("#diag-errors-only")?.checked;
+  const list = diagRead().filter(e => !errorsOnly || e.level === "error").reverse();
+  $("#diag-count").textContent = `${list.length} event${list.length === 1 ? "" : "s"}`;
+  ul.innerHTML = list.length ? list.map(e => {
+    const d = new Date(e.t);
+    const when = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("en-GB");
+    let detail = "";
+    if (e.detail){
+      let pretty = e.detail;
+      try { pretty = JSON.stringify(JSON.parse(e.detail), null, 2); } catch { /* plain text */ }
+      detail = `<pre class="diag-detail">${escapeHtml(pretty)}</pre>`;
+    }
+    return `<li class="diag-${escapeHtml(e.level)}">
+      <details${e.level === "error" && !errorsOnly ? "" : ""}>
+        <summary><span class="diag-level">${escapeHtml(e.level)}</span><span class="diag-area">${escapeHtml(e.area)}</span><span class="diag-msg">${escapeHtml(e.message)}</span><span class="diag-time">${escapeHtml(when)}</span></summary>
+        ${detail || `<p class="muted small">No more detail.</p>`}
+      </details>
+    </li>`;
+  }).join("") : `<li class="muted small">Nothing logged yet.</li>`;
+}
+$("#diag-errors-only")?.addEventListener("change", renderDiag);
+$("#diag-copy")?.addEventListener("click", async () => {
+  const text = `Meal Planner v${APP_VERSION} · ${navigator.userAgent}\n\n` + diagText(diagRead().slice().reverse());
+  try { await navigator.clipboard.writeText(text); status("Log copied — paste it to Claude or into a message."); }
+  catch { alert(text.slice(0, 4000)); }
+});
+$("#diag-share")?.addEventListener("click", async () => {
+  const text = `Meal Planner v${APP_VERSION} · ${navigator.userAgent}\n\n` + diagText(diagRead().slice().reverse());
+  try { if (navigator.share) await navigator.share({ title: "Meal Planner log", text }); else $("#diag-copy").click(); } catch { /* cancelled */ }
+});
+$("#diag-clear")?.addEventListener("click", () => {
+  if (!confirm("Clear the diagnostics log on this device?")) return;
+  try { localStorage.removeItem(DIAG_KEY); } catch { /* ok */ }
+  $("#settings")?.classList.remove("has-errors");
+  renderDiag();
+});
+/* "Check servers": is each server reachable, and which version is it running? */
+$("#diag-check")?.addEventListener("click", async () => {
+  const out = $("#diag-check-out");
+  out.hidden = false; out.textContent = "Checking…";
+  const check = async (name, url) => {
+    const t0 = performance.now();
+    try {
+      const r = await fetch(url, { cache: "no-store" });
+      const j = await r.json();
+      const ms = Math.round(performance.now() - t0);
+      const line = `${name}: OK (${ms} ms)${j.version ? ` · version ${j.version}` : ""}`;
+      logEvent("info", "check", line, j);
+      return line;
+    } catch (e){
+      const line = `${name}: couldn't reach it (${e.message || e})`;
+      logEvent("error", "check", line);
+      return line;
+    }
+  };
+  const lines = await Promise.all([
+    check("Scan server", "https://meal-planner-backend.meal-planner-backend.workers.dev/health"),
+    check("Sync server", "https://meal-planner-sync.meal-planner-backend.workers.dev/health")
+  ]);
+  out.textContent = [`App v${APP_VERSION} · ${navigator.onLine ? "online" : "offline"}`, ...lines].join("\n");
+});
+$$('[data-stab="advanced"]').forEach(b => b.addEventListener("click", () => {
+  $("#settings")?.classList.remove("has-errors");
+  renderDiag();
+}));
+
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["search",   "Search as you type", "A search box at the top of Meals. Type \"ru\" and your rump steak is there — no button to press. Meals with it in the title come first, then meals with it in the ingredients."],
-  ["camera",   "Save while the back of a card scans", "Press Save and carry on: the steps are added to the meal when the scan finishes (with Undo if it replaced old steps)."],
-  ["refresh",  "Sync", "Settings › Sync keeps your tablet, phone, PC and household in step."]
+  ["info",     "Diagnostics log", "Settings › Advanced shows what happened behind the scenes — every scan (how long it took, and exactly why it failed), sync problems and errors. Copy it to send when something goes wrong. A red dot on Settings means there's a new error to look at."],
+  ["refresh",  "Check the servers", "Settings › Advanced › Check now: are the scan and sync servers reachable, and which versions are they running?"]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

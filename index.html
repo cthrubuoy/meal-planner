@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=22" />
-  <link rel="stylesheet" href="assets/styles.css?v=22" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=23" />
+  <link rel="stylesheet" href="assets/styles.css?v=23" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v22</span>
+      <span class="pill">v23</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -568,6 +568,7 @@
         <button class="stab" role="tab" data-stab="history">History</button>
         <button class="stab" role="tab" data-stab="data">Data</button>
         <button class="stab" role="tab" data-stab="sync">Sync</button>
+        <button class="stab" role="tab" data-stab="advanced">Advanced</button>
         <button class="stab" role="tab" data-stab="about">About</button>
       </nav>
     </div>
@@ -782,6 +783,26 @@
       </div>
     </section>
 
+    <section class="spanel" data-spanel="advanced" role="tabpanel" hidden>
+      <h4 class="h4">Diagnostics log</h4>
+      <p class="muted small">What the app did behind the scenes — scans, sync and errors — newest first. Tap a line for the details. Kept on this device only (the last 300 events). When something goes wrong, <b>Copy</b> and paste it to Claude.</p>
+      <div class="group diag-tools">
+        <label class="diag-filter"><input type="checkbox" id="diag-errors-only" /> Errors only</label>
+        <span id="diag-count" class="muted small"></span>
+        <span class="toolbar-spacer"></span>
+        <button type="button" id="diag-copy" class="btn mini"><i data-icon="copy" data-size="14"></i>Copy</button>
+        <button type="button" id="diag-share" class="btn mini"><i data-icon="share" data-size="14"></i>Share</button>
+        <button type="button" id="diag-clear" class="btn mini ghost">Clear</button>
+      </div>
+      <ul id="diag-list" class="diag-list"></ul>
+
+      <hr class="sep" />
+      <h4 class="h4">Check the servers</h4>
+      <p class="muted small">Are the scan and sync servers reachable from this device, and which versions are they running?</p>
+      <button type="button" id="diag-check" class="btn"><i data-icon="refresh" data-size="16"></i>Check now</button>
+      <pre id="diag-check-out" class="diag-check" hidden></pre>
+    </section>
+
     <section class="spanel" data-spanel="about" role="tabpanel" hidden>
       <h4 class="h4">Meal Planner <span id="about-version"></span></h4>
       <p class="muted small">Your meals, plans and shopping list stay in this browser on this device.</p>
@@ -884,13 +905,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=22" defer></script>
-<script src="assets/app.js?v=22" defer></script>
-<script src="assets/cook.js?v=22" defer></script>
-<script src="assets/plan.js?v=22" defer></script>
-<script src="assets/vendor/qrcode.js?v=22" defer></script>
-<script src="assets/sync.js?v=22" defer></script>
-<script src="assets/scan.js?v=22" defer></script>
-<script src="assets/pwa.js?v=22" defer></script>
+<script src="assets/icons.js?v=23" defer></script>
+<script src="assets/app.js?v=23" defer></script>
+<script src="assets/cook.js?v=23" defer></script>
+<script src="assets/plan.js?v=23" defer></script>
+<script src="assets/vendor/qrcode.js?v=23" defer></script>
+<script src="assets/sync.js?v=23" defer></script>
+<script src="assets/scan.js?v=23" defer></script>
+<script src="assets/pwa.js?v=23" defer></script>
 </body>
 </html>

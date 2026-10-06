@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v22
+   Meal Planner & Shopping List — v23
    ===================================================== */
 
 :root{
@@ -1836,3 +1836,32 @@ code.sync-code[hidden]{ display:none; }
   grid-column: 1 / -1; margin:8px 0 0; padding-top:10px; border-top:1px solid var(--border);
   font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color: var(--muted);
 }
+
+/* =====================================================
+   v23 — DIAGNOSTICS LOG (Settings › Advanced)
+   ===================================================== */
+#settings.has-errors::after{
+  content:""; position:absolute; top:5px; left:5px; width:9px; height:9px; border-radius:50%;
+  background: var(--danger); box-shadow: 0 0 0 2px var(--panel);
+}
+.diag-tools{ margin-bottom:8px; }
+.diag-filter{ display:inline-flex; align-items:center; gap:6px; color: var(--text); }
+.diag-list{ list-style:none; margin:0; padding:0; max-height:50vh; overflow:auto; border:1px solid var(--border); border-radius: var(--radius-sm); }
+.diag-list > li{ border-bottom:1px solid var(--border); }
+.diag-list > li:last-child{ border-bottom:none; }
+.diag-list > li.muted{ padding:12px; }
+.diag-list summary{ display:flex; gap:8px; align-items:baseline; padding:8px 10px; cursor:pointer; list-style:none; font-size:.88rem; }
+.diag-list summary::-webkit-details-marker{ display:none; }
+.diag-level{ flex:0 0 auto; font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:1px 6px; border-radius:6px; background: var(--chip); color: var(--muted); }
+.diag-error .diag-level{ background: color-mix(in oklab, var(--danger) 22%, transparent); color: var(--danger); }
+.diag-warn .diag-level{ background: color-mix(in oklab, var(--gold) 22%, transparent); color: var(--gold); }
+.diag-area{ flex:0 0 auto; color: var(--muted); font-size:.78rem; }
+.diag-msg{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.diag-time{ flex:0 0 auto; color: var(--muted); font-size:.75rem; font-variant-numeric: tabular-nums; }
+.diag-detail, .diag-check{
+  margin:0 10px 10px; padding:8px 10px; border-radius:8px; background: var(--chip); color: var(--chip-text);
+  font-size:.75rem; white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto;
+}
+.diag-check{ margin:10px 0 0; }
+.diag-check[hidden]{ display:none; }
+@media (max-width:600px){ .diag-time{ display:none; } }

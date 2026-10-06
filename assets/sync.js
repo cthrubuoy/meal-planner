@@ -320,13 +320,16 @@
       if (pendingKeys.size){ clearTimeout(diffTimer); await flushNotes(); }
       await pushOutbox();
       await pullAll();
+      if (failures) logEvent("info", "sync", "Back in sync", { waiting: outbox.size });
       failures = 0;
       sync.state = "ok"; sync.last = Date.now(); sync.error = "";
     } catch (e){
       if (e.unlinked){ await unlinkedByServer(); return; }
       failures++;
+      const was = sync.state, wasErr = sync.error;
       sync.state = e.offline ? "offline" : "error";
       sync.error = e.message;
+      if (was !== sync.state || wasErr !== sync.error) logEvent(e.offline ? "warn" : "error", "sync", e.message, { status: e.status, waiting: outbox.size });
     } finally {
       running = false;
       renderStatus();
@@ -365,6 +368,7 @@
   }
   async function unlinkedByServer(){
     running = false;
+    logEvent("warn", "sync", "This device was unlinked from sync (the server no longer accepts its key)");
     await forget();
     status("This device was unlinked from sync. Its data is still here.", 6000);
   }
@@ -410,9 +414,11 @@
         await pushOutbox(progress);
         await pullAll();
         sync.state = "ok"; sync.last = Date.now();
+        logEvent("info", "sync", "Sync turned on (new household)", { records: Object.keys(meta.hashes).length });
         status("Sync is on. Add your other devices with \"Show a code\".", 5000);
         schedule(POLL_MS);
       } catch (e){
+        logEvent("error", "sync", `Couldn't turn on sync: ${e.message}`, { status: e.status });
         alert(`Couldn't turn on sync: ${e.message}\n\nNothing has changed on this device. Anything already uploaded will finish next time.`);
         sync.state = auth ? "error" : "off"; sync.error = e.message;
         if (auth) schedule(POLL_MS);
@@ -443,10 +449,12 @@
         await diffAll();                       // anything left that the household doesn't have
         await pushOutbox(progress);
         sync.state = "ok"; sync.last = Date.now();
+        logEvent("info", "sync", "Joined the household", { meals: state.meals.length });
         status("Linked — this device is now in sync.", 4000);
         schedule(POLL_MS);
         rerender(new Set(Object.keys(KEY_COLLS)));
       } catch (e){
+        logEvent("error", "sync", `Joining failed: ${e.message}`, { status: e.status });
         if (!auth || e.status === 403 || e.status === 400){
           alert(e.message);
           if (auth && !meta.cursor){ await forget(); }

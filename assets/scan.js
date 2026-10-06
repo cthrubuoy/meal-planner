@@ -14,6 +14,37 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
+  /* Every scan-server request goes in the diagnostics log (Settings › Advanced):
+     what was asked, how long it took, and why it failed (the server lists each
+     Gemini attempt). The response is returned untouched. */
+  const DETAILS = " — details in Settings › Advanced.";
+  async function loggedFetch(kind, about, url, opts) {
+    const t0 = Date.now();
+    const sentKB = opts?.body ? Math.round(opts.body.length / 1024) : 0;
+    logEvent("info", "scan", `${kind} started${about ? ` (${about})` : ""}`, { sentKB });   // no matching OK/failed line = interrupted (app closed?)
+    let resp;
+    try {
+      resp = await fetch(url, opts);
+    } catch (e) {
+      logEvent("error", "scan", `${kind}: couldn't reach the scan server${about ? ` (${about})` : ""}`, {
+        error: String(e?.message || e), ms: Date.now() - t0, sentKB, online: navigator.onLine, visible: document.visibilityState
+      });
+      throw e;
+    }
+    resp.clone().json().then(d => {
+      const ms = Date.now() - t0;
+      if (!resp.ok || d?.error) {
+        logEvent("error", "scan", `${kind} failed${about ? ` (${about})` : ""}: ${d?.reason || d?.error || "HTTP " + resp.status}`, {
+          http: resp.status, error: d?.error, reason: d?.reason, attempts: d?.attempts, ms, sentKB
+        });
+      } else {
+        const bits = [d.title && `"${d.title}"`, Array.isArray(d.ingredients) && `${d.ingredients.length} ingredients`, Array.isArray(d.steps) && `${d.steps.length} steps`, kind === "dish photo" && (d.dishPhoto ? "photo found" : "no photo found")].filter(Boolean);
+        logEvent("info", "scan", `${kind} OK${about ? ` (${about})` : ""}${bits.length ? ": " + bits.join(", ") : ""}`, { ms, sentKB });
+      }
+    }).catch(() => logEvent("error", "scan", `${kind}: the reply wasn't readable (HTTP ${resp.status})${about ? ` (${about})` : ""}`, { ms: Date.now() - t0, sentKB }));
+    return resp;
+  }
+
   const scanModal = $("#scan-modal");
   const scanLoading = $("#scan-loading");
   const scanError = $("#scan-error");
@@ -121,7 +152,7 @@
     if (!card){ status("Couldn't read that photo.", 4000); return; }
     let box = null;
     try {
-      const resp = await fetch(SCAN_ENDPOINT, {
+      const resp = await loggedFetch("dish photo", state.meals.find(m => m.id === state.editingId)?.title || "", SCAN_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: card, mode: "photo_only" })
@@ -154,7 +185,7 @@
     scanLastFile = null;
     let resp, data;
     try {
-      resp = await fetch(`${SCAN_BASE}/import`, {
+      resp = await loggedFetch("link import", url, `${SCAN_BASE}/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url })
@@ -167,7 +198,7 @@
       $("#scan-loading p").textContent = "Scanning the recipe card…";
     }
     if (!resp.ok || data.error) {
-      showError(data?.reason || `Import failed (${resp.status}). Try a screenshot and Scan instead.`);
+      showError((data?.reason || `Import failed (${resp.status}). Try a screenshot and Scan instead.`) + DETAILS);
       return;
     }
     populateScanForm(data);
@@ -221,13 +252,13 @@
 
     let resp, data;
     try {
-      resp = await fetch(SCAN_ENDPOINT, {
+      resp = await loggedFetch("card scan", "", SCAN_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataUrl })
       });
     } catch (err) {
-      showError("Couldn't reach the scan server. Check your internet connection and try again.");
+      showError("Couldn't reach the scan server. Check your internet connection and try again." + DETAILS);
       return;
     }
 
@@ -244,9 +275,9 @@
       } else if (data?.error === "image_too_large") {
         showError("That photo is too big — try a smaller one.");
       } else if (data?.error === "scan_failed") {
-        showError(`Scan failed: ${data.reason || "unknown error"}`);
+        showError(`Scan failed: ${data.reason || "unknown error"}` + DETAILS);
       } else {
-        showError(`Scan failed (${resp.status}). Please try again.`);
+        showError(`Scan failed (${resp.status}). Please try again.` + DETAILS);
       }
       return;
     }
@@ -435,19 +466,20 @@
         dataUrl = await fileToCompressedDataURL(file);
         if (!dataUrl) throw new Error("Couldn't process the image.");
       } catch (err) {
+        logEvent("error", "scan", `back-of-card photo couldn't be prepared (${titleNow()})`, { error: String(err?.message || err) });
         status(`Image error: ${err.message || "couldn't process photo"}`, 4000);
         return;
       }
 
       let resp, data;
       try {
-        resp = await fetch(SCAN_ENDPOINT, {
+        resp = await loggedFetch("back-of-card scan", titleNow(), SCAN_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image: dataUrl, mode: "steps_only" })
         });
       } catch {
-        status(`Couldn't reach the scan server for "${titleNow()}". Check your connection.`, 5000);
+        status(`Couldn't reach the scan server for "${titleNow()}". Check your connection` + DETAILS, 7000);
         return;
       }
 
@@ -456,7 +488,7 @@
 
       if (!resp.ok || data.error) {
         if (data?.error === "not_a_recipe_card") status("That doesn't look like a recipe-instructions page.", 5000);
-        else status(`Scan of "${titleNow()}" failed: ${data?.reason || resp.status}`, 7000);
+        else status(`Scan of "${titleNow()}" failed: ${data?.reason || resp.status}` + DETAILS, 9000);
         return;
       }
 
