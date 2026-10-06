@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner — Cook mode (v13)
+   Meal Planner — Cook mode + Today (v13, Today v18)
    - Cook tab: "This week" queue (meals you shopped for), meal overview
    - Guided cook mode: full-screen, one step at a time, screen kept awake
    - Step timers parsed from step text ("10-12 min", "30 secs")
@@ -195,16 +195,16 @@
       ${day ? `<div class="queue-day">${escapeHtml(day)}</div>` : ""}
       <img alt="" loading="lazy" />
       <div class="queue-body">
-        <button class="queue-title" data-show="${escapeHtml(m.id)}">${pin ? "📌 " : ""}${escapeHtml(m.title)}</button>
+        <button class="queue-title" data-show="${escapeHtml(m.id)}">${pin ? icon("pin", 14, "pin-ic") : ""}${escapeHtml(m.title)}</button>
         <div class="chips">
-          ${cooked ? `<span class="chip chip-x2">✓ Cooked</span>` : ""}
-          ${typeof m.cookMins === "number" ? `<span class="chip">⏱ ${m.cookMins} min</span>` : ""}
-          <span class="chip">${steps ? `🧾 ${plural(steps, "step")}` : "no steps yet"}</span>
+          ${cooked ? `<span class="chip chip-x2">${icon("check", 13)}Cooked</span>` : ""}
+          ${typeof m.cookMins === "number" ? `<span class="chip">${icon("clock", 13)}${m.cookMins} min</span>` : ""}
+          <span class="chip">${steps ? `${icon("steps", 13)}${plural(steps, "step")}` : "no steps yet"}</span>
           ${x > 1 ? `<span class="chip chip-x2">×2 · leftovers</span>` : ""}
         </div>
       </div>
-      <button class="btn ${cooked ? "" : "primary"}" data-cook="${escapeHtml(m.id)}">▶ Cook</button>
-      ${dismiss ? `<button class="btn mini" data-dismiss="${escapeHtml(m.id)}" title="Remove from this week" aria-label="Remove ${escapeHtml(m.title)} from this week">✕</button>` : ""}
+      <button class="btn ${cooked ? "" : "primary"}" data-cook="${escapeHtml(m.id)}">${icon("play", 14)}Cook</button>
+      ${dismiss ? `<button class="btn mini" data-dismiss="${escapeHtml(m.id)}" title="Remove from this week" aria-label="Remove ${escapeHtml(m.title)} from this week">${icon("x", 16)}</button>` : ""}
     </div>`;
   }
 
@@ -216,7 +216,7 @@
     const extra = state.cookQueue.map(q => ({ q, m: mealById(q.mealId) })).filter(x => x.m && !planned.has(x.m.id));
     if (!menu.length && !extra.length){
       wrap.innerHTML = `<div class="empty">Nothing planned this week yet.
-        <br><button type="button" class="btn mini mt8" id="cook-go-plan">📅 Plan the week</button>
+        <br><button type="button" class="btn mini mt8" id="cook-go-plan">${icon("plan", 16)}Plan the week</button>
         <br><span class="small">Meals you shop for also appear here.</span></div>`;
       $("#cook-go-plan", wrap)?.addEventListener("click", () => setView("plan"));
       return;
@@ -256,7 +256,7 @@
     if (!count) return "";
     const stars = last.rating ? ` ★${last.rating}` : "";
     const note = last.note ? ` — “${escapeHtml(last.note)}”` : "";
-    return `<p class="last-cook">🍳 Cooked ${plural(count, "time")}${avg != null ? ` (avg ★${formatNumber(Math.round(avg * 10) / 10)})` : ""}. Last: ${escapeHtml(formatShortDate(last.date))}${stars}${note}</p>`;
+    return `<p class="last-cook">${icon("cook", 15)}Cooked ${plural(count, "time")}${avg != null ? ` (avg ★${formatNumber(Math.round(avg * 10) / 10)})` : ""}. Last: ${escapeHtml(formatShortDate(last.date))}${stars}${note}</p>`;
   }
 
   function renderOverview(){
@@ -269,10 +269,10 @@
     const ings = meal.ingredients || [];
     wrap.innerHTML = `
       <div class="cook-meta muted">
-        ${typeof meal.cookMins === "number" ? `⏱ ${meal.cookMins} min · ` : ""}🥕 ${plural(ings.length, "ingredient")} · 🧾 ${plural(steps.length, "step")}
+        ${typeof meal.cookMins === "number" ? `${icon("clock", 15)}${meal.cookMins} min · ` : ""}${plural(ings.length, "ingredient")} · ${plural(steps.length, "step")}
       </div>
       ${lastCookLine(meal.id)}
-      ${meal.notes ? `<p class="muted small">📝 ${escapeHtml(meal.notes)}</p>` : ""}
+      ${meal.notes ? `<p class="muted small">${escapeHtml(meal.notes)}</p>` : ""}
       <div class="overview-cols">
         <div>
           <h4 class="h4">Ingredients</h4>
@@ -284,7 +284,7 @@
             ? `<ol class="ov-steps">${steps.map(s => `<li>${annotateStep(s)}</li>`).join("")}</ol>`
             : `<div class="no-steps">
                  <p>This meal has no steps yet.</p>
-                 <button class="btn" id="ov-scan">📷 Scan back of card</button>
+                 <button class="btn" id="ov-scan">${icon("camera", 18)}Scan back of card</button>
                </div>`}
         </div>
       </div>`;
@@ -298,7 +298,118 @@
     $("#edit-scan-steps")?.click();
   }
 
+  /* ============== Today (v18): tonight's meal, the week, the list ============== */
+  function weekDays(){
+    const now = new Date(); now.setHours(12, 0, 0, 0);
+    const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    return Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
+  }
+  function renderTodayHero(menu){
+    const wrap = $("#today-hero");
+    if (!wrap) return;
+    const open = menu.filter(r => !r.cooked);
+    const row = open.find(r => r.isToday) || open.find(r => !r.past);
+    if (!row){
+      const greeting = menu.some(r => r.isToday && r.cooked) ? "Tonight's meal is cooked." : "Nothing planned for tonight.";
+      wrap.className = "today-hero empty-hero";
+      wrap.innerHTML = `<div class="today-hero-empty">
+          <span class="today-kicker">Tonight</span>
+          <h2 class="today-title">${greeting}</h2>
+          <div class="group">
+            <button type="button" class="btn primary" data-go="plan">${icon("sparkles", 18)}Plan the week</button>
+            <button type="button" class="btn" data-go="meals">${icon("meals", 18)}Browse meals</button>
+          </div>
+        </div>`;
+      $$("[data-go]", wrap).forEach(b => b.addEventListener("click", () => switchView(b.dataset.go)));
+      return;
+    }
+    const m = row.m, steps = (m.steps || []).length, cs = cookStats(m.id);
+    const meta = [
+      typeof m.cookMins === "number" ? `${icon("clock", 15)}${m.cookMins} min` : "",
+      steps ? `${icon("steps", 15)}${plural(steps, "step")}` : "",
+      cs.avg != null ? `${icon("star-filled", 15, "gold")}${formatNumber(Math.round(cs.avg * 10) / 10)}` : "",
+      row.x > 1 ? "×2 · leftovers" : ""
+    ].filter(Boolean).map(s => `<span>${s}</span>`).join("");
+    wrap.className = "today-hero";
+    wrap.innerHTML = `
+      <img alt="" />
+      <div class="scrim"></div>
+      <div class="today-hero-text">
+        <span class="today-kicker">${row.isToday ? "Tonight" : `Next up · ${escapeHtml(row.label)}`}</span>
+        <h2 class="today-title">${escapeHtml(m.title)}</h2>
+        ${meta ? `<div class="mag-meta">${meta}</div>` : ""}
+        <div class="group today-hero-btns">
+          <button type="button" class="btn primary" data-hero-cook>${icon("play", 16)}Cook</button>
+          <button type="button" class="btn glass" data-hero-open>Open meal</button>
+        </div>
+      </div>`;
+    wrap.querySelector("img").src = m.image?.src || placeholderSvg(m.title);
+    $("[data-hero-cook]", wrap).addEventListener("click", () => openGuided(m.id, row.x > 1 ? row.x : undefined));
+    $("[data-hero-open]", wrap).addEventListener("click", () => openMealView(m.id));
+  }
+  function renderTodayStrip(menu){
+    const wrap = $("#today-strip");
+    if (!wrap) return;
+    const todayIso = isoOf(new Date());
+    wrap.innerHTML = weekDays().map(d => {
+      const iso = isoOf(d);
+      const rows = menu.filter(r => r.iso === iso);
+      const cooked = rows.length && rows.every(r => r.cooked);
+      const title = rows.map(r => r.m.title).join(", ");
+      return `<button type="button" class="day-pill ${iso === todayIso ? "is-today" : ""} ${rows.length ? "has" : ""} ${cooked ? "done" : ""} ${iso < todayIso ? "past" : ""}"
+        data-iso="${iso}" title="${escapeHtml(title || "Nothing planned")}" aria-label="${DAYS[d.getDay()]} ${d.getDate()}: ${escapeHtml(title || "nothing planned")}">
+        <span class="dp-day">${DAYS[d.getDay()].slice(0, 1)}</span><span class="dp-date">${d.getDate()}</span>
+        <span class="dp-dot">${cooked ? icon("check", 12) : ""}</span>
+      </button>`;
+    }).join("");
+    $$(".day-pill", wrap).forEach(b => b.addEventListener("click", () => {
+      const rows = menu.filter(r => r.iso === b.dataset.iso);
+      if (rows.length === 1) openMealView(rows[0].m.id);
+      else switchView("plan");
+    }));
+    const planned = menu.length, cookedN = menu.filter(r => r.cooked).length;
+    const sub = $("#today-strip-sub") || Object.assign(document.createElement("p"), { id: "today-strip-sub", className: "muted small" });
+    sub.textContent = planned ? `${plural(planned, "meal")} planned · ${cookedN} cooked` : "Nothing planned yet — tap Plan to fill the week.";
+    wrap.after(sub);
+  }
+  function renderTodayShop(){
+    const wrap = $("#today-shop");
+    if (!wrap) return;
+    const meals = state.selected.size;
+    const toBuy = typeof rowsToBuy === "function" ? rowsToBuy().length : 0;
+    const got = state.haveIt.size;
+    wrap.innerHTML = meals
+      ? `<div class="today-card-head"><h3 class="h3">Shopping list</h3></div>
+         <div class="today-shop-num"><b>${toBuy}</b> item${toBuy === 1 ? "" : "s"} to buy</div>
+         <p class="muted small">${plural(meals, "meal")} ticked${got ? ` · ${got} got` : ""}</p>
+         <div class="group">
+           <button type="button" class="btn" data-shop-open>${icon("cart", 18)}Open list</button>
+           <button type="button" class="btn" data-shop-ocado>Ocado</button>
+         </div>`
+      : `<div class="today-card-head"><h3 class="h3">Shopping list</h3></div>
+         <p class="muted small">No meals ticked for this shop yet.</p>
+         <div class="group">
+           <button type="button" class="btn" data-shop-plan>${icon("cart", 18)}From the plan</button>
+           <button type="button" class="btn" data-go-meals>${icon("meals", 18)}Choose meals</button>
+         </div>`;
+    $("[data-shop-open]", wrap)?.addEventListener("click", () => {
+      if (isMobile()) switchView("shopping");
+      else $("#shop-panel")?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+    });
+    $("[data-shop-ocado]", wrap)?.addEventListener("click", () => $("#ocado")?.click());
+    $("[data-shop-plan]", wrap)?.addEventListener("click", () => $("#plan-shop")?.click());
+    $("[data-go-meals]", wrap)?.addEventListener("click", () => switchView("meals"));
+  }
+  function renderToday(){
+    const menu = thisWeekMenu();
+    renderTodayHero(menu);
+    renderTodayStrip(menu);
+    renderTodayShop();
+  }
+  $("#today-to-plan")?.addEventListener("click", () => switchView("plan"));
+
   function renderCookTab(){
+    renderToday();
     renderQueue();
     renderOverview();
     syncUnitsUI();
@@ -395,11 +506,11 @@
         <div class="co-kicker">Get ready</div>
         ${guided.factor > 1 ? `<p class="co-double">×2 — double batch for leftovers. Ingredient amounts are doubled; the step text is as written.</p>` : ""}
         ${lastCookLine(meal.id)}
-        ${temps.length ? `<p class="co-temps">🔥 Oven: ${temps.map(t => annotateStep(t)).join(" · ")}</p>` : ""}
-        ${meal.notes ? `<p class="muted">📝 ${escapeHtml(meal.notes)}</p>` : ""}
+        ${temps.length ? `<p class="co-temps">Oven: ${temps.map(t => annotateStep(t)).join(" · ")}</p>` : ""}
+        ${meal.notes ? `<p class="muted">${escapeHtml(meal.notes)}</p>` : ""}
         ${steps.length ? `<p class="muted co-hint">Gather your ingredients, then tap Next. Swipe or use ‹ › to move between steps.</p>`
                        : `<div class="no-steps"><p>No steps saved for this meal — use it as an ingredients checklist, or add steps:</p>
-                          <button class="btn" id="co-scan">📷 Scan back of card</button></div>`}
+                          <button class="btn" id="co-scan">${icon("camera", 18)}Scan back of card</button></div>`}
         <div class="co-inline-ings">${ingredientChecklist(meal)}</div>`;
     } else if (p === total - 1){
       html = `
@@ -411,7 +522,7 @@
         <label for="co-note" class="mt8">Note for next time (optional)</label>
         <textarea id="co-note" rows="2" placeholder="e.g. needed more salt, double the sauce">${escapeHtml(guided.note)}</textarea>
         <div class="group mt8">
-          <button class="btn primary" id="co-done">✓ Mark as cooked</button>
+          <button class="btn primary" id="co-done">${icon("check", 18)}Mark as cooked</button>
           <button class="btn" id="co-skip">Close without logging</button>
         </div>`;
     } else {
@@ -422,7 +533,7 @@
         <div class="co-kicker">Step ${p}</div>
         <p class="co-step">${annotateStep(text)}</p>
         ${used.length ? `<div class="co-chips">${used.map(i => { const a = ingAmount(i, undefined, guided.factor); return `<span class="chip co-chip">${escapeHtml(titleCase(i.name))}${a ? ` · <b>${escapeHtml(a)}</b>` : ""}</span>`; }).join("")}</div>` : ""}
-        ${timers.length ? `<div class="co-chips">${timers.map(t => `<button class="btn co-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}">⏱ Start ${escapeHtml(t.label)}</button>`).join("")}</div>` : ""}`;
+        ${timers.length ? `<div class="co-chips">${timers.map(t => `<button class="btn co-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}">${icon("timer", 18)}Start ${escapeHtml(t.label)}</button>`).join("")}</div>` : ""}`;
     }
     const page = $("#co-page");
     page.innerHTML = html;
@@ -472,7 +583,7 @@
   function setIngsShown(on){
     overlay.classList.toggle("show-ings", on);
     const b = $("#co-ing-toggle");
-    if (b) b.textContent = on ? "📖 Step" : "🥕 Ingredients";
+    if (b) b.textContent = on ? "Step" : "Ingredients";
   }
   $("#co-ing-toggle")?.addEventListener("click", () => setIngsShown(!overlay.classList.contains("show-ings")));
   window.addEventListener("keydown", (e) => {
@@ -551,7 +662,7 @@
         <span class="timer-left">${t.done ? "Done!" : fmtLeft(t.end - Date.now())}</span>
         <span class="timer-label">${escapeHtml(t.label)}</span>
         ${t.done ? "" : `<button class="btn mini" data-add="${t.id}" aria-label="Add a minute">+1</button>`}
-        <button class="btn mini" data-stop="${t.id}" aria-label="${t.done ? "Dismiss" : "Cancel"} timer">✕</button>
+        <button class="btn mini" data-stop="${t.id}" aria-label="${t.done ? "Dismiss" : "Cancel"} timer">${icon("x", 16)}</button>
       </div>`).join("");
     $$("[data-add]", tray).forEach(b => b.addEventListener("click", () => {
       const t = timers.find(x => x.id === b.dataset.add); if (t){ t.end += 60000; saveTimers(); tickTimers(); }
@@ -584,6 +695,8 @@
   }
   window.populateCookSelect = populateCookSelect;
   window.renderCookTab = renderCookTab;
+  window.renderToday = renderToday;
+  window.renderTodayShop = renderTodayShop;
   window.openGuided = openGuided;
   window.cookWeekMenu = thisWeekMenu;
   window.scanStepsFor = scanStepsFor;

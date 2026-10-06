@@ -72,8 +72,8 @@ const state = {
   doubled: new Set(),       // "cook once, eat twice": selected meals bought ×2 this shop
 
   timeFilter: { min: 0, max: 120 },
-  view: "meals",            // phone: the one visible view
-  leftView: "meals"         // split view: which tab the left pane shows
+  view: "today",            // phone: the one visible view
+  leftView: "today"         // split view: which tab the left pane shows
 };
 
 /* ============== tiny helpers ============== */
@@ -550,23 +550,19 @@ async function loadAll(){
 }
 
 /* ============== Theme ============== */
+/* Themes: auto | light | dark | black (OLED: true black backgrounds) */
 function applyTheme(){
   let mode = state.prefs.theme;
   if (mode === "auto"){
     mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
       ? "light" : "dark";
   }
-  document.documentElement.setAttribute("data-theme", mode === "light" ? "light" : "dark");
-  const t = $("#theme-toggle");
-  if (t) t.textContent = mode === "light" ? "☀️" : "🌙";
+  if (!["light", "dark", "black"].includes(mode)) mode = "dark";
+  document.documentElement.setAttribute("data-theme", mode);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content",
+    mode === "light" ? "#f6f7fb" : mode === "black" ? "#000000" : "#0b0f1a");
   $$("[data-theme-set]").forEach(b => b.classList.toggle("active", b.dataset.themeSet === state.prefs.theme));
 }
-$("#theme-toggle")?.addEventListener("click", async () => {
-  const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
-  state.prefs.theme = current === "light" ? "dark" : "light";
-  applyTheme();
-  await saveAll();
-});
 $$("[data-theme-set]").forEach(b => b.addEventListener("click", async () => {
   state.prefs.theme = b.dataset.themeSet;
   applyTheme();
@@ -581,29 +577,105 @@ window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change"
    At or above: split view — Meals/Cook on the left, Shopping list on the right.
    Keep in sync with the 839px / 840px media queries in styles.css. */
 const SPLIT_MIN_PX = 840;
-const VIEWS = ["meals", "plan", "shopping", "cook"];
+/* "today" is the landing screen (tonight's meal, the week, the shopping list,
+   and cooking — it replaced the Cook tab, so "cook" is an alias for it). */
+const VIEWS = ["today", "meals", "plan", "shopping"];
 function isMobile(){ return window.matchMedia(`(max-width:${SPLIT_MIN_PX - 1}px)`).matches; }
+const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 function setView(view){
   if (view === "add"){ openAddSheet(); return; }
-  if (!VIEWS.includes(view)) view = "meals";
+  if (view === "cook") view = "today";
+  if (!VIEWS.includes(view)) view = "today";
   state.view = view;
   if (view !== "shopping") state.leftView = view;
 
   // body[data-view] drives which panel shows on phones (see styles.css)
   document.body.dataset.view = view;
+  $("#view-today")?.classList.toggle("active", state.leftView === "today");
   $("#view-meals")?.classList.toggle("active", state.leftView === "meals");
-  $("#view-cook")?.classList.toggle("active", state.leftView === "cook");
   $("#view-plan")?.classList.toggle("active", state.leftView === "plan");
   $$("#pane-tabs .tab").forEach(b => b.classList.toggle("active", b.dataset.view === state.leftView));
   $$("#bottom-nav .navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === view));
-  if (state.leftView === "cook") populateCookSelect();
+  if (state.leftView === "today") window.populateCookSelect?.();
   if (state.leftView === "plan") window.renderPlan?.();
+  showHintFor(view);
 }
-$$("#bottom-nav .navbtn, #pane-tabs .tab").forEach(b => b.addEventListener("click", () => {
-  setView(b.dataset.view);
-  if (isMobile()) window.scrollTo({ top:0 });
-}));
+/* Tab switches animate (cross-fade) where the browser supports View Transitions */
+function switchView(view){
+  const go = () => { setView(view); if (isMobile()) window.scrollTo({ top:0 }); };
+  if (document.startViewTransition && !reducedMotion()) document.startViewTransition(go);
+  else go();
+}
+$$("#bottom-nav .navbtn, #pane-tabs .tab").forEach(b => b.addEventListener("click", () => switchView(b.dataset.view)));
+
+/* Haptics: a short buzz for ticks, selections and swipes (Android) */
+function haptic(ms = 12){ try { navigator.vibrate?.(ms); } catch { /* unsupported */ } }
+
+/* ============== First-time hints (one per screen, shown once) ============== */
+const HINTS = {
+  today:    "This is Today: tonight's meal, your week and the shopping list at a glance. Tap Cook when you're ready.",
+  meals:    "Tap a meal to open it. Tap + on its photo to add it to the shopping list.",
+  plan:     "Auto-fill plans the week from your meals. Open a meal's menu to pin it to a weekday every week.",
+  shopping: "Swipe an item right to tick it off as you shop; swipe left to undo."
+};
+const HINTS_KEY = "hints-seen-v18";
+function hintsSeen(){ try { return JSON.parse(localStorage.getItem(HINTS_KEY) || "[]"); } catch { return []; } }
+let hintShowing = null;
+function showHintFor(view){
+  const el = $("#hint");
+  if (!el) return;
+  if (!HINTS[view] || hintsSeen().includes(view) || $(".modal.open")){ el.hidden = true; hintShowing = null; return; }
+  hintShowing = view;
+  $("#hint-text").textContent = HINTS[view];
+  el.hidden = false;
+}
+$("#hint-ok")?.addEventListener("click", () => {
+  const seen = new Set(hintsSeen()); if (hintShowing) seen.add(hintShowing);
+  try { localStorage.setItem(HINTS_KEY, JSON.stringify([...seen])); } catch { /* private mode */ }
+  $("#hint").hidden = true;
+  hintShowing = null;
+});
+$("#hints-reset")?.addEventListener("click", () => {
+  try { localStorage.removeItem(HINTS_KEY); } catch { /* ok */ }
+  status("Tips will show again on each screen.");
+});
+
+/* ============== What's new (once per version; also Settings › About) ============== */
+const APP_VERSION = 18;
+const WHATS_NEW_KEY = "whatsnew-seen";
+const WHATS_NEW = [
+  ["today",    "Today tab", "Tonight's meal, your week and the shopping list at a glance. It replaces the Cook tab."],
+  ["meals",    "New meal cards", "Big photos with the title, time and rating on them. Tap + to add to the shop."],
+  ["cook",     "New meal page", "Full-width photo, Ingredients / Method / Notes, and Add to shop, Plan and Cook buttons at the bottom."],
+  ["filter",   "Filter & sort", "Everything in one sheet, with chips you can tap off. Search has moved to the magnifier at the top."],
+  ["plan",     "Week strip & drag", "A strip of the week's days on the Plan tab. In the calendar, drag a meal to another day."],
+  ["list",     "Group by category", "Optional, from the shopping list's ⋯ menu: Fruit & veg, Meat & fish, Dairy…"],
+  ["moon",     "New look", "New icons and fonts, small animations and vibration, and a Black (OLED) theme in Settings."]
+];
+function openWhatsNew(){
+  $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
+    WHATS_NEW.map(([ic, t, d]) => `<li><span class="wn-ic">${icon(ic, 20)}</span><span><b>${escapeHtml(t)}</b><br><span class="muted">${escapeHtml(d)}</span></span></li>`).join("")}</ul>`;
+  $("#whatsnew").classList.add("open");
+  $("#whatsnew").setAttribute("aria-hidden", "false");
+  lockBodyScroll(true);
+  local.set(WHATS_NEW_KEY, String(APP_VERSION));
+}
+function closeWhatsNew(){
+  $("#whatsnew").classList.remove("open");
+  $("#whatsnew").setAttribute("aria-hidden", "true");
+  lockBodyScroll(false);
+}
+/* Returning users see it once after updating; a brand-new install doesn't. */
+function maybeShowWhatsNew(){
+  if (local.get(WHATS_NEW_KEY) === String(APP_VERSION)) return;
+  if (!state.meals.length){ local.set(WHATS_NEW_KEY, String(APP_VERSION)); return; }
+  if ($(".modal.open")) return;
+  openWhatsNew();
+}
+$("#whatsnew-close")?.addEventListener("click", closeWhatsNew);
+$("#whatsnew")?.addEventListener("click", (e) => { if (e.target.id === "whatsnew") closeWhatsNew(); });
+$("#whatsnew-open")?.addEventListener("click", () => { closeSettings(); openWhatsNew(); });
 
 /* Header height feeds the sticky shopping pane's offset. */
 function syncHeaderHeight(){
@@ -756,19 +828,25 @@ function setEditPendingImage(dataUrl){
   if (img) img.src = editPendingImage || "";
 }
 
+/* A meal without a photo: a warm colour pair picked from its title, its
+   initials and a plate-and-cutlery mark — clearly a placeholder, not a broken image. */
+const PLACEHOLDER_HUES = [[14, 32], [28, 45], [150, 170], [200, 220], [265, 290], [340, 10], [95, 120], [45, 25]];
 function placeholderSvg(text){
-  const t = (text || "Meal").slice(0, 24).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 360' preserveAspectRatio='xMidYMid slice'>
-    <defs>
-      <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
-        <stop offset='0' stop-color='#1f2937'/>
-        <stop offset='1' stop-color='#0f172a'/>
-      </linearGradient>
-    </defs>
+  const title = String(text || "Meal");
+  let h = 0; for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const [a, b] = PLACEHOLDER_HUES[h % PLACEHOLDER_HUES.length];
+  const initials = title.replace(/[^A-Za-z0-9 ]/g, " ").split(/\s+/).filter(w => w && !/^(with|and|the|of|in|a)$/i.test(w))
+    .slice(0, 2).map(w => w[0].toUpperCase()).join("") || "M";
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 400' preserveAspectRatio='xMidYMid slice'>
+    <defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
+      <stop offset='0' stop-color='hsl(${a} 55% 42%)'/><stop offset='1' stop-color='hsl(${b} 60% 26%)'/>
+    </linearGradient></defs>
     <rect width='100%' height='100%' fill='url(#g)'/>
-    <g fill='#94a3b8' font-family='ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto' font-size='28'>
-      <text x='50%' y='52%' dominant-baseline='middle' text-anchor='middle' font-weight='700'>${t}</text>
-    </g>
+    <circle cx='320' cy='175' r='92' fill='none' stroke='rgba(255,255,255,.28)' stroke-width='6'/>
+    <circle cx='320' cy='175' r='64' fill='rgba(255,255,255,.10)'/>
+    <path d='M190 110v62a16 16 0 0 0 16 16h0M206 110v130M222 110v62a16 16 0 0 1-16 16' fill='none' stroke='rgba(255,255,255,.35)' stroke-width='7' stroke-linecap='round'/>
+    <path d='M450 110c-20 8-26 40-26 60 0 14 10 20 22 20h4v50' fill='none' stroke='rgba(255,255,255,.35)' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/>
+    <text x='320' y='178' dominant-baseline='middle' text-anchor='middle' font-family='Bricolage Grotesque, system-ui, sans-serif' font-weight='700' font-size='64' fill='rgba(255,255,255,.92)'>${initials}</text>
   </svg>`;
   return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
 }
@@ -1352,6 +1430,8 @@ window.addEventListener("keydown", (e) => {
   else if (viewingId && !$("#scan-modal")?.classList.contains("open")) closeMealView();
   if (addModal?.classList.contains("open") && !$("#scan-modal")?.classList.contains("open")) closeAddSheet();
   if (popEl) closePopover();
+  if (searchSheet?.classList.contains("open")) closeSearch();
+  if ($("#whatsnew")?.classList.contains("open")) closeWhatsNew();
 });
 
 /* =====================================================
@@ -1574,11 +1654,42 @@ function timeFilterActive(){
   return state.timeFilter.min > 0 || state.timeFilter.max < TIME_FILTER_MAX;
 }
 function refreshFiltersBadge(){
-  const n = (state.showFavsOnly ? 1 : 0) + (timeFilterActive() ? 1 : 0) + (state.tagFilter.size ? 1 : 0);
-  const btn = $("#open-filters");
-  if (!btn) return;
-  btn.textContent = n ? `Filters (${n})` : "Filters";
-  btn.classList.toggle("active", n > 0);
+  const n = (state.showFavsOnly ? 1 : 0) + (timeFilterActive() ? 1 : 0) + (state.tagFilter.size ? 1 : 0)
+    + (state.containsFilter.size ? 1 : 0) + ((state.prefs.mealSort || "az") !== "az" ? 1 : 0);
+  const label = $("#open-filters-label");
+  if (label) label.textContent = n ? `Filter & sort (${n})` : "Filter & sort";
+  $("#open-filters")?.classList.toggle("active", n > 0);
+}
+$("#filters-reset")?.addEventListener("click", async () => {
+  state.showFavsOnly = false;
+  state.timeFilter.min = 0; state.timeFilter.max = TIME_FILTER_MAX;
+  state.tagFilter.clear();
+  state.containsFilter.clear(); containsEditor?.set([]);
+  state.prefs.mealSort = "az"; syncSortUI();
+  syncFiltersUI(); renderMeals();
+  await idbSet(IDB_KEYS.prefs, state.prefs);
+});
+
+/* Active filters as removable chips under the toolbar */
+const SORT_LABELS = { most:"Most chosen", least:"Least chosen", oldest:"Longest since chosen", cooked:"Most cooked", rated:"Top rated" };
+function renderActiveFilters(){
+  const wrap = $("#active-filters");
+  if (!wrap) return;
+  const chips = [];
+  if (state.search) chips.push({ label: `“${state.search}”`, clear: () => { state.search = ""; $("#search").value = ""; } });
+  if ((state.prefs.mealSort || "az") !== "az") chips.push({ label: `Sort: ${SORT_LABELS[state.prefs.mealSort]}`, clear: () => { state.prefs.mealSort = "az"; syncSortUI(); idbSet(IDB_KEYS.prefs, state.prefs); } });
+  if (state.showFavsOnly) chips.push({ label: "Favourites", clear: () => { state.showFavsOnly = false; } });
+  if (timeFilterActive()) chips.push({ label: timeLabel(), clear: () => { state.timeFilter.min = 0; state.timeFilter.max = TIME_FILTER_MAX; } });
+  const { rows } = computeTagStats();
+  for (const t of state.tagFilter) chips.push({ label: t === NO_TAGS ? "No tags" : `#${rows.find(r => r.tag === t)?.label || t}`, clear: () => { state.tagFilter.delete(t); } });
+  for (const c of state.containsFilter) chips.push({ label: `Has ${c}`, clear: () => { state.containsFilter.delete(c); containsEditor?.set([...state.containsFilter]); } });
+  wrap.hidden = !chips.length;
+  wrap.innerHTML = chips.map((c, i) => `<button type="button" class="filter-chip" data-chip="${i}" aria-label="Remove filter ${escapeHtml(c.label)}">${escapeHtml(c.label)}${icon("x", 14)}</button>`).join("")
+    + (chips.length > 1 ? `<button type="button" class="filter-chip clear-all" data-chip="all">Clear all</button>` : "");
+  $$("[data-chip]", wrap).forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.chip === "all") chips.forEach(c => c.clear()); else chips[Number(b.dataset.chip)].clear();
+    syncFiltersUI(); renderMeals();
+  }));
 }
 function syncFiltersUI(){
   $("#m-time-min").value = String(state.timeFilter.min);
@@ -1757,28 +1868,16 @@ function syncQueueBatch(id){
   window.renderCookTab?.();
 }
 /* Refresh one card in place (tick, ×2) — no full grid rebuild. */
+/* Refresh one card in place (tick, ×2, ★): its photo element is kept, so nothing flickers */
 function updateCard(id){
   const card = grid.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
   const meal = state.meals.find(m => m.id === id);
   if (!card || !meal){ renderMeals(); return; }
-  const sel = state.selected.has(id), dbl = state.doubled.has(id);
-  card.classList.toggle("selected", sel);
-  const pick = card.querySelector(".pick");
-  pick.textContent = sel ? "✓" : "+";
-  pick.setAttribute("aria-pressed", String(sel));
-  pick.setAttribute("aria-label", `${sel ? "Remove from" : "Add to"} shop: ${meal.title}`);
-  let x2 = card.querySelector(".x2");
-  if (sel && !x2){
-    x2 = document.createElement("button");
-    x2.type = "button";
-    x2.className = "chip x2";
-    x2.title = "Cook once, eat twice: buy double for leftovers";
-    x2.textContent = "×2";
-    x2.addEventListener("click", (e) => { e.stopPropagation(); toggleDoubled(id); });
-    card.querySelector(".more").before(x2);
-  }
-  if (!sel && x2) x2.remove();
-  if (sel && x2){ x2.classList.toggle("on", dbl); x2.setAttribute("aria-pressed", String(dbl)); }
+  const fresh = buildCard(meal);
+  const oldImg = card.querySelector("img"), newImg = fresh.querySelector("img");
+  if (oldImg && newImg) newImg.replaceWith(oldImg);
+  card.replaceWith(fresh);
+  if (state.selected.has(id)) fresh.classList.add("just-picked");
 }
 async function toggleFav(id){
   const m = state.meals.find(x => x.id === id);
@@ -1857,7 +1956,7 @@ function openMenu(anchor, items){
     const b = document.createElement("button");
     b.type = "button";
     b.className = "btn" + (it.danger ? " danger" : "");
-    b.textContent = it.label;
+    b.innerHTML = (it.icon ? icon(it.icon, 18) : "") + escapeHtml(it.label);
     b.setAttribute("role", "menuitem");
     b.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); it.run(); });
     m.appendChild(b);
@@ -1872,28 +1971,83 @@ function openMenu(anchor, items){
 }
 function mealMenuItems(id, anchor){
   return [
-    { label: "📅 Add to plan…", run: () => openMenu(anchor, window.planMenuItems?.(id) || []) },
-    { label: "✏️ Edit", run: () => { closeMealView(); openEdit(id); } },
-    { label: "⧉ Duplicate", run: () => duplicateMeal(id) },
-    { label: "🗑 Delete", danger: true, run: async () => { if (await deleteMeal(id)) closeMealView(); } }
+    { icon: "plan", label: "Add to plan…", run: () => openMenu(anchor, window.planMenuItems?.(id) || []) },
+    { icon: "edit", label: "Edit", run: () => { closeMealView(); openEdit(id); } },
+    { icon: "copy", label: "Duplicate", run: () => duplicateMeal(id) },
+    { icon: "trash", label: "Delete", danger: true, run: async () => { if (await deleteMeal(id)) closeMealView(); } }
   ];
 }
 
 function mealChips(meal, { withDoubled = true } = {}){
   const out = [];
-  if (typeof meal.cookMins === "number") out.push(`<span class="chip">⏱ ${meal.cookMins} min</span>`);
-  if (meal.steps?.length) out.push(`<span class="chip">🧾 ${meal.steps.length} step${meal.steps.length === 1 ? "" : "s"}</span>`);
+  if (typeof meal.cookMins === "number") out.push(`<span class="chip">${icon("clock", 13)}${meal.cookMins} min</span>`);
+  if (meal.steps?.length) out.push(`<span class="chip">${icon("steps", 13)}${meal.steps.length} step${meal.steps.length === 1 ? "" : "s"}</span>`);
   const hist = state.history[meal.id];
-  if (hist?.count) out.push(`<span class="chip chip-history" title="Chosen for ${hist.count} shop${hist.count === 1 ? "" : "s"}">🛒 ×${hist.count} · ${escapeHtml(formatShortDate(lastChosen(meal.id)))}</span>`);
+  if (hist?.count) out.push(`<span class="chip chip-history" title="Chosen for ${hist.count} shop${hist.count === 1 ? "" : "s"}">${icon("cart", 13)}Shopped ×${hist.count} · ${escapeHtml(formatShortDate(lastChosen(meal.id)))}</span>`);
   const cs = cookStats(meal.id);
-  if (cs.count) out.push(`<span class="chip chip-history" title="Cooked ${cs.count} time${cs.count === 1 ? "" : "s"}">🍳 ×${cs.count}${cs.avg != null ? ` · ★${formatNumber(Math.round(cs.avg * 10) / 10)}` : ""}</span>`);
+  if (cs.count) out.push(`<span class="chip chip-history" title="Cooked ${cs.count} time${cs.count === 1 ? "" : "s"}">${icon("cook", 13)}Cooked ×${cs.count}${cs.avg != null ? ` · ★${formatNumber(Math.round(cs.avg * 10) / 10)}` : ""}</span>`);
   if (withDoubled && state.doubled.has(meal.id) && state.selected.has(meal.id)) out.push(`<span class="chip chip-x2">×2 leftovers</span>`);
   return out.join("");
+}
+
+/* Grid view: magazine card — the photo carries the title, time and rating; details are on the meal page.
+   List view: compact row with chips, ×2 and ⋯. */
+function buildCard(meal){
+  const sel = state.selected.has(meal.id), dbl = state.doubled.has(meal.id);
+  const list = effectiveMealView() === "list";
+  const cs = cookStats(meal.id);
+  const card = document.createElement("article");
+  card.className = "card" + (sel ? " selected" : "") + (list ? "" : " mag");
+  card.tabIndex = 0;
+  card.dataset.id = meal.id;
+  card.setAttribute("aria-label", `${meal.title} — open`);
+  const pick = `<button type="button" class="pick" aria-pressed="${sel}" aria-label="${sel ? "Remove from" : "Add to"} shop: ${escapeHtml(meal.title)}">${icon(sel ? "check" : "plus", 20)}</button>`;
+  const star = `<button type="button" class="star ${meal.fav ? "on" : ""}" aria-pressed="${!!meal.fav}" aria-label="${meal.fav ? "Unfavourite" : "Favourite"}">${icon(meal.fav ? "star-filled" : "star", 20)}</button>`;
+  const meta = [
+    typeof meal.cookMins === "number" ? `<span>${icon("clock", 14)}${meal.cookMins} min</span>` : "",
+    cs.avg != null ? `<span>${icon("star-filled", 14, "gold")}${formatNumber(Math.round(cs.avg * 10) / 10)}</span>` : ""
+  ].join("");
+  if (!list){
+    card.innerHTML = `
+      <div class="media">
+        <img alt="" loading="lazy" decoding="async" />
+        <div class="scrim"></div>
+        ${pick}${star}
+        <div class="mag-text">
+          ${sel ? `<span class="mag-pill">In this shop${dbl ? " · ×2" : ""}</span>` : ""}
+          <h3>${escapeHtml(meal.title)}</h3>
+          ${meta ? `<div class="mag-meta">${meta}</div>` : ""}
+        </div>
+      </div>`;
+  } else {
+    card.innerHTML = `
+      <div class="media">
+        <img alt="" loading="lazy" decoding="async" />
+        ${pick}${star}
+      </div>
+      <div class="card-body">
+        <h3>${escapeHtml(meal.title)}</h3>
+        <div class="card-foot">
+          <div class="chips">${mealChips(meal, { withDoubled:false })}</div>
+          ${sel ? `<button type="button" class="chip x2 ${dbl ? "on" : ""}" aria-pressed="${dbl}" title="Cook once, eat twice: buy double for leftovers">×2</button>` : ""}
+          <button type="button" class="btn mini more icon-btn" aria-label="More actions for ${escapeHtml(meal.title)}">${icon("more", 18)}</button>
+        </div>
+      </div>`;
+  }
+  card.querySelector("img").src = gridImageSrc(meal);   // set directly: data URLs are large, keep them out of the HTML string
+  card.querySelector(".pick").addEventListener("click", (e) => { e.stopPropagation(); haptic(); setSelected(meal.id, !state.selected.has(meal.id)); });
+  card.querySelector(".star").addEventListener("click", (e) => { e.stopPropagation(); haptic(); toggleFav(meal.id); });
+  card.querySelector(".x2")?.addEventListener("click", (e) => { e.stopPropagation(); haptic(); toggleDoubled(meal.id); });
+  card.querySelector(".more")?.addEventListener("click", (e) => { e.stopPropagation(); openMenu(e.currentTarget, mealMenuItems(meal.id, e.currentTarget)); });
+  card.addEventListener("click", () => openMealView(meal.id));
+  card.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === card) openMealView(meal.id); });
+  return card;
 }
 
 function renderMeals(){
   buildTagBar();
   renderBackupBanner();
+  renderActiveFilters();
   grid.innerHTML = "";
   grid.classList.toggle("list", effectiveMealView() === "list");
   const items = visibleMeals();
@@ -1912,37 +2066,7 @@ function renderMeals(){
   }
 
   const frag = document.createDocumentFragment();
-  items.forEach(meal => {
-    const sel = state.selected.has(meal.id);
-    const card = document.createElement("article");
-    card.className = "card" + (sel ? " selected" : "");
-    card.tabIndex = 0;
-    card.dataset.id = meal.id;
-    card.setAttribute("aria-label", `${meal.title} — open`);
-    card.innerHTML = `
-      <div class="media">
-        <img alt="" loading="lazy" decoding="async" />
-        <button type="button" class="pick" aria-pressed="${sel}" aria-label="${sel ? "Remove from" : "Add to"} shop: ${escapeHtml(meal.title)}">${sel ? "✓" : "+"}</button>
-        <button type="button" class="star ${meal.fav ? "on" : ""}" aria-pressed="${!!meal.fav}" aria-label="${meal.fav ? "Unfavourite" : "Favourite"}">${meal.fav ? "★" : "☆"}</button>
-      </div>
-      <div class="card-body">
-        <h3>${escapeHtml(meal.title)}</h3>
-        <div class="card-foot">
-          <div class="chips">${mealChips(meal, { withDoubled:false })}</div>
-          ${sel ? `<button type="button" class="chip x2 ${state.doubled.has(meal.id) ? "on" : ""}" aria-pressed="${state.doubled.has(meal.id)}" title="Cook once, eat twice: buy double for leftovers">×2</button>` : ""}
-          <button type="button" class="btn mini more" aria-label="More actions for ${escapeHtml(meal.title)}">⋯</button>
-        </div>
-      </div>`;
-    const img = card.querySelector("img");
-    img.src = gridImageSrc(meal);   // set directly: data URLs are large, keep them out of the HTML string
-    card.querySelector(".pick").addEventListener("click", (e) => { e.stopPropagation(); setSelected(meal.id, !state.selected.has(meal.id)); });
-    card.querySelector(".star").addEventListener("click", (e) => { e.stopPropagation(); toggleFav(meal.id); });
-    card.querySelector(".x2")?.addEventListener("click", (e) => { e.stopPropagation(); toggleDoubled(meal.id); });
-    card.querySelector(".more").addEventListener("click", (e) => { e.stopPropagation(); openMenu(e.currentTarget, mealMenuItems(meal.id, e.currentTarget)); });
-    card.addEventListener("click", () => openMealView(meal.id));
-    card.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === card) openMealView(meal.id); });
-    frag.appendChild(card);
-  });
+  items.forEach(meal => frag.appendChild(buildCard(meal)));
   grid.appendChild(frag);
   queueThumbs();
 }
@@ -1956,8 +2080,8 @@ function firstRunPanel(){
     <p>Your meals are stored in this browser on this device. If you use Meal Planner on another device,
        export a backup there (Settings › Data) and import it here to bring everything across.</p>
     <div class="group">
-      <button type="button" class="btn primary" data-fr="import">📥 Import a backup</button>
-      <button type="button" class="btn" data-fr="scan">📷 Scan a recipe card</button>
+      <button type="button" class="btn primary" data-fr="import">${icon("save", 18)}Import a backup</button>
+      <button type="button" class="btn" data-fr="scan">${icon("camera", 18)}Scan a recipe card</button>
       <button type="button" class="btn" data-fr="add">＋ Add a meal</button>
     </div>`;
   d.querySelector('[data-fr="import"]').addEventListener("click", () => $("#import")?.click());
@@ -2037,7 +2161,7 @@ function syncViewToggle(){
   const list = effectiveMealView() === "list";
   const b = $("#view-toggle");
   if (b){
-    b.textContent = list ? "▦" : "☰";
+    b.innerHTML = icon(list ? "grid" : "list");
     b.title = list ? "Show as grid" : "Show as list";
     b.setAttribute("aria-label", b.title);
   }
@@ -2092,8 +2216,8 @@ function renderBackupBanner(){
   const due = state.meals.length > 0 && (days === null || days > BACKUP_DUE_DAYS) && !snoozed;
   el.hidden = !due;
   if (due) $(".backup-text", el).textContent = days === null
-    ? "💾 No backup on this device yet."
-    : `💾 Last backup on this device: ${days} days ago.`;
+    ? "No backup on this device yet."
+    : `Last backup on this device: ${days} days ago.`;
 }
 $("#backup-now")?.addEventListener("click", () => $("#export")?.click());
 $("#backup-later")?.addEventListener("click", () => {
@@ -2105,6 +2229,7 @@ $("#backup-later")?.addEventListener("click", () => {
 const mealViewModal = $("#meal-view");
 let viewingId = null;
 function openMealView(id){
+  if (viewingId !== id) mvTab = "ingredients";
   viewingId = id;
   renderMealView();
   mealViewModal.classList.add("open");
@@ -2124,52 +2249,76 @@ function refreshMealView(){ if (viewingId) renderMealView(); }
 $("#mv-close")?.addEventListener("click", closeMealView);
 mealViewModal?.addEventListener("click", (e) => { if (e.target === mealViewModal) closeMealView(); });
 $("#mv-more")?.addEventListener("click", (e) => { e.stopPropagation(); if (viewingId) openMenu(e.currentTarget, mealMenuItems(viewingId, e.currentTarget)); });
+$("#mv-star")?.addEventListener("click", () => { if (viewingId){ haptic(); toggleFav(viewingId); } });
 
+/* Meal page: big photo with the title over it, a meta line, Ingredients /
+   Method / Notes (tabs on phones, side by side on tablets) and an action bar
+   that stays at the bottom: Add to shop (+ ×2), Plan, Cook. */
+let mvTab = "ingredients";
 function renderMealView(){
   const meal = state.meals.find(m => m.id === viewingId);
   if (!meal){ closeMealView(); return; }
   const sel = state.selected.has(meal.id), dbl = state.doubled.has(meal.id);
   const amount = i => window.cookHelpers ? window.cookHelpers.ingAmount(i) : `${formatNumber(i.amount)} ${i.unit || i.type}`;
   const steps = meal.steps || [];
+  const ings = meal.ingredients || [];
   const log = (state.cooklog[meal.id] || []).slice().reverse();
-  $("#mv-title").textContent = meal.title;
+  const cs = cookStats(meal.id), hist = state.history[meal.id];
+  const meta = [
+    typeof meal.cookMins === "number" ? `<span>${icon("clock", 15)}${meal.cookMins} min</span>` : "",
+    steps.length ? `<span>${icon("steps", 15)}${steps.length} steps</span>` : "",
+    cs.count ? `<span>${icon("star-filled", 15, "gold")}${cs.avg != null ? formatNumber(Math.round(cs.avg * 10) / 10) + " · " : ""}cooked ${cs.count}×</span>` : "",
+    hist?.count ? `<span>${icon("cart", 15)}shopped ${hist.count}×</span>` : ""
+  ].filter(Boolean).join("");
+  const tab = (key, label) => `<button type="button" role="tab" class="mv-tab ${mvTab === key ? "on" : ""}" aria-selected="${mvTab === key}" data-mvtab="${key}">${label}</button>`;
+  $("#mv-star").innerHTML = icon(meal.fav ? "star-filled" : "star", 20);
+  $("#mv-star").classList.toggle("on", !!meal.fav);
+  $("#mv-star").setAttribute("aria-label", meal.fav ? "Unfavourite" : "Favourite");
   $("#mv-body").innerHTML = `
-    ${meal.image?.src ? `<div class="mv-hero"><img alt="${escapeHtml(meal.title)}" /></div>` : ""}
-    <div class="mv-top">
-      <div class="chips">${mealChips(meal)}</div>
-      <button type="button" id="mv-star" class="btn mv-star ${meal.fav ? "on" : ""}" aria-pressed="${!!meal.fav}">${meal.fav ? "★ Favourite" : "☆ Favourite"}</button>
+    <div class="mv-hero">
+      <img alt="" />
+      <div class="mv-hero-scrim"></div>
+      <div class="mv-hero-text">
+        ${sel ? `<span class="mag-pill">In this shop${dbl ? " · ×2" : ""}</span>` : ""}
+        <h2 id="mv-title" class="mv-title">${escapeHtml(meal.title)}</h2>
+        ${meta ? `<div class="mv-meta">${meta}</div>` : ""}
+      </div>
     </div>
-    <div class="group mv-actions">
-      <button type="button" id="mv-pick" class="btn ${sel ? "primary" : ""}" aria-pressed="${sel}">${sel ? "✓ In this shop" : "＋ Add to shop"}</button>
-      ${sel ? `<button type="button" id="mv-x2" class="btn x2 ${dbl ? "on" : ""}" aria-pressed="${dbl}" title="Buy double for leftovers">×2 Cook once, eat twice</button>` : ""}
-      <button type="button" id="mv-cook" class="btn">▶ Cook</button>
-      <button type="button" id="mv-edit" class="btn">✏️ Edit</button>
+    <div class="mv-tabs" role="tablist" aria-label="Recipe sections">
+      ${tab("ingredients", "Ingredients")}${tab("method", "Method")}${tab("notes", "Notes")}
     </div>
-    <div class="mv-cols">
-      <section>
-        <h4 class="h4">Ingredients</h4>
-        <ul class="ov-ings">${(meal.ingredients || []).map(i => `<li><span>${escapeHtml(titleCase(i.name))}</span><span class="muted">${escapeHtml(amount(i))}</span></li>`).join("")}</ul>
+    <div class="mv-panels" data-tab="${mvTab}">
+      <section class="mv-panel" data-panel="ingredients">
+        <h4 class="h4 mv-panel-head">${ings.length} ingredient${ings.length === 1 ? "" : "s"}</h4>
+        <ul class="ov-ings mv-ings">${ings.map(i => `<li><span>${escapeHtml(titleCase(i.name))}</span><span class="muted">${escapeHtml(amount(i))}</span></li>`).join("")}</ul>
       </section>
-      <section>
-        <h4 class="h4">Steps</h4>
+      <section class="mv-panel" data-panel="method">
+        <h4 class="h4 mv-panel-head">Method</h4>
         ${steps.length
-          ? `<ol class="ov-steps">${steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`
-          : `<div class="no-steps"><p>No steps yet.</p><button type="button" class="btn" id="mv-scan">📷 Scan back of card</button></div>`}
+          ? `<ol class="ov-steps mv-steps">${steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`
+          : `<div class="no-steps"><p>No steps yet.</p><button type="button" class="btn" id="mv-scan">${icon("camera", 18)}Scan back of card</button></div>`}
       </section>
-    </div>
-    ${meal.notes ? `<h4 class="h4">Notes</h4><p class="mv-notes">${escapeHtml(meal.notes)}</p>` : ""}
-    ${meal.tags?.length ? `<h4 class="h4">Tags</h4><div class="token-list">${meal.tags.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
-    <h4 class="h4">Cook log</h4>
-    ${log.length
-      ? `<ul class="mv-log">${log.map(e => `<li><span class="muted">${escapeHtml(formatShortDate(e.date))}</span> ${e.rating ? `<span class="mv-stars">${"★".repeat(e.rating)}</span>` : ""} ${e.note ? escapeHtml(e.note) : ""}</li>`).join("")}</ul>`
-      : `<p class="muted small">Not cooked in cook mode yet.</p>`}`;
-  const hero = $("#mv-body .mv-hero img");
-  if (hero) hero.src = meal.image.src;   // full-size original
-  $("#mv-star")?.addEventListener("click", () => toggleFav(meal.id));
-  $("#mv-pick")?.addEventListener("click", () => setSelected(meal.id, !state.selected.has(meal.id)));
-  $("#mv-x2")?.addEventListener("click", () => toggleDoubled(meal.id));
+      <section class="mv-panel" data-panel="notes">
+        <h4 class="h4 mv-panel-head">Notes</h4>
+        ${meal.notes ? `<p class="mv-notes">${escapeHtml(meal.notes)}</p>` : `<p class="muted small">No notes.</p>`}
+        ${meal.tags?.length ? `<h4 class="h4">Tags</h4><div class="token-list">${meal.tags.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+        <h4 class="h4">Cook log</h4>
+        ${log.length
+          ? `<ul class="mv-log">${log.map(e => `<li><span class="muted">${escapeHtml(formatShortDate(e.date))}</span> ${e.rating ? `<span class="mv-stars">${"★".repeat(e.rating)}</span>` : ""} ${e.note ? escapeHtml(e.note) : ""}</li>`).join("")}</ul>`
+          : `<p class="muted small">Not cooked in cook mode yet.</p>`}
+      </section>
+    </div>`;
+  $("#mv-body .mv-hero img").src = meal.image?.src || placeholderSvg(meal.title);   // full-size original
+  $("#mv-bar").innerHTML = `
+    <button type="button" id="mv-pick" class="btn ${sel ? "in-shop" : "primary"} mv-main" aria-pressed="${sel}">${icon(sel ? "check" : "plus", 18)}${sel ? "In this shop" : "Add to shop"}</button>
+    ${sel ? `<button type="button" id="mv-x2" class="btn x2 ${dbl ? "on" : ""}" aria-pressed="${dbl}" title="Cook once, eat twice: buy double for leftovers">×2</button>` : ""}
+    <button type="button" id="mv-plan" class="btn">${icon("plan", 18)}Plan</button>
+    <button type="button" id="mv-cook" class="btn">${icon("play", 16)}Cook</button>`;
+  $$("[data-mvtab]", $("#mv-body")).forEach(b => b.addEventListener("click", () => { mvTab = b.dataset.mvtab; renderMealView(); }));
+  $("#mv-pick")?.addEventListener("click", () => { haptic(); setSelected(meal.id, !state.selected.has(meal.id)); });
+  $("#mv-x2")?.addEventListener("click", () => { haptic(); toggleDoubled(meal.id); });
+  $("#mv-plan")?.addEventListener("click", (e) => openMenu(e.currentTarget, window.planMenuItems?.(meal.id) || []));
   $("#mv-cook")?.addEventListener("click", () => { closeMealView(); window.openGuided?.(meal.id); });
-  $("#mv-edit")?.addEventListener("click", () => openEdit(meal.id));
   $("#mv-scan")?.addEventListener("click", () => window.scanStepsFor?.(meal.id));
 }
 
@@ -2197,48 +2346,78 @@ function clearShopState(){
 }
 
 /* ===== Contains filter (search by ingredient) ===== */
-let containsEditor = null;
-function refreshContainsBadge(){
-  const btn = $("#contains-toggle");
-  if (!btn) return;
-  const n = state.containsFilter.size;
-  btn.textContent = n ? `🥬 ${n} ingredient${n === 1 ? "" : "s"} ▾` : "🥬 Contains ▾";
-  btn.classList.toggle("active", n > 0);
+/* Contains: lives in the Filter & sort sheet */
+const containsEditor = $("#contains-editor") ? tokenEditor($("#contains-editor"), $("#contains-input"), []) : null;
+if (containsEditor){
+  new MutationObserver(() => {
+    const next = new Set(containsEditor.get());
+    if ([...next].join("|") === [...state.containsFilter].join("|")) return;
+    state.containsFilter = next;
+    renderMeals();
+  }).observe($("#contains-editor"), { childList: true, subtree: true });
 }
-$("#contains-toggle")?.addEventListener("click", () => {
-  const bar = $("#contains-bar");
-  if (!bar) return;
-  const opening = bar.hasAttribute("hidden");
-  if (opening){
-    bar.removeAttribute("hidden");
-    if (!containsEditor){
-      containsEditor = tokenEditor($("#contains-editor"), $("#contains-input"), Array.from(state.containsFilter));
-      // Rewire to update state on every change
-      const origGet = containsEditor.get;
-      const sync = () => {
-        state.containsFilter = new Set(origGet());
-        refreshContainsBadge();
-        renderMeals();
-      };
-      // Patch by observing the editor's container
-      new MutationObserver(sync).observe($("#contains-editor"), { childList: true, subtree: true });
-    }
-    setTimeout(() => $("#contains-input")?.focus(), 30);
-  } else {
-    bar.setAttribute("hidden", "");
-  }
-});
 $("#contains-clear")?.addEventListener("click", () => {
   state.containsFilter.clear();
-  if (containsEditor) containsEditor.set([]);
-  refreshContainsBadge();
+  containsEditor?.set([]);
   renderMeals();
 });
+/* "What can I make?" opens from the sheet: close the sheet first (plan.js opens it) */
+$("#wcim-open")?.addEventListener("click", () => closeFilters());
 
-/* Search */
+/* ============== Search (header 🔍 → full-screen search) ============== */
+const SEARCH_RECENT_KEY = "search-recent-v18";
+const searchSheet = $("#search-sheet");
+function recentSearches(){ try { return JSON.parse(localStorage.getItem(SEARCH_RECENT_KEY) || "[]"); } catch { return []; } }
+function rememberSearch(q){
+  q = (q || "").trim().toLowerCase();
+  if (!q) return;
+  const list = [q, ...recentSearches().filter(x => x !== q)].slice(0, 6);
+  try { localStorage.setItem(SEARCH_RECENT_KEY, JSON.stringify(list)); } catch { /* ok */ }
+}
+function openSearch(){
+  searchSheet.classList.add("open");
+  searchSheet.setAttribute("aria-hidden", "false");
+  lockBodyScroll(true);
+  renderSearch();
+  setTimeout(() => $("#search")?.focus(), 60);
+}
+function closeSearch(){
+  rememberSearch(state.search);
+  searchSheet.classList.remove("open");
+  searchSheet.setAttribute("aria-hidden", "true");
+  lockBodyScroll(false);
+}
+function renderSearch(){
+  const q = state.search;
+  const rec = recentSearches();
+  $("#search-recent").innerHTML = !q && rec.length
+    ? `<span class="muted small">Recent</span>` + rec.map(r => `<button type="button" class="filter-chip" data-recent="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join("")
+    : "";
+  $$("[data-recent]", $("#search-recent")).forEach(b => b.addEventListener("click", () => {
+    $("#search").value = b.dataset.recent;
+    $("#search").dispatchEvent(new Event("input"));
+  }));
+  const out = $("#search-results");
+  if (!q){ out.innerHTML = `<p class="muted small">Search by meal name or ingredient, e.g. "chicken", "couscous".</p>`; return; }
+  const hits = visibleMeals().slice(0, 40);
+  out.innerHTML = hits.map(m => `
+    <button type="button" class="pp-item" data-open="${escapeHtml(m.id)}">
+      <img alt="" data-img="${escapeHtml(m.id)}" />
+      <span class="pp-name">${escapeHtml(m.title)}<span class="muted small">${typeof m.cookMins === "number" ? `${m.cookMins} min` : ""}</span></span>
+      ${icon("next", 18)}
+    </button>`).join("") || `<div class="empty">No meals match “${escapeHtml(q)}”.</div>`;
+  $$("img[data-img]", out).forEach(img => { img.loading = "lazy"; img.src = gridImageSrc(state.meals.find(m => m.id === img.dataset.img)); });
+  $$("[data-open]", out).forEach(b => b.addEventListener("click", () => { rememberSearch(q); closeSearch(); openMealView(b.dataset.open); }));
+}
+$("#search-open")?.addEventListener("click", openSearch);
+$("#search-close")?.addEventListener("click", () => { closeSearch(); if (state.search) setView("meals"); });
 $("#search")?.addEventListener("input", (e) => {
   state.search = (e.target.value || "").trim().toLowerCase();
   renderMeals();
+  if (searchSheet?.classList.contains("open")) renderSearch();
+});
+$("#search")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter"){ e.preventDefault(); closeSearch(); setView("meals"); }
 });
 
 /* Sort */
@@ -2334,6 +2513,32 @@ function aggregate(){
   }).sort((a, b) => a.name.localeCompare(b.name, "en-GB", { sensitivity:"base" }));
 }
 
+/* ============== Shopping list categories (optional grouping) ==============
+   Keyword rules, checked in order (first match wins), so "rice vinegar" is
+   Cupboard not Rice, "egg noodles" is Pasta not Dairy, "ground coriander"
+   is Spices not Fruit & veg. Unmatched names go to "Other". */
+const SHOP_CATEGORIES = [
+  ["Fruit & veg", /\b(apples?|salad|spinach|leaf|broccoli|onions?|shallots?|carrots?|tomato(es)?|mushrooms?|courgettes?|cucumbers?|garlic|ginger|chill(i|ies)|lettuce|kale|lemons?|limes?|oranges?|mangetout|pak choi|parsnips?|peas?|peppers?|potato(es)?|radish(es)?|rocket|spring greens?|sweetcorn|beans?|edamame|avocados?|aubergines?|leeks?|celery|cabbage|cauliflower|squash|bananas?|berries|basil|coriander|parsley|mint|chives?|thyme|sage|rosemary|dill|lemongrass|oregano)\b/],
+  ["Meat & fish", /\b(chicken|beef|pork|lamb|mince|steaks?|bacon|sausages?|chorizo|nduja|pepperoni|ham|turkey|duck|fillets?|salmon|cod|basa|haddock|prawns?|tuna|fish|belly)\b/],
+  ["Dairy, eggs & chilled", /\b(cheese|cheddar|parmesan|mozzarella|feta|halloumi|cream|cr[eè]me|fra[iî]che|yogh?urt|milk|butter|eggs?|pastry)\b/],
+  ["Bakery", /\b(buns?|bread|naan|ciabatta|rolls?|wraps?|tortillas?|pitta|bagels?|brioche|baguettes?)\b/],
+  ["Pasta, rice & grains", /\b(rice|pasta|spaghetti|linguine|conchiglie|tortiglioni|orzo|lasagne|noodles?|couscous|bulgar|bulgur|quinoa|penne|fusilli|macaroni|oats)\b/],
+  ["Cupboard", /\b(stock|paste|sauce|pur[ée]e|ketchup|mayonnaise|relish|jam|vinegar|oil|honey|tahini|mustard|capers|sriracha|mirin|wine|frito|chopped tomato(es)?|tinned|coconut|crispy onions?|breadcrumbs?|sultanas?|raisins?|apricots?|almonds?|cashews?|nuts?|seeds?|cornflour|flour|sugar|lentils?|chickpeas?)\b/],
+  ["Spices", /^(dried|ground)\b|\b(paprika|cumin|turmeric|garam masala|curry powder|cayenne|allspice|cardamom|nigella|mustard seeds?|five-spice|ras el hanout|chilli flakes?|seasoning|cinnamon|nutmeg|salt|black pepper|peppercorns?)\b/]
+];
+/* Checked first → last; display order is SHOP_CATEGORY_ORDER */
+const SHOP_RULE_ORDER = ["Spices", "Cupboard", "Pasta, rice & grains", "Bakery", "Meat & fish", "Dairy, eggs & chilled", "Fruit & veg"];
+const SHOP_CATEGORY_ORDER = ["Fruit & veg", "Meat & fish", "Dairy, eggs & chilled", "Bakery", "Pasta, rice & grains", "Cupboard", "Spices", "Other"];
+function shopCategory(name){
+  const n = String(name || "").toLowerCase();
+  if (/\bsugar snap/.test(n)) return "Fruit & veg";
+  for (const cat of SHOP_RULE_ORDER){
+    const re = SHOP_CATEGORIES.find(c => c[0] === cat)[1];
+    if (re.test(n)) return cat;
+  }
+  return "Other";
+}
+
 function isStapleRow(r){ return state.pantry.has(r.key) && !state.pantryUse.has(r.key); }
 
 /* Rows to buy: not ticked as "have it", not a cupboard staple. */
@@ -2349,7 +2554,10 @@ async function togglePantry(key, on){
 }
 
 /* Tick = "got it / have it". Ticked rows sink into the "✓ Got" group. */
+let justGot = null;   // the row just ticked gets a small pop
 function setGot(key, on){
+  haptic(on ? 15 : 8);
+  justGot = on ? key : null;
   if (on) state.haveIt.add(key); else state.haveIt.delete(key);
   if (on && !state.prefs.swipeHintSeen){ state.prefs.swipeHintSeen = true; idbSet(IDB_KEYS.prefs, state.prefs); }
   saveSession();
@@ -2394,6 +2602,7 @@ function shoppingRow(r, opts){
   const tr = document.createElement("tr");
   const ticked = state.haveIt.has(r.key);
   tr.classList.toggle("ticked", ticked && !opts.staple);
+  tr.classList.toggle("just-got", ticked && r.key === justGot);
 
   const tdTick = document.createElement("td");
   tdTick.className = "col-tick";
@@ -2422,7 +2631,7 @@ function shoppingRow(r, opts){
     const b = document.createElement("button");
     b.type = "button";
     b.className = `btn mini row-btn ${cls}`.trim();
-    b.textContent = text;
+    if (ICON_PATHS[text]) b.innerHTML = icon(text, 18); else b.textContent = text;
     b.title = title;
     b.setAttribute("aria-label", title);
     b.addEventListener("click", onClick);
@@ -2432,15 +2641,15 @@ function shoppingRow(r, opts){
     mk("Need it", `Add ${r.name} to this shop`, () => {
       state.pantryUse.add(r.key); saveSession(); renderShopping();
     }, "need-btn");
-    mk("✕", `${r.name} is not a staple`, () => togglePantry(r.key, false));
+    mk("x", `${r.name} is not a staple`, () => togglePantry(r.key, false));
   } else if (state.pantry.has(r.key)){
-    mk("🏠", `Back to the cupboard (staple)`, () => {
+    mk("home", `Back to the cupboard (staple)`, () => {
       state.pantryUse.delete(r.key); saveSession(); renderShopping();
     }, "on");
   } else {
-    mk("🏠", `Always have ${r.name} (staple)`, () => togglePantry(r.key, true));
+    mk("home", `Always have ${r.name} (staple)`, () => togglePantry(r.key, true));
   }
-  if (!opts.staple) mk("⇄", `Merge "${r.name}" into another name`, () => openMergeDialog(r.names));
+  if (!opts.staple) mk("swap", `Merge "${r.name}" into another name`, () => openMergeDialog(r.names));
 
   tr.append(tdTick, tdName, tdAmt, tdAct);
   return tr;
@@ -2477,7 +2686,17 @@ function renderShopping(){
     return t;
   };
 
-  if (main.length) shoppingWrap.appendChild(table(main));
+  if (main.length && state.prefs.shopGroup){
+    const groups = new Map(SHOP_CATEGORY_ORDER.map(c => [c, []]));
+    main.forEach(r => groups.get(shopCategory(r.name)).push(r));
+    for (const [cat, items] of groups){
+      if (!items.length) continue;
+      const h = document.createElement("div");
+      h.className = "cat-head";
+      h.textContent = `${cat} (${items.length})`;
+      shoppingWrap.append(h, table(items));
+    }
+  } else if (main.length) shoppingWrap.appendChild(table(main));
   else {
     const d = document.createElement("div");
     d.className = "empty";
@@ -2487,7 +2706,7 @@ function renderShopping(){
   if (got.length){
     const h = document.createElement("div");
     h.className = "got-head";
-    h.textContent = `✓ Got (${got.length})`;
+    h.innerHTML = `${icon("check", 16)}Got (${got.length})`;
     shoppingWrap.append(h, table(got));
   }
   if (main.length && !got.length && !state.prefs.swipeHintSeen){
@@ -2501,7 +2720,7 @@ function renderShopping(){
     const det = document.createElement("details");
     det.className = "staples";
     const sum = document.createElement("summary");
-    sum.textContent = `🏠 Usually in the cupboard (${staples.length})`;
+    sum.innerHTML = `${icon("home", 16)}Usually in the cupboard (${staples.length})`;
     const table = document.createElement("table");
     table.className = "table shopping-table";
     const tbody = document.createElement("tbody");
@@ -2510,8 +2729,21 @@ function renderShopping(){
     det.append(sum, table);
     shoppingWrap.appendChild(det);
   }
+  justGot = null;
   updateShoppingActions();
 }
+
+function syncGroupToggle(){
+  const l = $("#group-toggle-label");
+  if (l) l.textContent = state.prefs.shopGroup ? "Show A–Z" : "Group by category";
+}
+$("#group-toggle")?.addEventListener("click", async () => {
+  state.prefs.shopGroup = !state.prefs.shopGroup;
+  syncGroupToggle();
+  $("#shop-menu")?.removeAttribute("open");
+  renderShopping();
+  await idbSet(IDB_KEYS.prefs, state.prefs);
+});
 
 function updateSelectedCount(){
   const n = state.selected.size;
@@ -2529,8 +2761,9 @@ function updateShoppingActions(){
   const reset = $("#reset-ticks");
   if (reset){
     reset.disabled = tickedN === 0;
-    reset.textContent = tickedN ? `Reset ticks (${tickedN})` : "Reset ticks";
+    reset.innerHTML = icon("refresh", 16) + (tickedN ? `Reset ticks (${tickedN})` : "Reset ticks");
   }
+  window.renderTodayShop?.();   // cook.js
 }
 
 function resetHaveItTicks(){
@@ -2721,9 +2954,9 @@ $("#shop-help-toggle")?.addEventListener("click", () => {
   const help = $("#shop-help");
   if (help) help.hidden = !help.hidden;
 });
+/* ⋯ menus (shopping list, plan) close on a tap elsewhere */
 document.addEventListener("click", (e) => {
-  const m = $("#shop-menu");
-  if (m?.open && !m.contains(e.target)) m.open = false;
+  $$("details.menu[open]").forEach(m => { if (!m.contains(e.target)) m.open = false; });
 });
 
 /* =====================================================
@@ -3010,7 +3243,7 @@ function renderPantry(){
   if (!wrap) return;
   wrap.innerHTML = "";
   if (!state.pantry.size){
-    wrap.innerHTML = `<span class="muted small">None yet — tap 🏠 on a shopping-list row.</span>`;
+    wrap.innerHTML = `<span class="muted small">None yet — tap the house button on a shopping-list row.</span>`;
     return;
   }
   Array.from(state.pantry).sort().forEach(k => {
@@ -3040,7 +3273,7 @@ function renderHistory(){
 
   // Cook log (times actually cooked, ratings)
   const cooked = state.meals.map(m => ({ m, c: cookStats(m.id) })).filter(x => x.c.count);
-  const cookRow = x => `<li><span>${escapeHtml(x.m.title)}</span> <span class="muted">🍳 ×${x.c.count}${x.c.avg != null ? ` · ★${formatNumber(Math.round(x.c.avg * 10) / 10)}` : ""}</span></li>`;
+  const cookRow = x => `<li><span>${escapeHtml(x.m.title)}</span> <span class="muted">cooked ×${x.c.count}${x.c.avg != null ? ` · ★${formatNumber(Math.round(x.c.avg * 10) / 10)}` : ""}</span></li>`;
   const mostCooked = cooked.slice().sort((a, b) => b.c.count - a.c.count || a.m.title.localeCompare(b.m.title)).slice(0, 5);
   const topRated = cooked.filter(x => x.c.avg != null).sort((a, b) => b.c.avg - a.c.avg || b.c.count - a.c.count).slice(0, 5);
   const cookHtml = cooked.length ? `
@@ -3143,13 +3376,16 @@ $("#unit-add")?.addEventListener("click", async () => {
 
   updateIngredientSuggestions();
   refreshTagSuggestions();
-  setView("meals");
+  syncGroupToggle();
+  $("#about-version") && ($("#about-version").textContent = `v${APP_VERSION}`);
+  setView("today");
   syncFiltersUI();
 
   renderMeals();
   renderShopping();
 
-  // cook.js renders the Cook tab once data is loaded (see its init)
+  // cook.js renders the Today tab once data is loaded (see its init)
   window.appReady = true;
   document.dispatchEvent(new Event("app:ready"));
+  setTimeout(maybeShowWhatsNew, 700);
 })();

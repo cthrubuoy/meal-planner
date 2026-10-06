@@ -85,7 +85,7 @@
       state.pins[wd] = [...pinnedOn(wd), e.mealId];
       setDay(iso, planned(iso).map((x, i) => i === idx ? { ...x, pin: true } : x));
       applyPins(visibleDates());
-      showUndoToast(`📌 "${title}" every ${DAY[d.getDay()]}`, async () => {
+      showUndoToast(`Pinned "${title}" to every ${DAY[d.getDay()]}`, async () => {
         state.plan = JSON.parse(before.plan); state.pins = JSON.parse(before.pins); await savePlan(); renderPlan();
       });
     }
@@ -264,12 +264,12 @@
     const pinLabel = `${pinned ? "Unpin from" : "Pin to every"} ${DAY[wd]}`;
     return `<div class="plan-meal" data-iso="${iso}" data-idx="${idx}">
       <img alt="" data-img="${escapeHtml(m.id)}" />
-      <button type="button" class="plan-title" data-open="${escapeHtml(m.id)}">${pinned ? "📌 " : ""}${escapeHtml(m.title)}</button>
+      <button type="button" class="plan-title" data-open="${escapeHtml(m.id)}">${pinned ? icon("pin", 14, "pin-ic") : ""}${escapeHtml(m.title)}</button>
       <span class="plan-btns">
-        <button type="button" class="btn mini pin-btn ${pinned ? "on" : ""}" data-act="pin" aria-pressed="${pinned}" title="${pinLabel}" aria-label="${pinLabel}">📌</button>
+        <button type="button" class="btn mini pin-btn ${pinned ? "on" : ""}" data-act="pin" aria-pressed="${pinned}" title="${pinLabel}" aria-label="${pinLabel}">${icon("pin", 16)}</button>
         <button type="button" class="chip x2 ${e.x === 2 ? "on" : ""}" data-act="x2" aria-pressed="${e.x === 2}" title="Cook once, eat twice">×2</button>
-        <button type="button" class="btn mini" data-act="swap" title="Swap for another suggestion" aria-label="Swap">⇄</button>
-        <button type="button" class="btn mini" data-act="remove" title="Remove" aria-label="Remove">✕</button>
+        <button type="button" class="btn mini" data-act="swap" title="Swap for another suggestion" aria-label="Swap">${icon("swap", 16)}</button>
+        <button type="button" class="btn mini" data-act="remove" title="Remove" aria-label="Remove">${icon("x", 16)}</button>
       </span>
     </div>`;
   }
@@ -279,8 +279,8 @@
     if (!m) return "";
     const pinned = isPinned(m.id, new Date(iso + "T12:00:00").getDay());
     return `<button type="button" class="cal-item" data-iso="${iso}" data-idx="${idx}" title="${escapeHtml(m.title)}">
-      <img alt="" data-img="${escapeHtml(m.id)}" />
-      <span class="cal-title">${pinned ? "📌 " : ""}${escapeHtml(m.title)}</span>
+      <img alt="" draggable="false" data-img="${escapeHtml(m.id)}" />
+      <span class="cal-title">${pinned ? icon("pin", 13, "pin-ic") : ""}${escapeHtml(m.title)}</span>
       ${e.x === 2 ? `<span class="chip chip-x2 cal-x2">×2</span>` : ""}
     </button>`;
   }
@@ -291,12 +291,113 @@
     const wd = new Date(iso + "T12:00:00").getDay();
     const pinned = isPinned(m.id, wd);
     openMenu(anchor, [
-      { label: "🍽️ Open meal", run: () => openMealView(m.id) },
-      { label: e.x === 2 ? "×2 off" : "×2 Cook once, eat twice", run: () => toggleX2(iso, idx) },
-      { label: "⇄ Swap", run: () => swap(iso, idx) },
-      { label: pinned ? `📌 Unpin from ${DAY[wd]}s` : `📌 Pin to every ${DAY[wd]}`, run: () => togglePin(iso, idx) },
-      { label: e.pin ? "✕ Skip this week" : "✕ Remove", danger: true, run: () => removeFrom(iso, idx) }
+      { icon: "meals", label: "Open meal", run: () => openMealView(m.id) },
+      { icon: "refresh", label: e.x === 2 ? "×2 off" : "×2 Cook once, eat twice", run: () => toggleX2(iso, idx) },
+      { icon: "swap", label: "Swap", run: () => swap(iso, idx) },
+      { icon: "pin", label: pinned ? `Unpin from ${DAY[wd]}s` : `Pin to every ${DAY[wd]}`, run: () => togglePin(iso, idx) },
+      { icon: "x", label: e.pin ? "Skip this week" : "Remove", danger: true, run: () => removeFrom(iso, idx) }
     ]);
+  }
+
+  /* ============== Week strip (v18): a pill per day, tap to jump to it ============== */
+  function renderPlanStrip(dates){
+    const wrap = $("#plan-strip");
+    if (!wrap) return;
+    const today = localISO(new Date());
+    wrap.innerHTML = dates.map(d => {
+      const iso = localISO(d), items = planned(iso);
+      const cooked = items.length && items.every(e => (state.cooklog[e.mealId] || []).some(c => c.date >= iso));
+      return `<button type="button" class="day-pill ${iso === today ? "is-today" : ""} ${items.length ? "has" : ""} ${cooked ? "done" : ""} ${iso < today ? "past" : ""}"
+        data-jump="${iso}" aria-label="${escapeHtml(dayLabel(d))}: ${items.length ? escapeHtml(items.map(e => mealById(e.mealId)?.title || "").join(", ")) : "nothing planned"}">
+        <span class="dp-day">${DAY[d.getDay()].slice(0, 1)}</span><span class="dp-date">${d.getDate()}</span>
+        <span class="dp-dot">${cooked ? icon("check", 12) : ""}</span>
+      </button>`;
+    }).join("");
+    $$("[data-jump]", wrap).forEach(b => b.addEventListener("click", () => {
+      const el = $(`#plan-body [data-day="${b.dataset.jump}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+      el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    }));
+  }
+
+  /* ============== Calendar drag & drop (v18) ==============
+     Mouse/pen: drag a meal to another day. Touch: press and hold, then drag
+     (a quick swipe still scrolls). A tap without dragging opens the menu. */
+  async function moveMeal(fromIso, idx, toIso){
+    if (fromIso === toIso) return;
+    const items = planned(fromIso).slice();
+    const [e] = items.splice(idx, 1);
+    if (!e) return;
+    const before = JSON.stringify(state.plan);
+    if (e.pin) items.push({ mealId: e.mealId, pin: true, skipped: true });   // a pinned meal is skipped on its old day this week
+    setDay(fromIso, items);
+    setDay(toIso, [...planned(toIso), { mealId: e.mealId, ...(e.x === 2 ? { x: 2 } : {}) }]);
+    await savePlan();
+    renderPlan();
+    haptic(15);
+    showUndoToast(`Moved "${mealById(e.mealId)?.title || "meal"}" to ${dayLabel(new Date(toIso + "T12:00:00"))}`, async () => {
+      state.plan = JSON.parse(before); await savePlan(); renderPlan();
+    });
+  }
+  let drag = null;
+  function attachCalDrag(item){
+    item.addEventListener("pointerdown", (e) => {
+      if (e.button > 0) return;
+      drag = { item, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType === "touch", on: false, timer: null };
+      if (drag.touch) drag.timer = setTimeout(() => { if (drag && drag.item === item) startDrag(e.clientX, e.clientY); }, 320);
+    });
+    item.addEventListener("pointermove", (e) => {
+      if (!drag || drag.item !== item || e.pointerId !== drag.id) return;
+      const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
+      if (!drag.on){
+        if (drag.touch){ if (dist > 8){ clearTimeout(drag.timer); drag = null; } return; }   // a scroll
+        if (dist > 6) startDrag(e.clientX, e.clientY); else return;
+      }
+      try { item.setPointerCapture(e.pointerId); } catch { /* ok */ }
+      moveGhost(e.clientX, e.clientY);
+    });
+    item.addEventListener("touchmove", (e) => { if (drag?.on) e.preventDefault(); }, { passive: false });
+    const end = async (e, cancelled) => {
+      if (!drag || drag.item !== item) return;
+      clearTimeout(drag.timer);
+      const d = drag; drag = null;
+      if (!d.on) return;
+      d.ghost.remove();
+      item.classList.remove("drag-src");
+      $$(".cal-cell.drop").forEach(c => c.classList.remove("drop"));
+      item.dataset.dragged = "1";                 // swallow the click that follows
+      setTimeout(() => delete item.dataset.dragged, 0);
+      const cell = !cancelled && cellAt(e.clientX, e.clientY);
+      if (cell) await moveMeal(item.dataset.iso, Number(item.dataset.idx), cell.dataset.day);
+    };
+    item.addEventListener("pointerup", e => end(e, false));
+    item.addEventListener("pointercancel", e => end(e, true));
+    item.addEventListener("contextmenu", e => { if (drag) e.preventDefault(); });
+  }
+  function startDrag(x, y){
+    if (!drag) return;
+    drag.on = true;
+    const r = drag.item.getBoundingClientRect();
+    const g = drag.item.cloneNode(true);
+    g.className = "cal-item drag-ghost";
+    g.style.width = `${r.width}px`;
+    drag.dx = x - r.left; drag.dy = y - r.top;
+    document.body.appendChild(g);
+    drag.ghost = g;
+    drag.item.classList.add("drag-src");
+    haptic(10);
+    moveGhost(x, y);
+  }
+  function cellAt(x, y){
+    return document.elementFromPoint(x, y)?.closest("#plan-body .cal-cell[data-day]") || null;
+  }
+  function moveGhost(x, y){
+    if (!drag?.ghost) return;
+    drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(-2deg)`;
+    const cell = cellAt(x, y);
+    $$(".cal-cell.drop").forEach(c => { if (c !== cell) c.classList.remove("drop"); });
+    if (cell && cell.dataset.day !== drag.item.dataset.iso) cell.classList.add("drop");
   }
 
   function renderPlan(){
@@ -316,21 +417,26 @@
     $$("[data-span]").forEach(b => b.classList.toggle("on", Number(b.dataset.span) === span));
     $$("[data-layout]").forEach(b => b.classList.toggle("on", b.dataset.layout === (calendar ? "calendar" : "list")));
     wrap.classList.toggle("calendar", calendar);
+    renderPlanStrip(dates);
+    window.renderToday?.();   // cook.js
 
     if (calendar){
       const heads = DAY.slice(1).concat(DAY[0]).map(dn => `<div class="cal-head">${dn}</div>`).join("");
       wrap.innerHTML = heads + dates.map(d => {
         const iso = localISO(d);
         const cooking = (state.prefs.planDays || []).includes(d.getDay());
-        return `<div class="cal-cell ${iso === today ? "today" : ""} ${cooking ? "" : "off"} ${iso < today ? "past" : ""}">
+        return `<div class="cal-cell ${iso === today ? "today" : ""} ${cooking ? "" : "off"} ${iso < today ? "past" : ""}" data-day="${iso}">
           <div class="cal-date">${d.getDate()} <span class="muted small">${d.toLocaleDateString("en-GB", { month: "short" })}</span></div>
           ${planned(iso).map((e, i) => calItem(e, iso, i)).join("")}
-          <button type="button" class="cal-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">＋</button>
+          <button type="button" class="cal-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">${icon("plus", 16)}</button>
         </div>`;
       }).join("");
       $$("img[data-img]", wrap).forEach(img => { img.src = gridImageSrc(mealById(img.dataset.img)); });
       $$("[data-add]", wrap).forEach(b => b.addEventListener("click", () => openPicker(b.dataset.add)));
-      $$(".cal-item", wrap).forEach(b => b.addEventListener("click", (ev) => { ev.stopPropagation(); calMenu(b, b.dataset.iso, Number(b.dataset.idx)); }));
+      $$(".cal-item", wrap).forEach(b => {
+        b.addEventListener("click", (ev) => { ev.stopPropagation(); if (b.dataset.dragged) return; calMenu(b, b.dataset.iso, Number(b.dataset.idx)); });
+        attachCalDrag(b);
+      });
       return;
     }
 
@@ -338,10 +444,10 @@
       const iso = localISO(d);
       const items = planned(iso);
       const cooking = (state.prefs.planDays || []).includes(d.getDay());
-      return `<div class="plan-day ${iso === today ? "today" : ""} ${cooking ? "" : "off"}">
+      return `<div class="plan-day ${iso === today ? "today" : ""} ${cooking ? "" : "off"}" data-day="${iso}">
         <div class="plan-date">${dayLabel(d)}${iso === today ? ` <span class="chip">today</span>` : ""}</div>
         <div class="plan-items">${items.map((e, i) => mealRow(e, iso, i)).join("") || `<span class="muted small">${cooking ? "Nothing planned" : "Not cooking"}</span>`}</div>
-        <button type="button" class="btn mini plan-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">＋</button>
+        <button type="button" class="btn mini plan-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">${icon("plus", 18)}</button>
       </div>`;
     }).join("");
     $$("img[data-img]", wrap).forEach(img => { img.src = gridImageSrc(mealById(img.dataset.img)); });
@@ -361,9 +467,10 @@
   $("#plan-today")?.addEventListener("click", () => { weekOffset = 0; renderPlan(); });
   $("#plan-autofill")?.addEventListener("click", autoFill);
   $("#plan-swipe")?.addEventListener("click", openSwiper);
-  $("#plan-copy")?.addEventListener("click", copyLastWeek);
+  const closePlanMore = () => $(".plan-more")?.removeAttribute("open");
+  $("#plan-copy")?.addEventListener("click", () => { closePlanMore(); copyLastWeek(); });
   $("#plan-shop")?.addEventListener("click", shopWeek);
-  $("#plan-clear")?.addEventListener("click", clearWeek);
+  $("#plan-clear")?.addEventListener("click", () => { closePlanMore(); clearWeek(); });
   $$("[data-span]").forEach(b => b.addEventListener("click", async () => {
     state.prefs.planSpan = Number(b.dataset.span);
     renderPlan();
@@ -414,7 +521,7 @@
       <button type="button" class="pp-item" data-pick="${escapeHtml(m.id)}">
         <img alt="" data-img="${escapeHtml(m.id)}" />
         <span class="pp-name">${escapeHtml(m.title)}${ctx.inWeek.has(m.id) ? ` <span class="muted small">(already this week)</span>` : ""}</span>
-        <span class="muted small">${typeof m.cookMins === "number" ? `⏱ ${m.cookMins}` : ""}${m.fav ? " ★" : ""}</span>
+        <span class="muted small">${typeof m.cookMins === "number" ? `${icon("clock", 13)}${m.cookMins}` : ""}${m.fav ? " ★" : ""}</span>
       </button>`).join("") || `<div class="empty">No meals match.</div>`;
     $$("img[data-img]", $("#pp-list")).forEach(img => { img.loading = "lazy"; img.src = gridImageSrc(mealById(img.dataset.img)); });
     $$("[data-pick]", $("#pp-list")).forEach(b => b.addEventListener("click", async () => { await addToDay(pickIso, b.dataset.pick); closePicker(); }));
@@ -542,7 +649,7 @@
   function planMenuItems(mealId){
     const today = localISO(new Date());
     return weekDates(0).concat(weekDates(1)).filter(d => localISO(d) >= today).slice(0, 8).map(d => ({
-      label: `📅 ${dayLabel(d)}${planned(localISO(d)).length ? " ·" : ""}`,
+      icon: "plan", label: `${dayLabel(d)}${planned(localISO(d)).length ? " ·" : ""}`,
       run: async () => { await addToDay(localISO(d), mealId); status(`Planned for ${dayLabel(d)}`); }
     }));
   }

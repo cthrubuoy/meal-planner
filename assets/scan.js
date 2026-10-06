@@ -94,7 +94,7 @@
     if (scanImage) img.src = scanImage;
     $("#scan-photo-opts").innerHTML = photoChoices.map(x =>
       `<button type="button" class="btn mini ${x.key === c.key ? "primary" : ""}" data-photo="${x.key}">${escapeHtml(x.label)}</button>`).join("")
-      + `<button type="button" class="btn mini" data-photo="__file">📁 Choose…</button>`;
+      + `<button type="button" class="btn mini" data-photo="__file">Choose…</button>`;
     $$("[data-photo]", $("#scan-photo-opts")).forEach(b => b.addEventListener("click", () => {
       if (b.dataset.photo === "__file") $("#scan-photo-file").click();
       else choosePhoto(b.dataset.photo);
@@ -179,7 +179,7 @@
         pagePhoto = await fileToCompressedDataURL(new File([blob], "recipe", { type: blob.type }));
       } catch { pagePhoto = null; }
     }
-    setPhotoChoices([{ key:"page", label:"🖼️ Photo from the page", src: pagePhoto }, { key:"none", label:"No photo" }], "page");
+    setPhotoChoices([{ key:"page", label:"Photo from the page", src: pagePhoto }, { key:"none", label:"No photo" }], "page");
     showSection("form");
   }
   window.importRecipeFromUrl = runImport;
@@ -255,8 +255,8 @@
     let dish = null;
     if (Array.isArray(data.dishPhoto)) dish = await cropImageToDataURL(file, data.dishPhoto);
     setPhotoChoices([
-      { key:"dish", label:"🍽️ Dish photo", src: dish },
-      { key:"card", label:"🃏 Whole card", src: dataUrl },
+      { key:"dish", label:"Dish photo", src: dish },
+      { key:"card", label:"Whole card", src: dataUrl },
       { key:"none", label:"No photo" }
     ], dish ? "dish" : "none");
     showSection("form");

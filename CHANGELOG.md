@@ -3,6 +3,39 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v18 — New look: Today tab, photo cards, new meal page (2026-10-06)
+Cache `meal-planner-v20` · assets `?v=18` · export schema 14 (unchanged)
+
+### Added
+- **Today tab** replaces the Cook tab and opens first:
+  - tonight's meal as a big photo, with **Cook** and **Open meal**
+  - a strip of this week's days (a dot for planned, a tick for cooked)
+  - a shopping-list card with the number of items to buy, **Open list** and **Ocado**
+  - below that, the week's menu and "Cook something else", as before
+- **Search** has its own button in the header. It opens a search sheet that keeps your recent searches.
+- **Filter & sort** is one sheet: sort, favourites, time, tags, ingredients and "What can I make?". Active filters show as chips above the meals; tap a chip to remove it.
+- **Week strip on the Plan tab.** Tap a day to jump to it.
+- **Drag and drop in the calendar** (tablet and desktop). Drag a meal to another day; on touch, press and hold first. Moves can be undone.
+- **Group the shopping list by category**, from its ⋯ menu: Fruit & veg, Meat & fish, Dairy, eggs & chilled, Bakery, Pasta, rice & grains, Cupboard, Spices. It's optional; A–Z is still the default.
+- **"What's new"** appears once after each update. It's also in Settings › About, with the version, a link to this changelog and "Show tips again".
+- **First-time tips:** one short tip per screen, shown once.
+- **Black (OLED) theme** in Settings › Appearance.
+
+### Changed
+- **Meal cards (grid view):** the photo fills the card, with the title, time and rating on it. **+** adds the meal to the shop (it turns into a green ✓), and "In this shop · ×2" shows on the photo. List view keeps the chips and ⋯ menu.
+- **Meal page:**
+  - full-width photo with the title on it, plus time, steps, rating and times cooked
+  - **Ingredients / Method / Notes** tabs on phones; side by side on tablets
+  - a bar along the bottom with **Add to shop** (and ×2), **Plan** and **Cook**
+  - Edit, Duplicate and Delete are in the ⋯ menu at the top
+- **One icon set** (line icons) replaces the emoji on buttons, menus and the bottom nav.
+- **New fonts** (Bricolage Grotesque for headings, Figtree for text). They're stored in the app, so they work offline.
+- **Bottom nav (phone):** Today, Meals, a raised **+ Add** button, Plan and Shop.
+- **Header:** Add, Search and Settings. The theme switch moved to Settings.
+- **One green main button per screen.** Less-used actions moved into ⋯ menus, e.g. Copy last week and Clear week on the Plan tab.
+- **Small animations and vibration** when you tick an item, add a meal or move a meal. They're off when your device is set to reduce motion.
+- "Placeholder" pictures for meals without a photo are colour gradients with the meal's initials.
+
 ## v17 — Cook tab follows the week's plan (2026-10-06)
 Cache `meal-planner-v19` · assets `?v=17` · export schema 14 (unchanged)
 
