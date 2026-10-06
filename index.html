@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=31" />
-  <link rel="stylesheet" href="assets/styles.css?v=31" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=32" />
+  <link rel="stylesheet" href="assets/styles.css?v=32" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v31</span>
+      <span class="pill">v32</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -134,6 +134,7 @@
 
         <div id="sel-bar" class="sel-bar" hidden>
           <span id="sel-count"></span>
+          <button id="plan-these" class="btn mini" title="Put these meals on free days this week"><i data-icon="plan" data-size="16"></i>Plan these</button>
           <button id="clear-selection" class="btn mini ghost" title="Untick all meals and start a new shop">Clear selection</button>
         </div>
 
@@ -158,6 +159,7 @@
               <button id="plan-swipe" class="btn"><i data-icon="cards" data-size="16"></i>Swipe to pick</button>
               <button id="plan-copy" class="btn"><i data-icon="copy" data-size="16"></i>Copy last week</button>
               <button id="plan-clear" class="btn"><i data-icon="trash" data-size="16"></i>Clear week</button>
+              <button id="plan-lastweek" class="btn"><i data-icon="refresh" data-size="16"></i>Last week's uncooked meals</button>
               <div class="menu-sep tablet-only">Layout</div>
               <span class="seg tablet-only" role="group" aria-label="Layout"><button class="segbtn" data-layout="list"><i data-icon="list" data-size="16"></i>List</button><button class="segbtn" data-layout="calendar"><i data-icon="grid" data-size="16"></i>Calendar</button></span>
               <div class="menu-sep">Cook on</div>
@@ -193,6 +195,7 @@
                 <button id="copy-tsv" class="btn"><i data-icon="copy" data-size="16"></i>Copy as a table (TSV)</button>
                 <button id="print" class="btn"><i data-icon="printer" data-size="16"></i>Print</button>
                 <button id="reset-ticks" class="btn" disabled><i data-icon="refresh" data-size="16"></i>Reset ticks</button>
+                <button id="shop-plan-these" class="btn"><i data-icon="plan" data-size="16"></i>Plan these meals</button>
                 <button id="shop-help-toggle" class="btn"><i data-icon="info" data-size="16"></i>How this works</button>
               </div>
             </details>
@@ -633,6 +636,22 @@
         <button type="button" id="swap-back" class="btn ghost">Change the swap</button>
       </div>
     </section>
+  </div>
+</div>
+
+<!-- ================== PLAN THESE (the picked meals onto free days) ================== -->
+<div id="plan-these-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pt-title">
+  <div class="dialog rollover-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="pt-title" class="h3">Plan these meals</h3>
+      <button type="button" id="pt-close" class="btn icon-btn" aria-label="Close"><i data-icon="x"></i></button>
+    </div>
+    <p class="muted small">Your picked meals that aren't planned yet, on free cooking days (quicker ones Mon–Thu). Change any day, then Save.</p>
+    <ul id="pt-list" class="ro-list"></ul>
+    <div class="group" style="justify-content:flex-end">
+      <button type="button" id="pt-cancel" class="btn">Cancel</button>
+      <button type="button" id="pt-save" class="btn primary"><i data-icon="check" data-size="16"></i>Save to the plan</button>
+    </div>
   </div>
 </div>
 
@@ -1119,13 +1138,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=31" defer></script>
-<script src="assets/app.js?v=31" defer></script>
-<script src="assets/cook.js?v=31" defer></script>
-<script src="assets/plan.js?v=31" defer></script>
-<script src="assets/vendor/qrcode.js?v=31" defer></script>
-<script src="assets/sync.js?v=31" defer></script>
-<script src="assets/scan.js?v=31" defer></script>
-<script src="assets/pwa.js?v=31" defer></script>
+<script src="assets/icons.js?v=32" defer></script>
+<script src="assets/app.js?v=32" defer></script>
+<script src="assets/cook.js?v=32" defer></script>
+<script src="assets/plan.js?v=32" defer></script>
+<script src="assets/vendor/qrcode.js?v=32" defer></script>
+<script src="assets/sync.js?v=32" defer></script>
+<script src="assets/scan.js?v=32" defer></script>
+<script src="assets/pwa.js?v=32" defer></script>
 </body>
 </html>

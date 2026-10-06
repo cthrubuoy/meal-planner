@@ -377,7 +377,7 @@
       <div class="scrim"></div>
       <div class="today-hero-text">
         <span class="today-kicker">${row.isToday ? "Tonight" : `Next up · ${escapeHtml(row.label)}`}${row.left ? " · leftovers" : ""}</span>
-        ${row.chef ? `<span class="today-chef">${chefAvatar(row.chef, 26)}${escapeHtml(row.chef.name)} is cooking</span>` : ""}
+        ${row.chef ? `<span class="today-chef">${chefAvatar(row.chef, 34)}${escapeHtml(row.chef.name)} is cooking</span>` : ""}
         <h2 class="today-title">${escapeHtml(m.title)}</h2>
         ${meta ? `<div class="mag-meta">${meta}</div>` : ""}
         <div class="group today-hero-btns">

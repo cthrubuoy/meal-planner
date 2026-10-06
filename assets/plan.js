@@ -275,7 +275,7 @@
       <img alt="" data-img="${escapeHtml(m.id)}" />
       <button type="button" class="plan-title" data-open="${escapeHtml(m.id)}">${e.left ? `<span class="muted">Leftovers:</span> ` : ""}${pinned ? icon("pin", 14, "pin-ic") : ""}${escapeHtml(m.title)}</button>
       <span class="plan-btns">
-        <button type="button" class="btn mini chef-btn" data-act="chef" title="Who's cooking?" aria-label="Who's cooking?">${e.chef && chefById(e.chef) ? chefAvatar(chefById(e.chef), 22) : icon("user", 16)}</button>
+        <button type="button" class="btn mini chef-btn" data-act="chef" title="Who's cooking?" aria-label="Who's cooking?">${e.chef && chefById(e.chef) ? `${chefAvatar(chefById(e.chef), 30)}<span>${escapeHtml(chefById(e.chef).name.split(" ")[0])}</span>` : icon("user", 18)}</button>
         <button type="button" class="btn mini pin-btn ${pinned ? "on" : ""}" data-act="pin" aria-pressed="${pinned}" title="${pinLabel}" aria-label="${pinLabel}">${icon("pin", 16)}</button>
         <button type="button" class="chip x2 ${e.x === 2 ? "on" : ""}" data-act="x2" aria-pressed="${e.x === 2}" title="Cook once, eat twice">×2</button>
         <button type="button" class="btn mini" data-act="swap" title="Swap for another suggestion" aria-label="Swap">${icon("swap", 16)}</button>
@@ -293,7 +293,7 @@
       <img alt="" draggable="false" data-img="${escapeHtml(m.id)}" />
       <span class="cal-title">${e.left ? "Leftovers: " : ""}${pinned ? icon("pin", 13, "pin-ic") : ""}${escapeHtml(m.title)}</span>
       ${e.x === 2 ? `<span class="chip chip-x2 cal-x2">×2</span>` : ""}
-      ${e.chef && chefById(e.chef) ? `<span class="cal-chef">${chefAvatar(chefById(e.chef), 26)}</span>` : ""}
+      ${e.chef && chefById(e.chef) ? `<span class="cal-chef">${chefAvatar(chefById(e.chef), 34)}<b>${escapeHtml(chefById(e.chef).name.split(" ")[0])}</b></span>` : ""}
     </button>`;
   }
   /* Under the week: how many are planned, how many aren't on the list yet; tonight's meal */
@@ -584,6 +584,7 @@
   $("#plan-copy")?.addEventListener("click", () => { closePlanMore(); copyLastWeek(); });
   $("#plan-shop")?.addEventListener("click", shopWeek);
   $("#plan-clear")?.addEventListener("click", () => { closePlanMore(); clearWeek(); });
+  $("#plan-lastweek")?.addEventListener("click", () => { closePlanMore(); window.openLastWeek?.(); });
   $$("[data-span]").forEach(b => b.addEventListener("click", async () => {
     state.prefs.planSpan = Number(b.dataset.span);
     renderPlan();

@@ -3,6 +3,21 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v32 — Plan these, chef names on the plan, no pull-down refresh (2026-10-06)
+Cache `meal-planner-v34` · assets `?v=32` · export schema 16 (unchanged) · scan server **2.8 live** (524 fix, `POST /swap`)
+
+### Added
+- **Plan these** (L7): on the Meals selection bar and in the shopping list's ⋯ menu. Your picked meals that aren't planned yet are put on free cooking days (cook days only, not a "not cooking" day, not a day that already has a meal), quicker meals Mon–Thu and longer ones at the weekend. A sheet shows each meal with its day — change any, or choose "Don't plan it" — then **Save to the plan**. ×2 meals stay ×2.
+- **Plan ⋯ › Last week's uncooked meals:** opens the new-week sheet whenever you like (it still appears by itself the first time you open the app in a new week).
+
+### Changed
+- **Who's cooking is readable:** the plan shows the cook's photo (bigger) and first name — on the calendar as a chip on the meal's photo, in the list as a name button. Today's chip is bigger too.
+- **By aisle** is now the default order of the shopping list (you can still choose A–Z or By meal).
+- **Swap an ingredient** now appears (scan server 2.8 deployed).
+
+### Fixed
+- **Pulling down no longer reloads the app** (Android's pull-to-refresh), which could throw away what you were doing.
+
 ## v31 — Tidy-up: unused and overridden styles removed (2026-10-06)
 Cache `meal-planner-v33` · assets `?v=31` · export schema 16 (unchanged)
 

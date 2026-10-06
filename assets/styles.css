@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v31
+   Meal Planner & Shopping List — v32
    ===================================================== */
 
 :root{
@@ -47,6 +47,7 @@
 html, body{
   max-width:100%;
   overflow-x:hidden;
+  overscroll-behavior-y:none;   /* v32: pulling down doesn't reload the page (Android pull-to-refresh) */
 }
 body{
   margin:0;
@@ -2148,9 +2149,14 @@ body.rail-on .hint{ left:104px; }
 .chef-name{ flex:1 1 auto; font-weight:600; }
 .chef-add{ display:flex; gap:8px; }
 .chef-add input[type=text]{ flex:1 1 auto; min-width:0; }
-.chef-btn{ padding:3px; min-width:34px; min-height:34px; display:inline-flex; align-items:center; justify-content:center; }
-.cal-chef{ position:absolute; right:6px; bottom:6px; z-index:1; }
-.plan-body.calendar .cal-item:has(.cal-chef) .cal-title{ padding-right:36px; }
+.chef-btn{ padding:3px; min-width:38px; min-height:38px; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.chef-btn:has(.chef-av){ padding:3px 10px 3px 3px; border-radius:999px; font-weight:600; }
+.cal-chef{
+  position:absolute; left:6px; top:34px; z-index:1; max-width:calc(100% - 12px);
+  display:inline-flex; align-items:center; gap:6px; padding:2px 10px 2px 2px; border-radius:999px;
+  background: rgba(0,0,0,.6); color:#fff; font-size:.82rem; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.cal-chef b{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .today-chef{ align-self:flex-start; display:inline-flex; align-items:center; gap:8px; padding:3px 10px 3px 3px; border-radius:999px; background: rgba(0,0,0,.42); color:#fff; font-weight:600; font-size:.9rem; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
 .co-who{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:6px 0 10px; }
 .co-who .tchip{ display:inline-flex; align-items:center; gap:6px; padding-left:4px; }
@@ -2204,3 +2210,7 @@ img.chef-av{ position:static !important; inset:auto !important; aspect-ratio:1 /
 .swap-why:empty{ display:none; }
 .swap-btns{ margin-top:10px; }
 .mv-versions{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:12px 0 0; }
+
+/* Plan these (v32) */
+.sel-bar #plan-these{ margin-left:auto; }
+.sel-bar #clear-selection{ margin-left:0; }

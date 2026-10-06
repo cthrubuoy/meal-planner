@@ -801,12 +801,13 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["swap", "Swap an ingredient", "On a meal's ⋯ menu: swap the chicken for turkey mince (or anything). Gemini reworks the amounts and the steps that mention it, you check the changes, then save it as a version."],
-  ["cards", "Versions of a meal", "The meal page switches between Original and e.g. Turkey mince. Shopping, the plan and cook mode follow the one you choose."],
-  ["sparkles", "Tidier under the hood", "Old styles that nothing used any more were removed. Nothing should look different."]
+  ["plan", "Plan these", "Picked meals for the shop but haven't planned them? \"Plan these\" (on the Meals selection bar, or the shopping list's ⋯) puts them on free cooking days — quicker ones Mon–Thu. Check the days, then save."],
+  ["user", "See who's cooking", "Each planned meal now shows the cook's photo and name, big enough to read."],
+  ["swap", "Swap an ingredient is on", "The server now supports it: on a meal's ⋯ menu, swap the chicken for turkey mince and save it as a version."],
+  ["refresh", "No more accidental refresh", "Pulling down at the top of the app no longer reloads it."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -2892,7 +2893,75 @@ function renderRollover(){
   }));
 }
 $("#ro-close")?.addEventListener("click", closeRollover);
+window.openLastWeek = () => {
+  if (!lastWeekLeftOver().length){ status("Nothing left over from last week — every planned meal was cooked or sorted."); return; }
+  openRollover();
+};
 $("#ro-later")?.addEventListener("click", closeRollover);
+
+/* ============== Plan these (v32): the meals picked for the shop → free days ==============
+   The reverse of Plan › Add to list. Picked meals that aren't planned from today
+   on go onto free cooking days (cook days, no "not cooking" days), quicker meals
+   Mon–Thu, longer ones at the weekend. Reviewed before anything is saved. */
+const DAYN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+let ptRows = [];
+function planTheseProposal(){
+  const today = isoDay(new Date());
+  const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + i); return d; });
+  const plannedIds = new Set(Object.entries(state.plan).filter(([iso]) => iso >= today).flatMap(([, l]) => l.filter(e => !e.skipped).map(e => e.mealId)));
+  const meals = state.meals.filter(m => state.selected.has(m.id) && !plannedIds.has(m.id));
+  const free = days.filter(d => (state.prefs.planDays || []).includes(d.getDay()) && !state.offDays[isoDay(d)] && !(state.plan[isoDay(d)] || []).some(e => !e.skipped));
+  const mins = m => typeof m.cookMins === "number" ? m.cookMins : 40;
+  const left = meals.slice();
+  const rows = [];
+  for (const d of free){
+    if (!left.length) break;
+    const weeknight = d.getDay() >= 1 && d.getDay() <= 4;
+    left.sort((a, b) => weeknight ? mins(a) - mins(b) : mins(b) - mins(a));
+    rows.push({ m: left.shift(), iso: isoDay(d) });
+  }
+  for (const m of left) rows.push({ m, iso: "" });              // more meals than free days: you choose
+  rows.sort((a, b) => (a.iso || "9") .localeCompare(b.iso || "9"));
+  return { rows, days };
+}
+function openPlanThese(){
+  closeShopMenu();
+  const { rows, days } = planTheseProposal();
+  if (!rows.length){ status(state.selected.size ? "Every picked meal is already on the plan." : "Tick some meals first, then Plan these."); return; }
+  ptRows = rows;
+  const today = isoDay(new Date());
+  const label = d => `${isoDay(d) === today ? "Today" : DAYN[d.getDay()]} ${d.getDate()}${state.offDays[isoDay(d)] ? " (not cooking)" : (state.plan[isoDay(d)] || []).some(e => !e.skipped) ? " (has a meal)" : ""}`;
+  $("#pt-list").innerHTML = rows.map((r, k) => `<li>
+      <img alt="" />
+      <div class="ro-text"><b>${escapeHtml(r.m.title)}</b><span class="muted small">${typeof r.m.cookMins === "number" ? `${r.m.cookMins} min` : ""}${state.doubled.has(r.m.id) ? " · ×2" : ""}</span></div>
+      <div class="ro-btns"><label class="ro-move"><span class="visually-hidden">Day for ${escapeHtml(r.m.title)}</span><select data-pt="${k}">
+        <option value="">Don't plan it</option>${days.map(d => `<option value="${isoDay(d)}" ${isoDay(d) === r.iso ? "selected" : ""}>${label(d)}</option>`).join("")}
+      </select></label></div>
+    </li>`).join("");
+  $$("#pt-list img").forEach((img, k) => { img.src = gridImageSrc(rows[k].m); });
+  const m = $("#plan-these-modal");
+  m.classList.add("open"); m.setAttribute("aria-hidden", "false"); lockBodyScroll(true);
+}
+function closePlanThese(){ const m = $("#plan-these-modal"); m.classList.remove("open"); m.setAttribute("aria-hidden", "true"); lockBodyScroll(false); }
+$("#plan-these")?.addEventListener("click", openPlanThese);
+$("#shop-plan-these")?.addEventListener("click", openPlanThese);
+$("#pt-close")?.addEventListener("click", closePlanThese);
+$("#pt-cancel")?.addEventListener("click", closePlanThese);
+$("#pt-save")?.addEventListener("click", async () => {
+  let n = 0;
+  $$("[data-pt]").forEach(sel => {
+    const r = ptRows[Number(sel.dataset.pt)];
+    if (!r || !sel.value) return;
+    state.plan[sel.value] = [...(state.plan[sel.value] || []), { mealId: r.m.id, ...(state.doubled.has(r.m.id) ? { x: 2 } : {}) }];
+    delete state.offDays[sel.value];
+    n++;
+  });
+  closePlanThese();
+  if (!n) return;
+  await Promise.all([idbSet(IDB_KEYS.plan, state.plan), idbSet(IDB_KEYS.offDays, state.offDays)]);
+  window.renderPlan?.(); window.renderToday?.();
+  showActionToast(`Planned ${n} meal${n === 1 ? "" : "s"}`, "See the plan", () => switchView("plan"));
+});
 
 /* ============== Avoid ingredients (Settings › Never suggest) ============== */
 const avoidEditor = $("#avoid-editor") ? tokenEditor($("#avoid-editor"), $("#avoid-input"), []) : null;
@@ -3519,7 +3588,7 @@ function shoppingRow(r, opts = {}){
 }
 
 /* How the list is ordered: "aisle" (by category), "az", or "meal". */
-function shopSort(){ return state.prefs.shopSort || (state.prefs.shopGroup ? "aisle" : "az"); }
+function shopSort(){ return state.prefs.shopSort || "aisle"; }
 function syncShopSort(){
   $$("[data-shopsort]").forEach(b => b.classList.toggle("on", b.dataset.shopsort === shopSort()));
 }
