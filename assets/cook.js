@@ -486,6 +486,30 @@
         <span class="co-ing-amt">${escapeHtml(ingAmount(i, undefined, guided.factor))}</span></label></li>`).join("")}</ul>`;
   }
 
+  /* v19: the steps around the current one — the previous step above it, up next below.
+     Tap any of them to jump there. Per device: prefs.cookContext (on unless false). */
+  const contextOn = () => state.prefs.cookContext !== false;
+  function stepPreview(meal, n, cls = ""){   // n = step number = page index
+    const text = meal.steps[n - 1] || "";
+    const marks = (parseDurations(text).length ? icon("timer", 14) : "") + (ovenTemps([text]).length ? icon("cook", 14) : "");
+    return `<button type="button" class="co-preview ${cls}" data-goto="${n}" aria-label="Go to step ${n}">
+      <span class="co-pnum">${n}</span><span class="co-ptext">${escapeHtml(text)}</span>${marks ? `<span class="co-pmarks">${marks}</span>` : ""}
+    </button>`;
+  }
+  function upNext(meal, p, count = 3){
+    const steps = meal.steps || [];
+    const items = [];
+    for (let n = p + 1; n <= Math.min(steps.length, p + count); n++) items.push(stepPreview(meal, n));
+    if (p + count >= steps.length) items.push(`<button type="button" class="co-preview co-finish" data-goto="${steps.length + 1}">${icon("check", 16)}<span class="co-ptext">Then: rate &amp; mark as cooked</span></button>`);
+    return `<div class="co-upnext"><div class="co-upnext-head">${p === 0 ? "First up" : "Up next"}</div><div class="co-next-list">${items.join("")}</div></div>`;
+  }
+  function syncContextBtn(){
+    const b = $("#co-context");
+    if (!b) return;
+    b.setAttribute("aria-pressed", String(contextOn()));
+    b.classList.toggle("on", contextOn());
+  }
+
   function renderGuided(){
     const meal = mealById(guided?.id);
     if (!meal){ closeGuided(); return; }
@@ -497,6 +521,7 @@
     $("#co-progress-label").textContent =
       (p === 0 ? "Get ready" : p === total - 1 ? "Done" : `Step ${p} of ${steps.length}`) + (guided.factor > 1 ? " · ×2 batch" : "");
     $("#co-progress-bar").style.width = `${Math.round((p / (total - 1)) * 100)}%`;
+    syncContextBtn();
     $("#co-ings").innerHTML = `<h4 class="h4">Ingredients</h4>${ingredientChecklist(meal)}`;
 
     let html;
@@ -508,6 +533,7 @@
         ${lastCookLine(meal.id)}
         ${temps.length ? `<p class="co-temps">Oven: ${temps.map(t => annotateStep(t)).join(" · ")}</p>` : ""}
         ${meal.notes ? `<p class="muted">${escapeHtml(meal.notes)}</p>` : ""}
+        ${steps.length && contextOn() ? upNext(meal, 0, 2) : ""}
         ${steps.length ? `<p class="muted co-hint">Gather your ingredients, then tap Next. Swipe or use ‹ › to move between steps.</p>`
                        : `<div class="no-steps"><p>No steps saved for this meal — use it as an ingredients checklist, or add steps:</p>
                           <button class="btn" id="co-scan">${icon("camera", 18)}Scan back of card</button></div>`}
@@ -530,10 +556,12 @@
       const used = ingredientsInStep(meal, text);
       const timers = parseDurations(text);
       html = `
+        ${contextOn() && p > 1 ? stepPreview(meal, p - 1, "co-prev-step") : ""}
         <div class="co-kicker">Step ${p}</div>
         <p class="co-step">${annotateStep(text)}</p>
         ${used.length ? `<div class="co-chips">${used.map(i => { const a = ingAmount(i, undefined, guided.factor); return `<span class="chip co-chip">${escapeHtml(titleCase(i.name))}${a ? ` · <b>${escapeHtml(a)}</b>` : ""}</span>`; }).join("")}</div>` : ""}
-        ${timers.length ? `<div class="co-chips">${timers.map(t => `<button class="btn co-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}">${icon("timer", 18)}Start ${escapeHtml(t.label)}</button>`).join("")}</div>` : ""}`;
+        ${timers.length ? `<div class="co-chips">${timers.map(t => `<button class="btn co-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}">${icon("timer", 18)}Start ${escapeHtml(t.label)}</button>`).join("")}</div>` : ""}
+        ${contextOn() ? upNext(meal, p) : ""}`;
     }
     const page = $("#co-page");
     page.innerHTML = html;
@@ -550,6 +578,7 @@
       $$(`[data-gather="${idx}"]`, overlay).forEach(o => { o.checked = cb.checked; });
     }));
     $("#co-scan")?.addEventListener("click", () => { const id = guided.id; closeGuided(); scanStepsFor(id); });
+    $$("[data-goto]", page).forEach(b => b.addEventListener("click", () => goTo(Number(b.dataset.goto))));
     $$(".co-timer", page).forEach(b => b.addEventListener("click", () =>
       startTimer(Number(b.dataset.secs), `${meal.title.slice(0, 28)} — step ${p} (${b.dataset.label})`)));
     $$("[data-star]", page).forEach(b => b.addEventListener("click", () => {
@@ -567,10 +596,11 @@
     $("#co-skip")?.addEventListener("click", closeGuided);
   }
 
-  function go(delta){
+  function go(delta){ if (guided) goTo(guided.page + delta); }
+  function goTo(page){
     if (!guided) return;
     const meal = mealById(guided.id);
-    const next = Math.max(0, Math.min(pageCount(meal) - 1, guided.page + delta));
+    const next = Math.max(0, Math.min(pageCount(meal) - 1, page));
     if (next === guided.page) return;
     guided.page = next;
     setIngsShown(false);
@@ -579,6 +609,11 @@
   $("#co-prev")?.addEventListener("click", () => go(-1));
   $("#co-next")?.addEventListener("click", () => go(1));
   $("#co-close")?.addEventListener("click", closeGuided);
+  $("#co-context")?.addEventListener("click", async () => {
+    state.prefs.cookContext = !contextOn();
+    renderGuided();
+    await idbSet(IDB_KEYS.prefs, state.prefs);
+  });
   /* Phone/portrait: the button swaps the step for the ingredient checklist */
   function setIngsShown(on){
     overlay.classList.toggle("show-ings", on);

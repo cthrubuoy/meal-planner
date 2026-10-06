@@ -3,6 +3,19 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v19 — Cook mode shows the steps around the current one (2026-10-06)
+Cache `meal-planner-v21` · assets `?v=19` · export schema 14 (unchanged)
+
+### Added
+- **Cook mode shows the steps around the current one:**
+  - the step before, faded, above it
+  - **Up next** below it: the next 3 steps on the tablet and desktop, or the next 2 on the phone
+  - a small timer or oven mark on steps that have one
+  - "Then: rate & mark as cooked" near the end
+  - tap any of them to jump to that step
+- **"First up"** on the Get ready page previews steps 1–2.
+- **On/off switch:** the list button at the top of cook mode. The setting is saved per device; it's on by default.
+
 ## v18 — New look: Today tab, photo cards, new meal page (2026-10-06)
 Cache `meal-planner-v20` · assets `?v=18` · export schema 14 (unchanged)
 

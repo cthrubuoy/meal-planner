@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v18
+   Meal Planner & Shopping List — v19
    ===================================================== */
 
 :root{
@@ -1737,3 +1737,32 @@ body.modal-open .hint, body.cooking .hint{ display:none; }
 .today-kicker{ align-self:flex-start; background: rgba(0,0,0,.42); padding:3px 9px; border-radius:999px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
 .today-hero-empty .today-kicker{ background: var(--accent-glow); backdrop-filter:none; }
 .cal-item.drag-armed{ transform: scale(1.04); box-shadow: 0 0 0 2px var(--accent), 0 10px 24px rgba(0,0,0,.35); transition: transform .12s ease; }
+
+/* =====================================================
+   v19 — COOK MODE: THE STEPS AROUND THE CURRENT ONE
+   ===================================================== */
+.co-context.on{ background: var(--accent-glow); border-color: var(--accent-border); color: var(--accent-text); }
+.co-preview{
+  display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left; cursor:pointer;
+  padding:9px 12px; border-radius: var(--radius-sm); font:inherit; font-size:1rem; line-height:1.4;
+  background: color-mix(in oklab, var(--chip) 60%, transparent); border:1px solid var(--border); color: var(--muted);
+}
+.co-preview:hover{ border-color: var(--accent-border); color: var(--text); }
+.co-pnum{
+  flex:0 0 26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background: var(--chip); color: var(--text); font-weight:700; font-size:.85rem;
+}
+.co-ptext{ flex:1 1 auto; min-width:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; }
+.co-pmarks{ flex:0 0 auto; display:flex; gap:4px; color: var(--accent-text); padding-top:3px; }
+.co-prev-step{ opacity:.75; margin-bottom:14px; font-size:.92rem; }
+.co-prev-step .co-pnum{ background:none; border:1px solid var(--border-strong); }
+.co-upnext{ margin-top:22px; padding-top:14px; border-top:1px solid var(--border); }
+.co-upnext-head{ font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color: var(--muted); margin-bottom:8px; }
+.co-next-list{ display:grid; gap:8px; }
+.co-next-list > .co-preview:first-child{ color: var(--text); border-color: var(--border-strong); }
+.co-finish{ align-items:center; color: var(--accent-text); }
+.co-finish .ic{ flex:0 0 26px; }
+@media (max-width:839px){
+  .co-next-list > :nth-child(3){ display:none; }      /* phones: the next two */
+  .co-preview{ font-size:.95rem; }
+}

@@ -642,16 +642,11 @@ $("#hints-reset")?.addEventListener("click", () => {
 });
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["today",    "Today tab", "Tonight's meal, your week and the shopping list at a glance. It replaces the Cook tab."],
-  ["meals",    "New meal cards", "Big photos with the title, time and rating on them. Tap + to add to the shop."],
-  ["cook",     "New meal page", "Full-width photo, Ingredients / Method / Notes, and Add to shop, Plan and Cook buttons at the bottom."],
-  ["filter",   "Filter & sort", "Everything in one sheet, with chips you can tap off. Search has moved to the magnifier at the top."],
-  ["plan",     "Week strip & drag", "A strip of the week's days on the Plan tab. In the calendar, drag a meal to another day."],
-  ["list",     "Group by category", "Optional, from the shopping list's ⋯ menu: Fruit & veg, Meat & fish, Dairy…"],
-  ["moon",     "New look", "New icons and fonts, small animations and vibration, and a Black (OLED) theme in Settings."]
+  ["steps",    "Cook mode: see what's coming", "Each step now shows the step before it (faded) and the next few steps below — tap any of them to jump there. Turn it off with the list button at the top of cook mode."],
+  ["play",     "\"First up\" on the Get ready page", "See the first steps before you start, so you know what to prep."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
