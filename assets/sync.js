@@ -23,6 +23,7 @@
   const ENDPOINT_DEFAULT = "https://meal-planner-sync.meal-planner-backend.workers.dev";
   const POLL_MS = 15000;
   const PUSH_DELAY_MS = 1500;
+  const PUSH_CHUNK = 40;   // records per push: one D1 transaction each, kept well under the free plan's per-request query limit
   const K = { auth: "syncAuth", meta: "syncMeta", outbox: "syncOutbox" };   // IndexedDB keys (not exported)
 
   // which app IndexedDB key holds which record collections
@@ -281,8 +282,8 @@
       meta.uploaded = [...uploaded];
     }
     const all = [...outbox.entries()];
-    for (let i = 0; i < all.length; i += 200){
-      const chunk = all.slice(i, i + 200);
+    for (let i = 0; i < all.length; i += PUSH_CHUNK){
+      const chunk = all.slice(i, i + PUSH_CHUNK);
       await api("POST", "/v1/push", { body: { changes: chunk.map(([, e]) => e) } });
       for (const [k, e] of chunk) if (outbox.get(k) === e) outbox.delete(k);
       progress?.(`Uploading meals and lists…`, Math.min(1, (i + chunk.length) / all.length));
