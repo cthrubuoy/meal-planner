@@ -1,5 +1,5 @@
 /* =====================================================
-   Meal Planner & Shopping List — v28
+   Meal Planner & Shopping List — v29
    ===================================================== */
 
 :root{
@@ -2172,3 +2172,40 @@ body.rail-on .hint{ left:104px; }
 .rail-add{ color: var(--text); }
 .rail-add-btn{ width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--primary); color:#fff; box-shadow: 0 6px 18px rgba(27,127,76,.45); }
 .rail .sync-badge{ position:absolute; top:6px; right:14px; }
+
+/* =====================================================
+   CHEFS, NOT-COOKING DAYS, WEEK ROLLOVER (v29)
+   ===================================================== */
+.chef-av{ display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; border-radius:50%; object-fit:cover; color:#fff; font-weight:700; vertical-align:middle; box-shadow: 0 0 0 2px var(--panel); }
+.chef-list{ list-style:none; margin:10px 0; padding:0; display:grid; gap:8px; }
+.chef-list li{ display:flex; align-items:center; gap:12px; padding:8px 10px; border-radius:14px; background: var(--card); border:1px solid var(--border); }
+.chef-photo{ cursor:pointer; }
+.chef-name{ flex:1 1 auto; font-weight:600; }
+.chef-add{ display:flex; gap:8px; }
+.chef-add input[type=text]{ flex:1 1 auto; min-width:0; }
+.chef-btn{ padding:3px; min-width:34px; min-height:34px; display:inline-flex; align-items:center; justify-content:center; }
+.cal-chef{ position:absolute; right:6px; bottom:6px; z-index:1; }
+.plan-body.calendar .cal-item:has(.cal-chef) .cal-title{ padding-right:36px; }
+.today-chef{ align-self:flex-start; display:inline-flex; align-items:center; gap:8px; padding:3px 10px 3px 3px; border-radius:999px; background: rgba(0,0,0,.42); color:#fff; font-weight:600; font-size:.9rem; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.co-who{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:6px 0 10px; }
+.co-who .tchip{ display:inline-flex; align-items:center; gap:6px; padding-left:4px; }
+
+.pp-off{ margin:0 0 12px; padding:10px 12px; border-radius:14px; background: var(--card); border:1px solid var(--border); }
+.pp-off[hidden]{ display:none; }
+.pp-off-head{ display:flex; align-items:center; gap:6px; font-weight:700; margin-bottom:8px; color: var(--muted); }
+.pp-off-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.pp-off-chips .tchip{ min-height:36px; font-size:.88rem; }
+.off-clear{ color: var(--accent-text); }
+.cal-why{ flex-direction:column; gap:4px; border:none; background: color-mix(in oklab, var(--text) 5%, transparent); border-radius:10px; color: var(--muted); font:inherit; font-size:.78rem; font-weight:600; text-align:center; padding:6px; cursor:pointer; }
+.plan-why{ display:inline-flex; align-items:center; gap:6px; color: var(--muted); font-size:.9rem; }
+.day-pill.off-why .dp-dot::after{ content:"–"; color: var(--muted); }
+
+.rollover-dialog{ width:min(640px, 96vw); }
+.ro-list{ list-style:none; margin:10px 0; padding:0; display:grid; gap:10px; }
+.ro-list > li{ display:grid; grid-template-columns: 72px minmax(0,1fr); gap:8px 12px; align-items:center; padding:10px; border-radius:14px; background: var(--card); border:1px solid var(--border); }
+.ro-list img{ width:72px; height:54px; object-fit:cover; border-radius:10px; background: var(--chip); }
+.ro-text{ display:flex; flex-direction:column; gap:2px; }
+.ro-btns{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.ro-move select{ min-height:40px; width:auto; }
+/* an avatar is never a cover photo, whatever card it sits on (the hero/calendar img rules) */
+img.chef-av{ position:static !important; inset:auto !important; aspect-ratio:1 / 1; flex:0 0 auto; }

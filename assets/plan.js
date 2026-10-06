@@ -54,7 +54,7 @@
     let changed = false;
     for (const d of dates){
       const iso = localISO(d);
-      if (iso < today) continue;                       // never rewrite the past
+      if (iso < today || state.offDays[iso]) continue;  // never rewrite the past, or a not-cooking day
       for (const id of pinnedOn(d.getDay())){
         if (!mealById(id) || rawDay(iso).some(e => e.mealId === id)) continue;
         state.plan[iso] = [...rawDay(iso), { mealId: id, pin: true }];
@@ -154,7 +154,7 @@
     let added = 0;
     dates.forEach((d, idx) => {
       const iso = localISO(d);
-      if (!(state.prefs.planDays || []).includes(d.getDay()) || planned(iso).length) return;
+      if (!(state.prefs.planDays || []).includes(d.getDay()) || planned(iso).length || state.offDays[iso]) return;
       const m = bestFor(d, { ...ctx, neighbourProteins: neighbours(dates, idx) });
       if (!m) return;
       setDay(iso, [{ mealId: m.id }]);
@@ -253,7 +253,7 @@
   function shopWeek(){
     let n = 0;
     visibleDates().forEach(d => planned(localISO(d)).forEach(e => {
-      if (!mealById(e.mealId)) return;
+      if (!mealById(e.mealId) || e.left) return;      // leftovers: nothing to buy
       if (!state.selected.has(e.mealId)) n++;
       state.selected.add(e.mealId);
       if (e.x === 2) state.doubled.add(e.mealId);
@@ -273,8 +273,9 @@
     const pinLabel = `${pinned ? "Unpin from" : "Pin to every"} ${DAY[wd]}`;
     return `<div class="plan-meal" data-iso="${iso}" data-idx="${idx}">
       <img alt="" data-img="${escapeHtml(m.id)}" />
-      <button type="button" class="plan-title" data-open="${escapeHtml(m.id)}">${pinned ? icon("pin", 14, "pin-ic") : ""}${escapeHtml(m.title)}</button>
+      <button type="button" class="plan-title" data-open="${escapeHtml(m.id)}">${e.left ? `<span class="muted">Leftovers:</span> ` : ""}${pinned ? icon("pin", 14, "pin-ic") : ""}${escapeHtml(m.title)}</button>
       <span class="plan-btns">
+        <button type="button" class="btn mini chef-btn" data-act="chef" title="Who's cooking?" aria-label="Who's cooking?">${e.chef && chefById(e.chef) ? chefAvatar(chefById(e.chef), 22) : icon("user", 16)}</button>
         <button type="button" class="btn mini pin-btn ${pinned ? "on" : ""}" data-act="pin" aria-pressed="${pinned}" title="${pinLabel}" aria-label="${pinLabel}">${icon("pin", 16)}</button>
         <button type="button" class="chip x2 ${e.x === 2 ? "on" : ""}" data-act="x2" aria-pressed="${e.x === 2}" title="Cook once, eat twice">×2</button>
         <button type="button" class="btn mini" data-act="swap" title="Swap for another suggestion" aria-label="Swap">${icon("swap", 16)}</button>
@@ -290,8 +291,9 @@
     const pinned = isPinned(m.id, new Date(iso + "T12:00:00").getDay());
     return `<button type="button" class="cal-item" data-iso="${iso}" data-idx="${idx}" title="${escapeHtml(m.title)}">
       <img alt="" draggable="false" data-img="${escapeHtml(m.id)}" />
-      <span class="cal-title">${pinned ? icon("pin", 13, "pin-ic") : ""}${escapeHtml(m.title)}</span>
+      <span class="cal-title">${e.left ? "Leftovers: " : ""}${pinned ? icon("pin", 13, "pin-ic") : ""}${escapeHtml(m.title)}</span>
       ${e.x === 2 ? `<span class="chip chip-x2 cal-x2">×2</span>` : ""}
+      ${e.chef && chefById(e.chef) ? `<span class="cal-chef">${chefAvatar(chefById(e.chef), 26)}</span>` : ""}
     </button>`;
   }
   /* Under the week: how many are planned, how many aren't on the list yet; tonight's meal */
@@ -299,7 +301,7 @@
     const box = $("#plan-summary");
     if (!box) return;
     const ids = [];
-    dates.forEach(d => planned(localISO(d)).forEach(e => { if (mealById(e.mealId)) ids.push(e.mealId); }));
+    dates.forEach(d => planned(localISO(d)).forEach(e => { if (mealById(e.mealId) && !e.left) ids.push(e.mealId); }));
     const notListed = new Set(ids.filter(id => !state.selected.has(id))).size;
     box.hidden = !ids.length;
     $("#plan-sum-title").textContent = `${ids.length} meal${ids.length === 1 ? "" : "s"} planned`;
@@ -326,9 +328,70 @@
       { icon: "meals", label: "Open meal", run: () => openMealView(m.id) },
       { icon: "refresh", label: e.x === 2 ? "×2 off" : "×2 Cook once, eat twice", run: () => toggleX2(iso, idx) },
       { icon: "swap", label: "Swap", run: () => swap(iso, idx) },
+      { icon: "user", label: e.chef && chefById(e.chef) ? `Cooking: ${chefById(e.chef).name} — change` : "Who's cooking?", run: () => chefMenu(anchor, iso, idx) },
+      ...(e.x === 2 ? [{ icon: "plan", label: "Leftovers on another day…", run: () => leftoversMenu(anchor, iso, idx) }] : []),
       { icon: "pin", label: pinned ? `Unpin from ${DAY[wd]}s` : `Pin to every ${DAY[wd]}`, run: () => togglePin(iso, idx) },
       { icon: "x", label: e.pin ? "Skip this week" : "Remove", danger: true, run: () => removeFrom(iso, idx) }
     ]);
+  }
+
+  /* ============== Who's cooking (v29) ============== */
+  function chefMenu(anchor, iso, idx){
+    const e = planned(iso)[idx];
+    if (!e) return;
+    const pick = async (id) => { if (id) e.chef = id; else delete e.chef; await savePlan(); renderPlan(); };
+    if (!state.chefs.length){
+      openMenu(anchor, [{ icon: "user", label: "Add the people who cook…", run: () => { openSettings(); showSettingsTab("chefs"); } }]);
+      return;
+    }
+    openMenu(anchor, [
+      ...state.chefs.map(c => ({ icon: e.chef === c.id ? "check" : "user", label: c.name, run: () => pick(c.id) })),
+      { icon: "x", label: "Nobody set", run: () => pick(null) }
+    ]);
+  }
+  /* A ×2 meal's leftovers on a later day: no shopping, no cooking */
+  function leftoversMenu(anchor, iso, idx){
+    const e = planned(iso)[idx];
+    const later = visibleDates().filter(d => localISO(d) > iso);
+    if (!e || !later.length){ status("No later days in view."); return; }
+    openMenu(anchor, later.map(d => ({ icon: "plan", label: dayLabel(d), run: async () => {
+      const to = localISO(d);
+      state.plan[to] = [...rawDay(to), { mealId: e.mealId, left: 1 }];
+      delete state.offDays[to];
+      await Promise.all([savePlan(), idbSet(IDB_KEYS.offDays, state.offDays)]);
+      renderPlan();
+      status(`Leftovers on ${dayLabel(d)}`);
+    } })));
+  }
+  /* Not cooking on a day, and why */
+  async function setOff(iso, why){
+    if (why) state.offDays[iso] = why.slice(0, 60); else delete state.offDays[iso];
+    await idbSet(IDB_KEYS.offDays, state.offDays);
+    renderPlan();
+  }
+  function renderOffChips(){
+    const wrap = $("#pp-off-chips");
+    if (!wrap) return;
+    const cur = state.offDays[pickIso];
+    const dates = visibleDates();
+    const x2s = [];
+    dates.forEach(d => { const iso = localISO(d); if (iso < pickIso) planned(iso).forEach(e => { if (e.x === 2 && !e.left && mealById(e.mealId)) x2s.push(mealById(e.mealId)); }); });
+    wrap.innerHTML = OFF_REASONS.map(r => `<button type="button" class="tchip ${cur === r ? "on" : ""}" data-off="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join("")
+      + x2s.map(m => `<button type="button" class="tchip" data-left="${escapeHtml(m.id)}">Leftovers: ${escapeHtml(m.title.slice(0, 28))}</button>`).join("")
+      + `<button type="button" class="tchip" data-off-own>Other…</button>`
+      + (cur ? `<button type="button" class="tchip off-clear" data-off-clear>${icon("x", 14)}Cooking after all</button>` : "");
+    $$("[data-off]", wrap).forEach(b => b.addEventListener("click", async () => { await setOff(pickIso, b.dataset.off); closePicker(); }));
+    $$("[data-left]", wrap).forEach(b => b.addEventListener("click", async () => {
+      state.plan[pickIso] = [...rawDay(pickIso), { mealId: b.dataset.left, left: 1 }];
+      delete state.offDays[pickIso];
+      await Promise.all([savePlan(), idbSet(IDB_KEYS.offDays, state.offDays)]);
+      renderPlan(); closePicker();
+    }));
+    wrap.querySelector("[data-off-own]")?.addEventListener("click", async () => {
+      const why = prompt("Why aren't you cooking? (e.g. Dinner at Mum's)", cur || "");
+      if (why && why.trim()){ await setOff(pickIso, why.trim()); closePicker(); }
+    });
+    wrap.querySelector("[data-off-clear]")?.addEventListener("click", async () => { await setOff(pickIso, null); renderOffChips(); });
   }
 
   /* ============== Week strip (v18): a pill per day, tap to jump to it ============== */
@@ -472,8 +535,9 @@
         return `<div class="cal-cell ${iso === today ? "today" : ""} ${cooking ? "" : "off"} ${iso < today ? "past" : ""} ${items.length ? "" : "empty"}" data-day="${iso}">
           <div class="cal-date">${d.getDate()} <span class="muted small">${d.toLocaleDateString("en-GB", { month: "short" })}</span></div>
           ${items.map((e, i) => calItem(e, iso, i)).join("")}
-          ${!items.length && cooking && iso >= today ? `<button type="button" class="cal-suggest" data-suggest="${iso}">${icon("sparkles", 18)}<span>Suggest</span></button>` : ""}
-          ${!items.length && !cooking ? `<span class="cal-off muted small">Not cooking</span>` : ""}
+          ${!items.length && state.offDays[iso] ? `<button type="button" class="cal-off cal-why" data-add="${iso}">${icon("moon2", 16)}<span>${escapeHtml(state.offDays[iso])}</span></button>` : ""}
+          ${!items.length && !state.offDays[iso] && cooking && iso >= today ? `<button type="button" class="cal-suggest" data-suggest="${iso}">${icon("sparkles", 18)}<span>Suggest</span></button>` : ""}
+          ${!items.length && !state.offDays[iso] && !cooking ? `<span class="cal-off muted small">Not cooking</span>` : ""}
           <button type="button" class="cal-add" data-add="${iso}" aria-label="Choose a meal for ${dayLabel(d)}">${icon("plus", 16)}</button>
         </div>`;
       }).join("");
@@ -493,7 +557,7 @@
       const cooking = (state.prefs.planDays || []).includes(d.getDay());
       return `<div class="plan-day ${iso === today ? "today" : ""} ${cooking ? "" : "off"}" data-day="${iso}">
         <div class="plan-date">${d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}${iso === today ? ` <span class="chip">today</span>` : ""}</div>
-        <div class="plan-items">${items.map((e, i) => mealRow(e, iso, i)).join("") || `<span class="muted small">${cooking ? "Nothing planned" : "Not cooking"}</span>`}</div>
+        <div class="plan-items">${items.map((e, i) => mealRow(e, iso, i)).join("") || (state.offDays[iso] ? `<span class="plan-why">${icon("moon2", 14)}${escapeHtml(state.offDays[iso])}</span>` : `<span class="muted small">${cooking ? "Nothing planned" : "Not cooking"}</span>`)}</div>
         <button type="button" class="btn mini plan-add" data-add="${iso}" aria-label="Add a meal to ${dayLabel(d)}">${icon("plus", 18)}</button>
       </div>`;
     }).join("");
@@ -506,6 +570,7 @@
       row.querySelector('[data-act="swap"]').addEventListener("click", () => swap(iso, idx));
       row.querySelector('[data-act="remove"]').addEventListener("click", () => removeFrom(iso, idx));
       row.querySelector('[data-act="pin"]').addEventListener("click", () => togglePin(iso, idx));
+      row.querySelector('[data-act="chef"]').addEventListener("click", (ev) => chefMenu(ev.currentTarget, iso, idx));
     });
   }
 
@@ -544,6 +609,8 @@
     pickIso = iso;
     $("#pp-title").textContent = `Add to ${dayLabel(new Date(iso + "T12:00:00"))}`;
     $("#pp-search").value = "";
+    $("#pp-off").hidden = planned(iso).length > 0;
+    renderOffChips();
     renderPicker();
     picker.classList.add("open");
     picker.setAttribute("aria-hidden", "false");
@@ -571,7 +638,7 @@
         <span class="muted small">${typeof m.cookMins === "number" ? `${icon("clock", 13)}${m.cookMins}` : ""}${m.fav ? " ★" : ""}</span>
       </button>`).join("") || `<div class="empty">No meals match.</div>`;
     $$("img[data-img]", $("#pp-list")).forEach(img => { img.loading = "lazy"; img.src = gridImageSrc(mealById(img.dataset.img)); });
-    $$("[data-pick]", $("#pp-list")).forEach(b => b.addEventListener("click", async () => { await addToDay(pickIso, b.dataset.pick); closePicker(); }));
+    $$("[data-pick]", $("#pp-list")).forEach(b => b.addEventListener("click", async () => { delete state.offDays[pickIso]; idbSet(IDB_KEYS.offDays, state.offDays); await addToDay(pickIso, b.dataset.pick); closePicker(); }));
   }
   $("#pp-search")?.addEventListener("input", renderPicker);
   $("#pp-close")?.addEventListener("click", closePicker);

@@ -199,7 +199,7 @@
         const m = mealById(e.mealId);
         if (!m) continue;
         const cooked = (state.cooklog[m.id] || []).some(c => c.date >= iso);
-        out.push({ iso, m, x: e.x || 1, pin: !!e.pin, isToday: iso === today, past: iso < today, cooked,
+        out.push({ iso, m, x: e.x || 1, pin: !!e.pin, left: !!e.left, chef: e.chef ? chefById(e.chef) : null, isToday: iso === today, past: iso < today, cooked,
           label: iso === today ? "Today" : `${DAYS[d.getDay()]} ${d.getDate()}` });
       }
     }
@@ -349,8 +349,9 @@
     if (!wrap) return;
     const open = menu.filter(r => !r.cooked);
     const row = open.find(r => r.isToday) || open.find(r => !r.past);
-    if (!row){
-      const greeting = menu.some(r => r.isToday && r.cooked) ? "Tonight's meal is cooked." : "Nothing planned for tonight.";
+    const offToday = state.offDays[isoOf(new Date())];
+    if (!row || (offToday && !row.isToday)){
+      const greeting = menu.some(r => r.isToday && r.cooked) ? "Tonight's meal is cooked." : offToday ? `Not cooking tonight: ${offToday}` : "Nothing planned for tonight.";
       wrap.className = "today-hero empty-hero";
       wrap.innerHTML = `<div class="today-hero-empty">
           <span class="today-kicker">Tonight</span>
@@ -375,7 +376,8 @@
       <img alt="" />
       <div class="scrim"></div>
       <div class="today-hero-text">
-        <span class="today-kicker">${row.isToday ? "Tonight" : `Next up · ${escapeHtml(row.label)}`}</span>
+        <span class="today-kicker">${row.isToday ? "Tonight" : `Next up · ${escapeHtml(row.label)}`}${row.left ? " · leftovers" : ""}</span>
+        ${row.chef ? `<span class="today-chef">${chefAvatar(row.chef, 26)}${escapeHtml(row.chef.name)} is cooking</span>` : ""}
         <h2 class="today-title">${escapeHtml(m.title)}</h2>
         ${meta ? `<div class="mag-meta">${meta}</div>` : ""}
         <div class="group today-hero-btns">
@@ -396,8 +398,9 @@
       const rows = menu.filter(r => r.iso === iso);
       const cooked = rows.length && rows.every(r => r.cooked);
       const title = rows.map(r => r.m.title).join(", ");
-      return `<button type="button" class="day-pill ${iso === todayIso ? "is-today" : ""} ${rows.length ? "has" : ""} ${cooked ? "done" : ""} ${iso < todayIso ? "past" : ""}"
-        data-iso="${iso}" title="${escapeHtml(title || "Nothing planned")}" aria-label="${DAYS[d.getDay()]} ${d.getDate()}: ${escapeHtml(title || "nothing planned")}">
+      const why = !rows.length && state.offDays[iso];
+      return `<button type="button" class="day-pill ${iso === todayIso ? "is-today" : ""} ${rows.length ? "has" : ""} ${cooked ? "done" : ""} ${iso < todayIso ? "past" : ""} ${why ? "off-why" : ""}"
+        data-iso="${iso}" title="${escapeHtml(title || why || "Nothing planned")}" aria-label="${DAYS[d.getDay()]} ${d.getDate()}: ${escapeHtml(title || "nothing planned")}">
         <span class="dp-day">${DAYS[d.getDay()].slice(0, 1)}</span><span class="dp-date">${d.getDate()}</span>
         <span class="dp-dot">${cooked ? icon("check", 12) : ""}</span>
       </button>`;
@@ -500,7 +503,7 @@
     // "Cook once, eat twice": ×2 from the week's menu / queue entry, or a doubled meal in the current shop
     const q = state.cookQueue.find(e => e.mealId === id);
     const factor = batch || q?.x || (state.selected.has(id) && state.doubled.has(id) ? 2 : 1);
-    guided = { id, page: 0, gathered: new Set(), extrasDone: new Set(), rating: 0, note: "", factor };
+    guided = { id, page: 0, gathered: new Set(), extrasDone: new Set(), rating: 0, note: "", factor, by: plannedChef(id)?.id || null };
     overlay.hidden = false;
     overlay.classList.add("open");   // counts as an open modal for lockBodyScroll
     lockBodyScroll(true);
@@ -608,6 +611,7 @@
         <div class="co-stars" role="radiogroup" aria-label="Rating">
           ${[1, 2, 3, 4, 5].map(n => `<button class="co-star ${n <= guided.rating ? "on" : ""}" data-star="${n}" role="radio" aria-checked="${n === guided.rating}" aria-label="${n} star${n === 1 ? "" : "s"}">★</button>`).join("")}
         </div>
+        ${state.chefs.length ? `<div class="co-who"><span class="muted">Who cooked?</span>${state.chefs.map(c => `<button type="button" class="tchip ${guided.by === c.id ? "on" : ""}" data-by="${escapeHtml(c.id)}">${chefAvatar(c, 22)}${escapeHtml(c.name)}</button>`).join("")}</div>` : ""}
         <label for="co-note" class="mt8">Note for next time (optional)</label>
         <textarea id="co-note" rows="2" placeholder="e.g. needed more salt, double the sauce">${escapeHtml(guided.note)}</textarea>
         <div class="group mt8">
@@ -662,9 +666,10 @@
       renderGuided();
     }));
     $("#co-note")?.addEventListener("input", e => { guided.note = e.target.value; });
+    $$("[data-by]", page).forEach(b => b.addEventListener("click", () => { guided.note = $("#co-note")?.value || ""; guided.by = guided.by === b.dataset.by ? null : b.dataset.by; renderGuided(); }));
     $("#co-done")?.addEventListener("click", async () => {
       const id = guided.id, title = meal.title;
-      await logCooked(id, guided.rating, guided.note);
+      await logCooked(id, guided.rating, guided.note, guided.by);
       closeGuided();
       status(`🍳 Logged "${title}" as cooked`);
     });

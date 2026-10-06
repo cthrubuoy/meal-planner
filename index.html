@@ -14,8 +14,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
 
   <title>Meal Planner &amp; Shopping List</title>
-  <link rel="stylesheet" href="fonts/fonts.css?v=28" />
-  <link rel="stylesheet" href="assets/styles.css?v=28" />
+  <link rel="stylesheet" href="fonts/fonts.css?v=29" />
+  <link rel="stylesheet" href="assets/styles.css?v=29" />
 </head>
 <body>
 
@@ -24,7 +24,7 @@
     <h1>
       <img src="icons/icon-192.png" alt="" class="brand-mark" width="28" height="28" decoding="async" />
       <span>Meal Planner</span>
-      <span class="pill">v28</span>
+      <span class="pill">v29</span>
     </h1>
     <div class="group header-actions">
       <button id="add-open" class="btn primary" title="Add a meal"><i data-icon="plus" data-size="18"></i><span>Add</span></button>
@@ -387,6 +387,10 @@
       <h3 id="pp-title" class="h3">Add a meal</h3>
       <button id="pp-close" class="btn" aria-label="Close">✕</button>
     </div>
+    <div id="pp-off" class="pp-off">
+      <div class="pp-off-head"><i data-icon="moon2" data-size="16"></i>Not cooking?</div>
+      <div id="pp-off-chips" class="pp-off-chips"></div>
+    </div>
     <input id="pp-search" type="search" placeholder="Search meals or ingredients…" autocomplete="off" />
     <p class="muted small">Best suggestions for this day first.</p>
     <div id="pp-list" class="pp-list"></div>
@@ -600,6 +604,19 @@
   </div>
 </div>
 
+<!-- ================== WEEK ROLLOVER (first open in a new week) ================== -->
+<div id="rollover" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="ro-title">
+  <div class="dialog rollover-dialog">
+    <div class="stickybar group space-between">
+      <h3 id="ro-title" class="h3">Last week</h3>
+      <button type="button" id="ro-close" class="btn icon-btn" aria-label="Close"><i data-icon="x"></i></button>
+    </div>
+    <p class="muted small">Move a meal to a day this week, mark it cooked if you made it after all, or let it go.</p>
+    <ul id="ro-list" class="ro-list"></ul>
+    <div class="group" style="justify-content:flex-end"><button type="button" id="ro-later" class="btn">Done</button></div>
+  </div>
+</div>
+
 <!-- ================== WELCOME (first run: no meals, no sync) ================== -->
 <div id="welcome" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
   <div class="dialog welcome-dialog">
@@ -635,6 +652,7 @@
       <div class="set-group">Shopping &amp; cooking</div>
       <div class="set-list">
         <button type="button" class="set-row" data-stab="avoid"><span class="set-ic"><i data-icon="x" data-size="18"></i></span><span class="set-label">Never suggest</span><span class="set-val" data-sval="avoid"></span><i data-icon="next" data-size="18" class="chev"></i></button>
+        <button type="button" class="set-row" data-stab="chefs"><span class="set-ic"><i data-icon="user" data-size="18"></i></span><span class="set-label">Who cooks</span><span class="set-val" data-sval="chefs"></span><i data-icon="next" data-size="18" class="chev"></i></button>
         <button type="button" class="set-row" data-stab="pantry"><span class="set-ic"><i data-icon="home" data-size="18"></i></span><span class="set-label">Always in the cupboard</span><span class="set-val" data-sval="pantry"></span><i data-icon="next" data-size="18" class="chev"></i></button>
         <button type="button" class="set-row" data-stab="history"><span class="set-ic"><i data-icon="clock" data-size="18"></i></span><span class="set-label">Meal history</span><span class="set-val" data-sval="history"></span><i data-icon="next" data-size="18" class="chev"></i></button>
       </div>
@@ -771,6 +789,17 @@
       <h4 class="h4">Tags from ingredients</h4>
       <p class="muted small">Add each meal's ingredient names to its tags.</p>
       <button id="backfill-tags" class="btn">Backfill tags</button>
+    </section>
+
+    <section class="spanel" data-spanel="chefs" role="tabpanel" hidden>
+      <p class="small">The people who cook. Give a planned meal to someone (tap it in the Plan) and Today says who's cooking; the cook log remembers who made it. Shared with your household.</p>
+      <ul id="chef-list" class="chef-list"></ul>
+      <form id="chef-add-form" class="chef-add" autocomplete="off">
+        <input id="chef-name" type="text" maxlength="30" placeholder="Name, e.g. Chris" aria-label="Name" />
+        <label class="btn" for="chef-photo-new"><i data-icon="camera" data-size="16"></i>Photo</label>
+        <input id="chef-photo-new" type="file" accept="image/*" hidden />
+        <button type="submit" class="btn primary"><i data-icon="plus" data-size="16"></i>Add</button>
+      </form>
     </section>
 
     <section class="spanel" data-spanel="avoid" role="tabpanel" hidden>
@@ -1058,13 +1087,13 @@
 <datalist id="ingredient-suggestions"></datalist>
 <datalist id="tag-suggestions"></datalist>
 
-<script src="assets/icons.js?v=28" defer></script>
-<script src="assets/app.js?v=28" defer></script>
-<script src="assets/cook.js?v=28" defer></script>
-<script src="assets/plan.js?v=28" defer></script>
-<script src="assets/vendor/qrcode.js?v=28" defer></script>
-<script src="assets/sync.js?v=28" defer></script>
-<script src="assets/scan.js?v=28" defer></script>
-<script src="assets/pwa.js?v=28" defer></script>
+<script src="assets/icons.js?v=29" defer></script>
+<script src="assets/app.js?v=29" defer></script>
+<script src="assets/cook.js?v=29" defer></script>
+<script src="assets/plan.js?v=29" defer></script>
+<script src="assets/vendor/qrcode.js?v=29" defer></script>
+<script src="assets/sync.js?v=29" defer></script>
+<script src="assets/scan.js?v=29" defer></script>
+<script src="assets/pwa.js?v=29" defer></script>
 </body>
 </html>

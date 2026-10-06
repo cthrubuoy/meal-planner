@@ -36,7 +36,7 @@
   const KEY_COLLS = {
     meals: ["meal"], plan: ["plan"], pins: ["pin"], cooklog: ["cooklog"], history: ["history"],
     unitDefaults: ["unitDefault"], normaliser: ["normaliser"], pantry: ["pantry"],
-    cookQueue: ["queue"], prefs: ["prefs"], session: ["shop"]
+    cookQueue: ["queue"], prefs: ["prefs"], session: ["shop"], chefs: ["chef"], offDays: ["off"]
   };
   const COLL_KEY = Object.fromEntries(Object.entries(KEY_COLLS).flatMap(([k, cs]) => cs.map(c => [c, k])));
 
@@ -119,6 +119,8 @@
       }
       case "pantry": return [...state.pantry].map(k => ["pantry", k, 1]);
       case "cookQueue": return state.cookQueue.map(q => ["queue", q.mealId, q]);
+      case "chefs": return state.chefs.map(c => ["chef", c.id, c]);
+      case "offDays": return entries(state.offDays, "off");
       case "prefs": return [["prefs", "shared", { avoid: state.prefs.avoid || [], planDays: state.prefs.planDays || [] }]];
       case "session": return [
         ...[...state.selected].map(id => ["shop", "sel:" + id, 1]),
@@ -197,6 +199,13 @@
         state.cookQueue.sort((a, b) => String(a.added).localeCompare(String(b.added)));
         return;
       }
+      case "chef": {
+        const i = state.chefs.findIndex(x => x.id === c.id);
+        if (del){ if (i >= 0) state.chefs.splice(i, 1); }
+        else if (d?.name){ const chef = cleanChefs([{ ...d, id: c.id }])[0]; if (i >= 0) state.chefs[i] = chef; else state.chefs.push(chef); }
+        return;
+      }
+      case "off": if (del) delete state.offDays[c.id]; else if (typeof d === "string") state.offDays[c.id] = d; return;
       case "prefs": if (!del && d){ state.prefs.avoid = d.avoid || []; state.prefs.planDays = d.planDays || []; } return;
       case "shop": {
         const at = c.id.indexOf(":");

@@ -3,6 +3,23 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v29 — Who's cooking, not-cooking days, leftovers, week rollover (2026-10-06)
+Cache `meal-planner-v31` · assets `?v=29` · export schema **16** (adds `chefs` and `offDays`; plan entries can have `chef` and `left`; cook log entries can have `by`; older backups still import)
+
+### Added
+- **Who cooks** (Settings › Who cooks): the people in the household who cook, each with a name and a small photo (or coloured initials). Synced with the household.
+  - **Give a planned meal to someone:** tap it in the calendar (Who's cooking?) or use the person button in the list layout. Their photo shows on the meal.
+  - **Today** says "Chris is cooking" on tonight's meal.
+  - **Cook log:** "Mark as cooked" asks who cooked (ticked for whoever it was planned for), and the meal page's log shows them.
+- **Not cooking, and why:** tap ＋ on a day and choose Takeaway (home late), Out with friends, Eating out, Leftovers, Away, or your own words.
+  - It shows on that day in the calendar and list, and on Today ("Not cooking tonight: Takeaway (home late)").
+  - Auto-fill and pinned meals leave that day alone. "Cooking after all" clears it.
+- **Leftovers:** for a ×2 meal, "Leftovers on another day…" (or the Leftovers chip on a later day) puts "Leftovers: Chilli" on that day. It's never added to the shopping list.
+- **Week rollover:** the first time the app opens in a new week, last week's planned meals that weren't cooked are listed: **Move** (to a day this week; the first free cooking day is picked for you), **Cooked after all** (logged on the day it was planned), or **Let it go**.
+
+### Changed
+- Export schema 16 (see above); Clear all also clears chefs and not-cooking days on this device.
+
 ## v28 — Cook mode visuals, simpler Plan, tablet landscape rail (2026-10-06)
 Cache `meal-planner-v30` · assets `?v=28` · export schema 15 (unchanged)
 

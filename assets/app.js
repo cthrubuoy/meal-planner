@@ -22,9 +22,11 @@ const IDB_KEYS = {
   cookQueue: "cookQueue", // [{ mealId, added, x? }] — "This week" meals to cook (not exported)
   thumbs: "thumbs",       // { mealId: { src, of } } — grid thumbnails, rebuildable (not exported)
   plan: "plan",           // { "YYYY-MM-DD": [{ mealId, x?, pin?, skipped? }] } — planner (exported)
-  pins: "pins"            // { "0".."6": [mealId] } — meals pinned to a weekday, every week (exported)
+  pins: "pins",           // { "0".."6": [mealId] } — meals pinned to a weekday, every week (exported)
+  chefs: "chefs",         // [{ id, name, photo? }] — who cooks in the household (exported, synced)
+  offDays: "offDays"      // { "YYYY-MM-DD": "Takeaway (home late)" } — not cooking that day, and why (exported)
 };
-const EXPORT_SCHEMA_VERSION = 15;   // 15: meal.source, meal.extras
+const EXPORT_SCHEMA_VERSION = 16;   // 15: meal.source, meal.extras · 16: chefs, offDays, plan entry chef/left, cooklog by, meal versions
 const DEFAULT_PREFS = {
   theme: "auto",
   gridMin: "cozy",
@@ -68,6 +70,8 @@ const state = {
   thumbs: {},
   plan: {},
   pins: {},
+  chefs: [],
+  offDays: {},
   haveIt: new Set(),        // shopping rows ticked as "have it" (row keys)
   pantryUse: new Set(),     // staples pulled back into the list for this shop
   countedIds: new Set(),    // meals already counted in history for this shop
@@ -462,6 +466,8 @@ async function saveAll(){
     idbSet(IDB_KEYS.cookQueue, state.cookQueue),
     idbSet(IDB_KEYS.plan, state.plan),
     idbSet(IDB_KEYS.pins, state.pins),
+    idbSet(IDB_KEYS.chefs, state.chefs),
+    idbSet(IDB_KEYS.offDays, state.offDays),
     saveSession()
   ]);
 }
@@ -477,9 +483,26 @@ function cleanPlan(plan, ids){
       if (e.x === 2) o.x = 2;
       if (e.pin) o.pin = true;           // came from a weekday pin
       if (e.skipped) o.skipped = true;   // pin skipped this week (kept so it isn't re-added)
+      if (e.chef) o.chef = String(e.chef);   // v29: who's cooking it
+      if (e.left) o.left = 1;               // v29: leftovers of a ×2 meal (nothing to buy)
+      if (e.dropped) o.dropped = true;      // v29: not cooked, and let go at the week's rollover
       return o;
     });
     if (keep.length) out[day] = keep;
+  }
+  return out;
+}
+/* Chefs (v29): [{ id, name, photo? }] */
+function cleanChefs(list){
+  return (Array.isArray(list) ? list : []).filter(c => c && c.id && c.name)
+    .map(c => ({ id: String(c.id), name: String(c.name).slice(0, 30), ...(typeof c.photo === "string" && c.photo.startsWith("data:image/") ? { photo: c.photo } : {}) }));
+}
+/* Not-cooking days (v29): { iso: reason }, last 12 weeks onwards */
+function cleanOffDays(map){
+  const out = {};
+  const cutoff = new Date(Date.now() - 84 * 864e5).toISOString().slice(0, 10);
+  for (const [day, why] of Object.entries(map && typeof map === "object" ? map : {})){
+    if (/^\d{4}-\d\d-\d\d$/.test(day) && day >= cutoff && typeof why === "string" && why.trim()) out[day] = why.trim().slice(0, 60);
   }
   return out;
 }
@@ -508,7 +531,7 @@ function saveSession(){
   }).catch(err => console.warn("Session save failed:", err));
 }
 async function loadAll(){
-  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue, thumbs, plan, pins] = await Promise.all([
+  const [meals, normaliser, unitDefaults, prefs, pantry, history, session, cooklog, cookQueue, thumbs, plan, pins, chefs, offDays] = await Promise.all([
     idbGet(IDB_KEYS.meals),
     idbGet(IDB_KEYS.normaliser),
     idbGet(IDB_KEYS.unitDefaults),
@@ -520,7 +543,9 @@ async function loadAll(){
     idbGet(IDB_KEYS.cookQueue),
     idbGet(IDB_KEYS.thumbs),
     idbGet(IDB_KEYS.plan),
-    idbGet(IDB_KEYS.pins)
+    idbGet(IDB_KEYS.pins),
+    idbGet(IDB_KEYS.chefs),
+    idbGet(IDB_KEYS.offDays)
   ]);
   if (Array.isArray(meals)){
     state.meals = meals.map(m => ({
@@ -543,6 +568,8 @@ async function loadAll(){
   for (const id of Object.keys(state.thumbs)) if (!ids.has(id)) delete state.thumbs[id];
   state.plan      = cleanPlan(plan, ids);
   state.pins      = cleanPins(pins, ids);
+  state.chefs     = cleanChefs(chefs);
+  state.offDays   = cleanOffDays(offDays);
 
   const s = (session && typeof session === "object") ? session : {};
   state.selected   = new Set((s.selected || []).filter(id => ids.has(id)));
@@ -774,13 +801,13 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["timer", "Timers named after what they time", "Cook mode now shows a timer card on the step, with a ring and a name like \"Rice simmer\". Running timers sit in the header (\"Rice 08:42\"); tap one to jump to its step."],
-  ["steps", "Bigger, clearer steps", "A big step number and the step in bold, with the previous and next steps still around it."],
-  ["plan", "A simpler Plan", "One row of controls; Swipe to pick, Copy, Clear, layout and cook days are under ⋯. The calendar shows each meal's photo, an empty day offers Suggest, and Add to list sits under the week."],
-  ["grid", "Tablet in landscape: a side rail", "On the tablet held sideways, a rail on the left replaces the header and tabs, so meals and the list get the full height."]
+  ["user", "Who's cooking tonight", "Add the people who cook (Settings › Who cooks), with a photo. Tap a planned meal to give it to someone; Today says \"Chris is cooking\" and the cook log remembers who made it."],
+  ["moon2", "Not cooking? Say why", "Tap ＋ on a day: Takeaway (home late), Out with friends, Away… It shows on the calendar and Today, and auto-fill leaves that day alone."],
+  ["plan", "Leftovers", "Put a ×2 meal's leftovers on a later day — nothing extra on the shopping list."],
+  ["refresh", "A new week", "The first time you open the app in a new week, last week's uncooked meals can be moved to this week, marked as cooked after all, or let go."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -2438,9 +2465,12 @@ function cookStats(id){
     last: log[log.length - 1] || null
   };
 }
-async function logCooked(id, rating, note){
+async function logCooked(id, rating, note, by, date){
   const log = state.cooklog[id] || [];
-  log.push({ date: new Date().toISOString().slice(0, 10), rating: rating || null, note: (note || "").trim() });
+  const e = { date: date || new Date().toISOString().slice(0, 10), rating: rating || null, note: (note || "").trim() };
+  if (by) e.by = by;
+  log.push(e);
+  log.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   state.cooklog[id] = log.slice(-COOKLOG_MAX);
   state.cookQueue = state.cookQueue.filter(q => q.mealId !== id);
   await Promise.all([idbSet(IDB_KEYS.cooklog, state.cooklog), idbSet(IDB_KEYS.cookQueue, state.cookQueue)]);
@@ -2711,6 +2741,159 @@ function firstRunPanel(){
   return d;
 }
 
+/* ============== Chefs: who cooks in the household (v29) ==============
+   A name and a small photo each (synced). A planned meal can be given to a
+   chef; Today says who's cooking and the cook log records who cooked. */
+const chefById = id => state.chefs.find(c => c.id === id);
+const CHEF_HUES = [150, 200, 265, 20, 330, 45, 95];
+function chefAvatar(c, size = 28){
+  if (!c) return "";
+  const s = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`;
+  if (c.photo) return `<img class="chef-av" src="${escapeHtml(c.photo)}" alt="" style="${s}" title="${escapeHtml(c.name)}" />`;
+  const hue = CHEF_HUES[[...c.name].reduce((n, ch) => n + ch.charCodeAt(0), 0) % CHEF_HUES.length];
+  const ini = c.name.trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  return `<span class="chef-av" style="${s};background:hsl(${hue} 45% 38%)" title="${escapeHtml(c.name)}">${escapeHtml(ini)}</span>`;
+}
+async function chefPhotoFrom(file){
+  // a small square photo (160 px) so it syncs inline with the chef
+  const src = await fileToCompressedDataURL(file);
+  if (!src) return null;
+  const img = new Image(); img.src = src; await img.decode();
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const cv = document.createElement("canvas"); cv.width = cv.height = 160;
+  cv.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 160, 160);
+  return cv.toDataURL(canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg", 0.82);
+}
+async function saveChefs(){ await idbSet(IDB_KEYS.chefs, state.chefs); renderChefs(); window.renderPlan?.(); window.renderToday?.(); }
+function renderChefs(){
+  const ul = $("#chef-list");
+  if (!ul) return;
+  ul.innerHTML = state.chefs.map(c => `<li data-chef="${escapeHtml(c.id)}">
+      <label class="chef-photo" title="Change photo">${chefAvatar(c, 44)}<input type="file" accept="image/*" hidden data-chef-photo="${escapeHtml(c.id)}" /></label>
+      <span class="chef-name">${escapeHtml(c.name)}</span>
+      <button type="button" class="btn mini ghost" data-chef-rename="${escapeHtml(c.id)}">Rename</button>
+      <button type="button" class="btn mini ghost" data-chef-del="${escapeHtml(c.id)}" aria-label="Remove ${escapeHtml(c.name)}">${icon("x", 16)}</button>
+    </li>`).join("") || `<li class="muted small">Nobody yet — add the people who cook.</li>`;
+  $$("[data-chef-photo]", ul).forEach(inp => inp.addEventListener("change", async () => {
+    const c = chefById(inp.dataset.chefPhoto), f = inp.files?.[0];
+    if (!c || !f) return;
+    const photo = await chefPhotoFrom(f);
+    if (photo){ c.photo = photo; await saveChefs(); }
+  }));
+  $$("[data-chef-rename]", ul).forEach(b => b.addEventListener("click", async () => {
+    const c = chefById(b.dataset.chefRename);
+    const name = c && prompt("Name", c.name);
+    if (name && name.trim()){ c.name = name.trim().slice(0, 30); await saveChefs(); }
+  }));
+  $$("[data-chef-del]", ul).forEach(b => b.addEventListener("click", async () => {
+    const c = chefById(b.dataset.chefDel);
+    if (!c || !confirm(`Remove ${c.name}? Meals planned for them just won't show a chef.`)) return;
+    state.chefs = state.chefs.filter(x => x.id !== c.id);
+    await saveChefs();
+  }));
+}
+$("#chef-add-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("#chef-name").value.trim();
+  if (!name) return;
+  const f = $("#chef-photo-new").files?.[0];
+  const chef = { id: uid(), name: name.slice(0, 30) };
+  if (f){ const p = await chefPhotoFrom(f); if (p) chef.photo = p; }
+  state.chefs.push(chef);
+  e.target.reset();
+  await saveChefs();
+});
+/* Today's chef for a meal (from the plan), for "Chris is cooking" and the cook log */
+function plannedChef(mealId, iso = new Date().toISOString().slice(0, 10)){
+  const e = (state.plan[iso] || []).find(x => x.mealId === mealId && !x.skipped);
+  return e?.chef ? chefById(e.chef) : null;
+}
+
+/* ============== Not cooking, and why (v29) ============== */
+const OFF_REASONS = ["Takeaway (home late)", "Out with friends", "Eating out", "Leftovers", "Away"];
+
+/* ============== Week rollover (v29) ==============
+   The first time the app opens in a new week: last week's planned meals that
+   weren't cooked → move to a day this week, cooked after all, or let go. */
+const ROLLOVER_KEY = "rollover-week";
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function mondayOf(d = new Date()){ const x = new Date(d); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function lastWeekLeftOver(){
+  const mon = mondayOf(), start = new Date(mon); start.setDate(mon.getDate() - 7);
+  const out = [];
+  for (let i = 0; i < 7; i++){
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const iso = isoDay(d);
+    (state.plan[iso] || []).forEach((e, idx) => {
+      const m = state.meals.find(x => x.id === e.mealId);
+      if (!m || e.skipped || e.left || e.dropped) return;
+      if ((state.cooklog[m.id] || []).some(c => c.date >= iso)) return;
+      out.push({ iso, idx, e, m, d });
+    });
+  }
+  return out;
+}
+function maybeShowRollover(){
+  const thisMon = isoDay(mondayOf());
+  if (local.get(ROLLOVER_KEY) === thisMon || !state.meals.length || $(".modal.open")) return;
+  if (!lastWeekLeftOver().length){ local.set(ROLLOVER_KEY, thisMon); return; }
+  openRollover();
+}
+function openRollover(){
+  renderRollover();
+  const m = $("#rollover");
+  m.classList.add("open"); m.setAttribute("aria-hidden", "false"); lockBodyScroll(true);
+}
+function closeRollover(){
+  const m = $("#rollover");
+  m.classList.remove("open"); m.setAttribute("aria-hidden", "true"); lockBodyScroll(false);
+  local.set(ROLLOVER_KEY, isoDay(mondayOf()));
+}
+function renderRollover(){
+  const rows = lastWeekLeftOver();
+  const DAYN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  $("#ro-title").textContent = rows.length ? `Last week, ${rows.length} planned meal${rows.length === 1 ? "" : "s"} ${rows.length === 1 ? "wasn't" : "weren't"} cooked` : "All sorted";
+  const mon = mondayOf(), today = isoDay(new Date());
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; }).filter(d => isoDay(d) >= today);
+  const free = days.find(d => (state.prefs.planDays || []).includes(d.getDay()) && !(state.plan[isoDay(d)] || []).some(e => !e.skipped) && !state.offDays[isoDay(d)]) || days[0];
+  $("#ro-list").innerHTML = rows.map((r, k) => `<li data-ro="${k}">
+      <img alt="" />
+      <div class="ro-text"><b>${escapeHtml(r.m.title)}</b><span class="muted small">Planned for ${DAYN[r.d.getDay()]} ${r.d.getDate()}${r.e.x === 2 ? " · ×2" : ""}</span></div>
+      <div class="ro-btns">
+        <label class="ro-move"><span class="visually-hidden">Move to</span><select data-ro-day="${k}">${days.map(d => `<option value="${isoDay(d)}" ${d === free ? "selected" : ""}>${isoDay(d) === today ? "Today" : DAYN[d.getDay()] + " " + d.getDate()}</option>`).join("")}</select></label>
+        <button type="button" class="btn primary" data-ro-act="move" data-k="${k}">Move</button>
+        <button type="button" class="btn" data-ro-act="cooked" data-k="${k}">Cooked after all</button>
+        <button type="button" class="btn ghost" data-ro-act="drop" data-k="${k}">Let it go</button>
+      </div>
+    </li>`).join("") || `<li class="muted">Nothing left over from last week.</li>`;
+  $$("#ro-list img").forEach((img, k) => { img.src = gridImageSrc(rows[k].m); });
+  $$("[data-ro-act]", $("#ro-list")).forEach(b => b.addEventListener("click", async () => {
+    const r = rows[Number(b.dataset.k)];
+    const day = state.plan[r.iso] || [];
+    const at = day.indexOf(r.e);
+    if (at < 0) return;
+    if (b.dataset.roAct === "move"){
+      const to = $(`[data-ro-day="${b.dataset.k}"]`).value;
+      day.splice(at, 1);
+      if (day.length) state.plan[r.iso] = day; else delete state.plan[r.iso];
+      const { mealId, x, chef } = r.e;
+      state.plan[to] = [...(state.plan[to] || []), { mealId, ...(x === 2 ? { x } : {}), ...(chef ? { chef } : {}) }];
+      delete state.offDays[to];
+      status(`Moved ${r.m.title}`);
+    } else if (b.dataset.roAct === "cooked"){
+      await logCooked(r.m.id, 0, "", r.e.chef, r.iso);
+    } else {
+      r.e.dropped = true;
+    }
+    await Promise.all([idbSet(IDB_KEYS.plan, state.plan), idbSet(IDB_KEYS.offDays, state.offDays)]);
+    window.renderPlan?.(); window.renderToday?.();
+    if (!lastWeekLeftOver().length){ closeRollover(); status("Last week's sorted."); }
+    else renderRollover();
+  }));
+}
+$("#ro-close")?.addEventListener("click", closeRollover);
+$("#ro-later")?.addEventListener("click", closeRollover);
+
 /* ============== Avoid ingredients (Settings › Never suggest) ============== */
 const avoidEditor = $("#avoid-editor") ? tokenEditor($("#avoid-editor"), $("#avoid-input"), []) : null;
 function syncAvoidEditor(){ avoidEditor?.set(state.prefs.avoid || []); }
@@ -2930,7 +3113,7 @@ function renderMealView(){
         ${meal.tags?.length ? `<h4 class="h4">Tags</h4><div class="token-list">${meal.tags.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
         <h4 class="h4">Cook log</h4>
         ${log.length
-          ? `<ul class="mv-log">${log.map(e => `<li><span class="muted">${escapeHtml(formatShortDate(e.date))}</span> ${e.rating ? `<span class="mv-stars">${"★".repeat(e.rating)}</span>` : ""} ${e.note ? escapeHtml(e.note) : ""}</li>`).join("")}</ul>`
+          ? `<ul class="mv-log">${log.map(e => `<li><span class="muted">${escapeHtml(formatShortDate(e.date))}</span> ${e.by && chefById(e.by) ? `${chefAvatar(chefById(e.by), 20)} ` : ""}${e.rating ? `<span class="mv-stars">${"★".repeat(e.rating)}</span>` : ""} ${e.note ? escapeHtml(e.note) : ""}</li>`).join("")}</ul>`
           : `<p class="muted small">Not cooked in cook mode yet.</p>`}
       </section>
     </div>`;
@@ -3646,7 +3829,9 @@ $("#export")?.addEventListener("click", () => {
     history: state.history,
     cooklog: state.cooklog,
     plan: state.plan,
-    pins: state.pins
+    pins: state.pins,
+    chefs: state.chefs,
+    offDays: state.offDays
   }, null, 2);
 
   const blob = new Blob([data], { type: "application/json" });
@@ -3711,7 +3896,10 @@ function migrateImport(json){
     // schema 13+
     plan: (json.plan && typeof json.plan === "object") ? json.plan : {},
     // schema 14+
-    pins: (json.pins && typeof json.pins === "object") ? json.pins : {}
+    pins: (json.pins && typeof json.pins === "object") ? json.pins : {},
+    // schema 16+
+    chefs: cleanChefs(json.chefs),
+    offDays: cleanOffDays(json.offDays)
   };
 }
 $("#import")?.addEventListener("change", async (e) => {
@@ -3738,6 +3926,8 @@ Continue?`)){
     const ids = new Set(state.meals.map(m => m.id));
     state.plan = cleanPlan(migrated.plan, ids);
     state.pins = cleanPins(migrated.pins, ids);
+    state.chefs = migrated.chefs;
+    state.offDays = migrated.offDays;
     state.cookQueue = state.cookQueue.filter(q => ids.has(q.mealId));
     clearShopState();
 
@@ -3767,6 +3957,8 @@ $("#clear-all")?.addEventListener("click", async () => {
   state.cookQueue = [];
   state.plan = {};
   state.pins = {};
+  state.chefs = [];
+  state.offDays = {};
   clearShopState();
   await saveAll();
   renderMeals(); renderShopping(); populateCookSelect();
@@ -3788,7 +3980,7 @@ function openSettings(){
   lockBodyScroll(true);
 }
 /* Settings (v27): one list showing current values; each row opens a page in plain words. */
-const SETTINGS_TITLES = { home: "Settings", sync: "Sync & household", avoid: "Never suggest", pantry: "Always in the cupboard",
+const SETTINGS_TITLES = { chefs: "Who cooks", home: "Settings", sync: "Sync & household", avoid: "Never suggest", pantry: "Always in the cupboard",
   history: "Meal history", appearance: "Look", data: "Backup & restore", help: "Help", about: "About",
   ingredients: "Ingredient names & units", advanced: "Diagnostics" };
 function showSettingsTab(tab){
@@ -3799,6 +3991,7 @@ function showSettingsTab(tab){
   settingsModal.dataset.page = tab;
   if (tab === "home") renderSettingsHome();
   if (tab === "help") renderHelpInstall();
+  if (tab === "chefs") renderChefs();
   settingsModal.querySelector(".dialog").scrollTop = 0;
 }
 $$("[data-stab]").forEach(b => b.addEventListener("click", () => showSettingsTab(b.dataset.stab)));
@@ -3812,6 +4005,7 @@ function renderSettingsHome(){
   set("pantry", state.pantry.size ? `${state.pantry.size} item${state.pantry.size === 1 ? "" : "s"}` : "None yet");
   const cooked = Object.values(state.cooklog).reduce((n, l) => n + (l?.length || 0), 0);
   set("history", cooked ? `${cooked} cooked` : "");
+  set("chefs", state.chefs.length ? state.chefs.map(c => c.name).join(", ") : "Nobody yet");
   set("theme", THEME_NAMES[state.prefs.theme] || "Automatic");
   set("text", TEXT_NAMES[state.prefs.textSize] || "Normal text");
   const last = lastBackupDate();
@@ -4094,6 +4288,7 @@ $("#unit-add")?.addEventListener("click", async () => {
   $("#about-version") && ($("#about-version").textContent = `v${APP_VERSION}`);
   renderInstallBanner();
   setTimeout(maybeShowWelcome, 900);
+  setTimeout(maybeShowRollover, 1600);
   setView("today");
   syncFiltersUI();
 
