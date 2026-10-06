@@ -720,8 +720,8 @@
     $("#sync-invite")?.addEventListener("click", showInvite);
     $("#sync-invite-share")?.addEventListener("click", async () => {
       const link = $("#sync-invite-box").dataset.link, code = $("#sync-invite-code").textContent;
-      const text = `Join my Meal Planner: open ${link} (or enter code ${code} in Settings › Sync). Works once, for 15 minutes.`;
-      try { if (navigator.share) await navigator.share({ title: "Meal Planner", text }); else { await navigator.clipboard.writeText(text); status("Link copied."); } } catch { /* cancelled */ }
+      const text = `Join my Teatime: open ${link} (or enter code ${code} in Settings › Sync). Works once, for 15 minutes.`;
+      try { if (navigator.share) await navigator.share({ title: "Teatime", text }); else { await navigator.clipboard.writeText(text); status("Link copied."); } } catch { /* cancelled */ }
     });
     $("#sync-recovery-show")?.addEventListener("click", () => { const r = $("#sync-recovery"); r.hidden = !r.hidden; $("#sync-recovery-show").textContent = r.hidden ? "Show" : "Hide"; });
     $("#sync-recovery-copy")?.addEventListener("click", async () => {

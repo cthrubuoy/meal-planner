@@ -3,6 +3,23 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v33 — Meal Planner is now Teatime: new name and icon (2026-10-06)
+Cache `meal-planner-v35` · assets `?v=33` · export schema 16 (unchanged)
+
+### Changed
+- **New name: Teatime.** On the home screen (`name`/`short_name` in the manifest), the iPhone title, the browser tab, the header, the welcome screen, About, the install help and the invite message.
+- **New icon:** a happy dinner plate with its knife and fork, in navy and cream on mint (logo rounds 1–5; you chose "C2, bigger").
+  - `icon-192`, `icon-512` and the iPhone `icon-180` fill the square.
+  - `icon-maskable-512` is scaled to sit inside Android's safe circle, so no launcher shape crops the fork or knife.
+  - New `favicon.ico` (16, 32, 48 px) and an `icon.svg` favicon that stays sharp at any size.
+  - The splash colour (`background_color`) is the icon's mint.
+- **Unchanged:** the web address and all your data. The installed app keeps its identity (same start URL), so it updates in place. Export files are still named `meal-planner-export-…`. The household key is still saved in your password manager as "Meal Planner household", so Restore keeps finding it.
+
+### How existing installs update
+- **Android (Brave or Chrome):** the installed app picks up the new name and icon by itself, usually within a day of opening it. Accept the prompt if one appears.
+- **Computer:** updates on its next launch.
+- **iPhone:** remove the app from the Home Screen and add it again.
+
 ## v32 — Plan these, chef names on the plan, no pull-down refresh (2026-10-06)
 Cache `meal-planner-v34` · assets `?v=32` · export schema 16 (unchanged) · scan server **2.8 live** (524 fix, `POST /swap`)
 

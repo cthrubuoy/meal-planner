@@ -1,17 +1,18 @@
 {
-  "name": "Meal Planner & Shopping List",
-  "short_name": "Meal Planner",
-  "description": "Build a meal library, plan shops, and auto-generate shopping lists. Works offline.",
+  "name": "Teatime",
+  "short_name": "Teatime",
+  "description": "Plan the week's dinners, shop from one list and cook step by step. Works offline.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0b0f1a",
+  "background_color": "#5fd3a8",
   "theme_color": "#0b0f1a",
   "categories": ["food", "lifestyle", "productivity"],
   "share_target": {
     "action": "./",
     "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
     "params": { "title": "share_title", "text": "share_text", "url": "share_url" }
   },
   "icons": [

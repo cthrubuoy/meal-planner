@@ -731,13 +731,13 @@ function renderDiag(){
 }
 $("#diag-errors-only")?.addEventListener("change", renderDiag);
 $("#diag-copy")?.addEventListener("click", async () => {
-  const text = `Meal Planner v${APP_VERSION} · ${navigator.userAgent}\n\n` + diagText(diagRead().slice().reverse());
+  const text = `Teatime v${APP_VERSION} · ${navigator.userAgent}\n\n` + diagText(diagRead().slice().reverse());
   try { await navigator.clipboard.writeText(text); status("Log copied — paste it to Claude or into a message."); }
   catch { alert(text.slice(0, 4000)); }
 });
 $("#diag-share")?.addEventListener("click", async () => {
-  const text = `Meal Planner v${APP_VERSION} · ${navigator.userAgent}\n\n` + diagText(diagRead().slice().reverse());
-  try { if (navigator.share) await navigator.share({ title: "Meal Planner log", text }); else $("#diag-copy").click(); } catch { /* cancelled */ }
+  const text = `Teatime v${APP_VERSION} · ${navigator.userAgent}\n\n` + diagText(diagRead().slice().reverse());
+  try { if (navigator.share) await navigator.share({ title: "Teatime log", text }); else $("#diag-copy").click(); } catch { /* cancelled */ }
 });
 $("#diag-clear")?.addEventListener("click", () => {
   if (!confirm("Clear the diagnostics log on this device?")) return;
@@ -801,13 +801,11 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["plan", "Plan these", "Picked meals for the shop but haven't planned them? \"Plan these\" (on the Meals selection bar, or the shopping list's ⋯) puts them on free cooking days — quicker ones Mon–Thu. Check the days, then save."],
-  ["user", "See who's cooking", "Each planned meal now shows the cook's photo and name, big enough to read."],
-  ["swap", "Swap an ingredient is on", "The server now supports it: on a meal's ⋯ menu, swap the chicken for turkey mince and save it as a version."],
-  ["refresh", "No more accidental refresh", "Pulling down at the top of the app no longer reloads it."]
+  ["sparkles", "Meal Planner is now Teatime", "A new name and a new icon: a happy dinner plate with its knife and fork. Same app, same meals, same address — nothing to reinstall."],
+  ["info", "On your home screen", "Android updates the installed app's name and icon by itself, usually within a day of opening it (accept the prompt if one appears). On an iPhone, remove the app from the Home Screen and add it again to see the new icon."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
@@ -849,9 +847,9 @@ let installPrompt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; renderInstallBanner(); });
 window.addEventListener("appinstalled", () => { installPrompt = null; platform.installed = true; renderInstallBanner(); });
 const INSTALL_STEPS = {
-  ios: ["Tap <b>Share</b> (the square with an arrow) at the bottom of Safari", "Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>", "Open <b>Meal Planner</b> from your Home Screen — not from Safari"],
-  android: ["Tap the browser's menu (<b>⋮</b>, top right — on Brave it's at the bottom)", "Tap <b>Install app</b> or <b>Add to Home screen</b>", "Open <b>Meal Planner</b> from your home screen"],
-  desktop: ["In Chrome, Edge or Brave, click the <b>install</b> icon at the right of the address bar", "Or open the browser menu › <b>Install Meal Planner</b>"]
+  ios: ["Tap <b>Share</b> (the square with an arrow) at the bottom of Safari", "Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>", "Open <b>Teatime</b> from your Home Screen — not from Safari"],
+  android: ["Tap the browser's menu (<b>⋮</b>, top right — on Brave it's at the bottom)", "Tap <b>Install app</b> or <b>Add to Home screen</b>", "Open <b>Teatime</b> from your home screen"],
+  desktop: ["In Chrome, Edge or Brave, click the <b>install</b> icon at the right of the address bar", "Or open the browser menu › <b>Install Teatime</b>"]
 };
 const installStepsHtml = (k) => `<ol class="install-list">${INSTALL_STEPS[k].map(s => `<li>${s}</li>`).join("")}</ol>`;
 function installKind(){ return platform.ios ? "ios" : platform.android ? "android" : "desktop"; }
@@ -859,7 +857,7 @@ function renderHelpInstall(){
   const k = installKind();
   const box = $("#help-install");
   if (box) box.innerHTML = platform.installed ? `<p class="small">${icon("check", 16)} Installed on this device — you're using the app.</p>`
-    : (installPrompt ? `<button type="button" class="btn primary" data-install-now>${icon("plus", 16)}Install Meal Planner</button>` : "") + installStepsHtml(k);
+    : (installPrompt ? `<button type="button" class="btn primary" data-install-now>${icon("plus", 16)}Install Teatime</button>` : "") + installStepsHtml(k);
   box?.querySelector("[data-install-now]")?.addEventListener("click", installNow);
   const all = $("#help-install-all");
   if (all) all.innerHTML = `<b>iPhone / iPad (Safari)</b>${installStepsHtml("ios")}<b>Android (Chrome, Brave)</b>${installStepsHtml("android")}<b>Computer</b>${installStepsHtml("desktop")}`;
@@ -881,8 +879,8 @@ function renderInstallBanner(){
   b.hidden = !show;
   if (!show) return;
   $("#install-banner-text").textContent = platform.ios
-    ? "Add Meal Planner to your Home Screen — in a Safari tab, your meals can be cleared."
-    : "Install Meal Planner as an app — it opens full screen and keeps your meals safe.";
+    ? "Add Teatime to your Home Screen — in a Safari tab, your meals can be cleared."
+    : "Install Teatime as an app — it opens full screen and keeps your meals safe.";
   $("#install-banner-go").textContent = platform.ios ? "How?" : "Install";
   syncHeaderHeight();
 }
@@ -898,7 +896,7 @@ function openWelcome(){
   if (card){
     const needsInstall = platform.ios && !platform.installed;
     card.hidden = !needsInstall;
-    if (needsInstall) card.innerHTML = `<b>Add Meal Planner to your Home Screen first</b>
+    if (needsInstall) card.innerHTML = `<b>Add Teatime to your Home Screen first</b>
       <p class="small">On iPhone, the app keeps your meals safely only once it's on your Home Screen. In a Safari tab they can be cleared.</p>
       ${installStepsHtml("ios")}
       <p class="small muted">Got a code from someone? Enter it in the app after step 3 — the app and Safari keep separate copies.</p>`;
@@ -2726,7 +2724,7 @@ function firstRunPanel(){
   d.className = "first-run";
   d.innerHTML = `
     <h3 class="h3">No meals here yet</h3>
-    <p>Joining someone's meals? Use their code. Used Meal Planner before? <b>Restore my meals</b> brings everything back from your household. New here? Scan a recipe card or add a meal.</p>
+    <p>Joining someone's meals? Use their code. Used Teatime before? <b>Restore my meals</b> brings everything back from your household. New here? Scan a recipe card or add a meal.</p>
     <div class="group">
       <button type="button" class="btn primary" data-fr="restore">${icon("refresh", 18)}Restore my meals</button>
       <button type="button" class="btn" data-fr="code">${icon("link", 18)}I have a code</button>
