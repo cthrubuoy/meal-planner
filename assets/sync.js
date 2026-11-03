@@ -298,16 +298,22 @@
     const want = [...new Set([...outbox.values()].filter(e => e.coll === "meal" && !e.deleted && e.data?.image?.hash).map(e => e.data.image.hash))].filter(h => !uploaded.has(h));
     if (want.length){
       const { missing } = await api("POST", "/v1/photos/missing", { body: { hashes: want } });
+      // srcByHash is in memory only: after a reload the outbox can be pushed before it refills
+      if (missing.some(h => !srcByHash.has(h))){
+        for (const m of state.meals) if (m.image?.src?.startsWith("data:")) await photoRef(m.image.src);
+      }
+      const notSent = new Set();
       let done = 0;
       for (const h of missing){
         const src = srcByHash.get(h);
-        if (!src) continue;
+        if (!src){ notSent.add(h); continue; }   // stays out of `uploaded`, so the next push retries it
         const { mime, bytes } = dataUrlBytes(src);
         await api("PUT", `/v1/photo/${h}`, { raw: bytes, type: mime });
         progress?.(`Uploading photos ${++done} of ${missing.length}`, done / Math.max(1, missing.length));
       }
-      want.forEach(h => uploaded.add(h));
+      want.forEach(h => { if (!notSent.has(h)) uploaded.add(h); });
       meta.uploaded = [...uploaded];
+      if (notSent.size) logEvent("warn", "sync", `${notSent.size} photo(s) not on this device yet; retried on the next push`);
     }
     const all = [...outbox.entries()];
     for (let i = 0; i < all.length; i += PUSH_CHUNK){
