@@ -801,11 +801,10 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["sparkles", "Meal Planner is now Teatime", "A new name and a new icon: a happy dinner plate with its knife and fork. Same app, same meals, same address — nothing to reinstall."],
-  ["info", "On your home screen", "Android updates the installed app's name and icon by itself, usually within a day of opening it (accept the prompt if one appears). On an iPhone, remove the app from the Home Screen and add it again to see the new icon."]
+  ["check", "Scrolling works again", "Since v32, one-finger scrolling stuck on every tab, on phones and tablets. It's fixed. Pulling down still doesn't reload the page."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

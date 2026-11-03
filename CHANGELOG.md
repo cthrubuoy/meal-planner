@@ -3,6 +3,14 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v34 — Scrolling fixed (2026-11-03)
+Cache `meal-planner-v36` · assets `?v=34` · export schema 16 (unchanged)
+
+### Fixed
+- **One-finger scrolling works again on every tab** (Today, Meals, Plan, Shopping), on Android phones and tablets, in the installed app and in the browser. Since v32 a drag often didn't move the page, and only a two-finger zoom and pull got further down.
+  - Cause: v32's "no pull-to-refresh" rule (`overscroll-behavior-y: none`) was on both `html` and `body`. Because `html` hides sideways overflow, `body` is a scroll box of its own that can't scroll, and the rule stopped touch scrolls there instead of passing them on to the page.
+  - The rule is now on `html` only (`assets/styles.css`), which is what stops pull-to-refresh. Pulling down still doesn't reload the page.
+
 ## v33 — Meal Planner is now Teatime: new name and icon (2026-10-06)
 Cache `meal-planner-v35` · assets `?v=33` · export schema 16 (unchanged)
 
