@@ -4404,8 +4404,29 @@ $("#unit-add")?.addEventListener("click", async () => {
 /* =====================================================
    INIT
    ===================================================== */
+/* v35: if the saved data can't be opened, say so and offer Retry instead of a blank app.
+   Stop there: never start with empty data, or sync (started by app:ready) would send
+   "everything deleted" to the household. */
+function showLoadError(err){
+  console.error("loadAll failed", err);
+  const box = document.createElement("div");
+  box.id = "load-error";
+  box.setAttribute("role", "alert");
+  box.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg,#0b0f1a);color:var(--text,#e5e7eb);font:16px/1.5 Figtree,system-ui,sans-serif;text-align:center";
+  box.innerHTML = `<div style="max-width:28em">
+    <h2 style="margin:0 0 8px">Teatime couldn't open your saved meals</h2>
+    <p style="margin:0 0 8px">Nothing has been changed or deleted, on this device or in sync.</p>
+    <p style="margin:0 0 16px;opacity:.8">This can happen when the device is short of storage, or the browser is updating. Close other apps or free some space, then try again.</p>
+    <button type="button" class="btn primary" style="padding:10px 22px;font:inherit;border-radius:12px;border:0;background:var(--accent,#22c55e);color:#04130a">Retry</button>
+    <p style="margin:16px 0 0;font-size:13px;opacity:.6"></p></div>`;
+  box.querySelector("p:last-child").textContent = `Details: ${err?.name || "Error"}${err?.message ? " — " + err.message : ""}`;
+  box.querySelector("button").addEventListener("click", () => location.reload());
+  document.body.append(box);
+}
+
 (async () => {
-  await loadAll();
+  try { await loadAll(); }
+  catch (err){ showLoadError(err); return; }
   applyTheme();
   applyDensity();
   applyTextSize();
