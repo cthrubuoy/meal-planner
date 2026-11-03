@@ -47,8 +47,11 @@
 html, body{
   max-width:100%;
   overflow-x:hidden;
-  overscroll-behavior-y:none;   /* v32: pulling down doesn't reload the page (Android pull-to-refresh) */
 }
+/* v32: pulling down doesn't reload the page (Android pull-to-refresh). On html only: overflow-x on
+   html makes body its own scroll box, and overscroll-behavior on body stopped every touch scroll
+   from reaching the page (v34) */
+html{ overscroll-behavior-y:none; }
 body{
   margin:0;
   background:
