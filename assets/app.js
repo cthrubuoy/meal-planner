@@ -2018,20 +2018,21 @@ $("#edit-form")?.addEventListener("submit", async (e) => {
   const meal = state.meals.find(m => m.id === state.editingId);
   if (!meal) return;
 
-  meal.title = $("#edit-title").value.trim() || meal.title;
-
-  if (editPendingImage) meal.image = { type:"data", src: editPendingImage };
-  const f = $("#edit-image-file").files[0];
-  if (f){
-    const data = await fileToCompressedDataURL(f);
-    if (data) meal.image = { type:"data", src:data };
-  }
-
-  meal.cookMins = parseCookMins($("#edit-cook-mins").value);
-
+  // Check before changing anything (v35): a refused save used to leave the new title, photo
+  // and time in the meal, and the next save of anything stored the half-edit.
   const ing = readIngredientRows(editIng);
   if (!ing.length){ alert("Please add at least one ingredient."); return; }
 
+  let image = editPendingImage ? { type:"data", src: editPendingImage } : null;
+  const f = $("#edit-image-file").files[0];
+  if (f){
+    const data = await fileToCompressedDataURL(f);
+    if (data) image = { type:"data", src:data };
+  }
+
+  meal.title = $("#edit-title").value.trim() || meal.title;
+  if (image) meal.image = image;
+  meal.cookMins = parseCookMins($("#edit-cook-mins").value);
   meal.ingredients = ing;
   const extras = readIngredientRows($("#edit-extras"));
   if (extras.length) meal.extras = extras; else delete meal.extras;
