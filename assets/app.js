@@ -1853,8 +1853,12 @@ $("#step-input")?.addEventListener("keydown", e => {
 });
 refreshCreateSteps();
 
+let addSaving = false;   // v35: a second tap while the first save is running added the meal twice
 $("#meal-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (addSaving) return;
+  addSaving = true;
+  let added = null;
   try{
     const title = $("#title").value.trim();
     if (!title){ alert("Please provide a meal name."); $("#title").focus(); return; }
@@ -1888,7 +1892,9 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
     };
 
     state.meals.unshift(meal);
+    added = meal;
     await saveAll();
+    added = null;
 
     renderMeals(); renderShopping(); populateCookSelect();
     updateIngredientSuggestions(); refreshTagSuggestions();
@@ -1909,7 +1915,12 @@ $("#meal-form")?.addEventListener("submit", async (e) => {
     setView("meals");
   } catch(err){
     console.error(err);
+    // the save failed: take the meal back out, or trying again would add it twice
+    const i = added ? state.meals.indexOf(added) : -1;
+    if (i >= 0) state.meals.splice(i, 1);
     alert("Something went wrong while saving. See console for details.");
+  } finally {
+    addSaving = false;
   }
 });
 
@@ -2013,8 +2024,14 @@ $("#edit-tags-from-ingredients")?.addEventListener("click", () => {
   editTagEditor.addMany(ingredientNamesToTags(ings));
 });
 
+let editSaving = false;   // v35: same double-tap guard as Add
 $("#edit-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (editSaving) return;
+  editSaving = true;
+  try { await saveEditForm(); } finally { editSaving = false; }
+});
+async function saveEditForm(){
   const meal = state.meals.find(m => m.id === state.editingId);
   if (!meal) return;
 
@@ -2048,7 +2065,7 @@ $("#edit-form")?.addEventListener("submit", async (e) => {
   closeEdit();
   refreshMealView();
   status("Meal updated.");
-});
+}
 
 /* Escape closes modals & popovers */
 window.addEventListener("keydown", (e) => {
