@@ -61,15 +61,22 @@ self.addEventListener("fetch", (event) => {
   const accept = req.headers.get("accept") || "";
   if (req.mode === "navigate" || accept.includes("text/html")) {
     event.respondWith((async () => {
-      try {
-        const fresh = await fetch(req);
+      const network = fetch(req).then(async fresh => {
         const cache = await caches.open(CACHE_NAME);
         cache.put(req, fresh.clone()).catch(() => {});
         return fresh;
-      } catch {
-        const cached = await caches.match(req);
-        return cached || (await caches.match("./index.html")) || new Response("Offline", { status: 503 });
+      });
+      const cached = await caches.match(req) || await caches.match("./index.html");
+      // v35: one bar of signal used to hang the app until the fetch failed. With a cached copy,
+      // wait at most 3 s for the network; the fetch carries on and refreshes the cache for next time.
+      if (cached){
+        event.waitUntil(network.catch(() => {}));
+        const timeout = new Promise(r => setTimeout(() => r(null), 3000));
+        const fresh = await Promise.race([network.catch(() => null), timeout]);
+        return fresh || cached;
       }
+      try { return await network; }
+      catch { return new Response("Offline", { status: 503 }); }
     })());
     return;
   }
