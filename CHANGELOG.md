@@ -3,6 +3,16 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v35 — Bug fixes from the first-pass review (2026-11-03)
+Cache `meal-planner-v37` · assets `?v=35` · export schema 16 (unchanged)
+
+### Fixed
+- **Weak signal no longer hangs the app on open.** The app used to wait for the network until it gave up. With a saved copy it now waits at most 3 seconds, then opens from the saved copy and refreshes it in the background. On a good signal nothing changes: the newest version still loads first (`sw.js`).
+- **An update no longer wipes what you're doing.** When a new version arrived, the app reloaded straight away, even over an open Add or Edit form or cook mode. It now waits until those are closed, or until the app is in the background. It also no longer reloads once on the very first visit (`assets/pwa.js`).
+- **A refused save no longer half-changes a meal.** Saving an edit with no ingredients is refused, but the new title, photo and time were already written into the meal, and the next save of anything kept them. Now nothing changes until the save goes ahead (Edit meal).
+- **Save can't add a meal twice.** A quick double tap on Save, or tapping Save again after a failed save (for example, storage full), could create two copies. Add and Edit now ignore a second tap while saving, and a failed save leaves nothing behind (Add meal, Edit meal).
+- **A message instead of a blank screen** if the saved meals can't be opened (for example, the device is out of storage). It says nothing was changed and offers Retry. The app doesn't start sync in that state, so it can never tell other devices that everything was deleted.
+
 ## v34 — Scrolling fixed (2026-11-03)
 Cache `meal-planner-v36` · assets `?v=34` · export schema 16 (unchanged)
 

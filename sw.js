@@ -1,28 +1,28 @@
-/* Service Worker — Meal Planner v34
+/* Service Worker — Meal Planner v35
    Strategy:
    - Network-first for HTML (so updates land quickly)
    - Cache-first for static assets (CSS/JS/icons)
    - Same-origin only
 */
-const CACHE_NAME = "meal-planner-v36";
+const CACHE_NAME = "meal-planner-v37";
 // Asset URLs carry ?v=N to match index.html: a new index.html then never gets
 // old JS/CSS from a previous version's cache-first entries. Bump N with CACHE_NAME.
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./fonts/fonts.css?v=34",
+  "./fonts/fonts.css?v=35",
   "./fonts/bricolage-grotesque.woff2",
   "./fonts/figtree.woff2",
-  "./assets/styles.css?v=34",
-  "./assets/icons.js?v=34",
-  "./assets/app.js?v=34",
-  "./assets/cook.js?v=34",
-  "./assets/plan.js?v=34",
-  "./assets/vendor/qrcode.js?v=34",
-  "./assets/sync.js?v=34",
-  "./assets/scan.js?v=34",
-  "./assets/pwa.js?v=34",
+  "./assets/styles.css?v=35",
+  "./assets/icons.js?v=35",
+  "./assets/app.js?v=35",
+  "./assets/cook.js?v=35",
+  "./assets/plan.js?v=35",
+  "./assets/vendor/qrcode.js?v=35",
+  "./assets/sync.js?v=35",
+  "./assets/scan.js?v=35",
+  "./assets/pwa.js?v=35",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-180.png",
