@@ -3,6 +3,14 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v41 — Photo sync fix (2026-11-04)
+Cache `meal-planner-v43` · assets `?v=41` · export schema 16 (unchanged)
+
+### Fixed
+- **A meal's photo always reaches your other devices.** Adding a meal offline, or closing the app within a second or two of saving it, could mark its photo as sent when it wasn't. Every other device then got stuck waiting for that photo and stopped taking any changes. Now a photo only counts as sent once the server has it, and the meal waits until it does (Settings › Sync).
+- **Households already stuck fix themselves.** Each time the app starts, it asks the server which of the photos it sent are really there, and sends any that are missing.
+- **One missing photo no longer stops everything.** If a photo isn't on the server yet, other devices hold back just that meal and take all the other changes. They try again on the next sync and get the meal once the photo arrives. If a photo is gone from every device, its meal keeps waiting, so a meal never arrives without its picture.
+
 ## v40 — Plan and scan fixes from the first-pass review (2026-11-04)
 Cache `meal-planner-v42` · assets `?v=40` · export schema 16 (unchanged)
 

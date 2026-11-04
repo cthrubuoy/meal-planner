@@ -822,11 +822,10 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["check", "Copy last week skips dropped meals", "Meals you let go at the new-week sheet no longer come back when you copy last week."],
-  ["check", "Scans behave", "A slow scan can't overwrite a newer one, and a double tap on Save adds the meal once."]
+  ["check", "Photos always reach your other devices", "A meal added offline, or just before closing the app, now always sends its photo. Devices stuck waiting for one fix themselves."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
