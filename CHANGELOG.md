@@ -3,6 +3,15 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v40 — Plan and scan fixes from the first-pass review (2026-11-04)
+Cache `meal-planner-v42` · assets `?v=40` · export schema 16 (unchanged)
+
+### Fixed
+- **Copy last week skips meals you dropped.** Meals let go at the new-week sheet came back when you copied last week, then got skipped for good. They're now left out (Plan › ⋯ › Copy last week).
+- **×2 clears once the batch is cooked.** After Mark as cooked on a doubled meal, it stayed ×2 for the next shop and cook. It now goes back to normal amounts. Plan's Tonight › Cook also opens cook mode at ×2 when the plan has that meal doubled (Cook mode, Plan › Tonight).
+- **A slow scan can't overwrite a newer one.** If a recipe scan took a while and you'd started another, or closed the form, the late answer could fill the wrong form or replace the newer result. Late answers are now ignored (Add › Scan a recipe card; Edit › Scan back of card).
+- **Scan Save is safe to double-tap, and never gets stuck.** A double tap on the scan review's Save made two meals. A broken scan or import answer left the spinner spinning, and odd step data could crash cook mode. Save now ignores a second tap, the spinner always clears, and steps are cleaned up to plain text (Scan review).
+
 ## v39 — Cook and plan fixes from the first-pass review (2026-11-04)
 Cache `meal-planner-v41` · assets `?v=39` · export schema 16 (unchanged)
 

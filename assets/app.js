@@ -822,11 +822,11 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["check", "Auto-fill plans from today", "Auto-fill and the swipe picker no longer fill days that have already gone, so Add to list doesn't buy for them."],
-  ["check", "Timers ring after a reload", "A cook-mode timer still sounds its alarm if the app was reloaded while it ran."]
+  ["check", "Copy last week skips dropped meals", "Meals you let go at the new-week sheet no longer come back when you copy last week."],
+  ["check", "Scans behave", "A slow scan can't overwrite a newer one, and a double tap on Save adds the meal once."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${
