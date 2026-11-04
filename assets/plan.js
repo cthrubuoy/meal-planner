@@ -232,7 +232,7 @@
     const before = JSON.stringify(state.plan);
     let n = 0;
     cur.forEach((d, i) => {
-      const from = planned(localISO(prev[i])), iso = localISO(d);
+      const from = planned(localISO(prev[i])).filter(e => !e.dropped), iso = localISO(d);   // dropped = let go at the rollover
       if (from.length && !planned(iso).length){ setDay(iso, from.map(e => ({ ...e }))); n += from.length; }
     });
     if (!n){ status("Nothing to copy — last week was empty, or these days are already planned."); return; }
