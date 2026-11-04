@@ -590,12 +590,37 @@
       }
     });
   }
+  /* Cook history is the one thing joining merges rather than replaces: for a meal both have, the household's entries first,
+     then this device's that it doesn't have (same rule as mergeCooklog). Plan days, pins, chefs and not-cooking days need
+     no step: pullAll only replaces the keys the household has, so this device's other keys stay and diffAll pushes them. */
+  async function mergeCooksAfterJoin(mine){
+    let changed = 0;
+    for (const [id, log] of Object.entries(mine)){
+      if (!Array.isArray(log) || !log.length) continue;
+      const theirs = state.cooklog[id];
+      if (!Array.isArray(theirs) && !state.meals.some(m => m.id === id)) continue;   // the household deleted that meal
+      const next = Array.isArray(theirs) ? mergeCooklog(theirs, log) : log;
+      if (hashOf(next) !== hashOf(theirs)){ state.cooklog[id] = next; changed++; }
+    }
+    if (changed) await idbSet(IDB_KEYS.cooklog, state.cooklog);
+    return changed;
+  }
   async function join(codeOrKey){
     const v = String(codeOrKey || "").trim();
     if (!v){ $("#sync-code")?.focus(); return; }
     const isKey = v.replace(/[^A-Za-z0-9]/g, "").length > 14;
-    const hasData = state.meals.length > 0;
-    if (hasData && !confirm(`Join the household?\n\nFirst, a backup of this device's data downloads (just in case). Then:\n• meals on both keep the household's version\n• meals only on this device are added for everyone\n• this device's current shopping list is replaced by the household's`)) return;
+    const hasData = state.meals.length > 0 || [state.plan, state.cooklog, state.pins, state.offDays].some(o => Object.keys(o || {}).length) || state.chefs.length > 0;
+    /* What joining (or "Restore my meals", which joins with the key) does to this device's own data. Keep the text and
+       the code below in step (v42, first pass S6): records the household doesn't have are added for everyone; on a record
+       both have, the household's version wins, except cook history, where the entries of both are kept. */
+    if (hasData && !confirm(`Join the household?
+
+First, a backup of this device's data downloads (just in case). Then:
+• meals on both keep the household's version
+• meals only on this device are added for everyone
+• planned days, pinned meals, who's cooking and not-cooking days: the ones only on this device are added for everyone; for a day, weekday or person both have, the household's version is kept
+• cook history: the entries from both are kept
+• this device's current shopping list and "This week" are replaced by the household's`)) return;
     await busy(async () => {
       try {
         if (hasData){ $("#export")?.click(); await new Promise(r => setTimeout(r, 600)); }
@@ -609,7 +634,9 @@
         state.cookQueue = [];
         await Promise.all([saveSession(), idbSet(IDB_KEYS.cookQueue, state.cookQueue)]);
         progress("Downloading the household's meals…", 0.2);
+        const myCooks = JSON.parse(JSON.stringify(state.cooklog || {}));   // pullAll replaces a meal's whole log
         await pullAll();                       // household wins where both have it
+        if (await mergeCooksAfterJoin(myCooks)) rerender(new Set(["cooklog"]));
         progress("Adding this device's extra meals…", 0.7);
         await diffAll();                       // anything left that the household doesn't have
         await pushOutbox(progress);
