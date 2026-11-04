@@ -2591,11 +2591,17 @@ async function duplicateMeal(id){
   return copy.id;
 }
 /* Delete with confirm + Undo. Used by the card menu, the meal page and Edit. */
+/* Deletes still inside their Undo window. Each new delete keeps the earlier ones, so one Undo
+   brings them all back (a second delete used to replace the toast and lose the first Undo). */
+const DELETE_UNDO_MS = 6000;
+let pendingDeletes = [], deletePurgeTimer = null;
 async function deleteMeal(id){
   const idx = state.meals.findIndex(m => m.id === id);
   if (idx === -1) return false;
   const removed = state.meals[idx];
   if (!confirm(`Delete "${removed.title}"?`)) return false;
+  // what Undo must put back besides the meal: its place in the current shop
+  pendingDeletes.push({ meal: removed, idx, sel: state.selected.has(id), x2: state.doubled.has(id), counted: state.countedIds.has(id) });
   state.meals.splice(idx, 1);
   state.selected.delete(id);
   state.doubled.delete(id);
@@ -2603,32 +2609,48 @@ async function deleteMeal(id){
   await saveAll();
   renderMeals(); renderShopping(); populateCookSelect();
   updateIngredientSuggestions(); refreshTagSuggestions();
-  const UNDO_MS = 6000;
-  showUndoToast(`"${removed.title}" deleted`, async () => {
-    state.meals.splice(Math.min(idx, state.meals.length), 0, removed);   // same position
-    await saveAll();
-    renderMeals(); renderShopping(); populateCookSelect();
-    updateIngredientSuggestions(); refreshTagSuggestions();
-    status(`"${removed.title}" restored`);
-  }, UNDO_MS);
-  // Drop its history once Undo is no longer possible (loadAll also prunes orphans)
-  setTimeout(() => {
-    if (state.meals.some(m => m.id === removed.id)) return;   // restored via Undo
-    delete state.history[removed.id];
-    delete state.cooklog[removed.id];
-    delete state.thumbs[removed.id];
+  const n = pendingDeletes.length;
+  showUndoToast(n === 1 ? `"${removed.title}" deleted` : `${n} meals deleted`, undoDeletes, DELETE_UNDO_MS);
+  // Drop their history once Undo is no longer possible (loadAll also prunes orphans)
+  clearTimeout(deletePurgeTimer);
+  deletePurgeTimer = setTimeout(purgeDeleted, DELETE_UNDO_MS + 500);
+  return true;
+}
+async function undoDeletes(){
+  clearTimeout(deletePurgeTimer);
+  const back = pendingDeletes.reverse();   // newest first, so each goes back into its old position
+  pendingDeletes = [];
+  for (const d of back){
+    if (state.meals.some(m => m.id === d.meal.id)) continue;
+    state.meals.splice(Math.min(d.idx, state.meals.length), 0, d.meal);
+    if (d.sel) state.selected.add(d.meal.id);
+    if (d.x2) state.doubled.add(d.meal.id);
+    if (d.counted) state.countedIds.add(d.meal.id);
+  }
+  await saveAll();
+  renderMeals(); renderShopping(); populateCookSelect();
+  updateIngredientSuggestions(); refreshTagSuggestions();
+  status(back.length === 1 ? `"${back[0].meal.title}" restored` : `${back.length} meals restored`);
+}
+function purgeDeleted(){
+  const gone = pendingDeletes.map(d => d.meal.id).filter(id => !state.meals.some(m => m.id === id));
+  pendingDeletes = [];
+  if (!gone.length) return;
+  for (const id of gone){
+    delete state.history[id];
+    delete state.cooklog[id];
+    delete state.thumbs[id];
     for (const d of Object.keys(state.pins)){
-      state.pins[d] = state.pins[d].filter(x => x !== removed.id);
+      state.pins[d] = state.pins[d].filter(x => x !== id);
       if (!state.pins[d].length) delete state.pins[d];
     }
-    idbSet(IDB_KEYS.pins, state.pins);
-    state.cookQueue = state.cookQueue.filter(q => q.mealId !== removed.id);
-    idbSet(IDB_KEYS.history, state.history);
-    idbSet(IDB_KEYS.cooklog, state.cooklog);
-    idbSet(IDB_KEYS.cookQueue, state.cookQueue);
-    idbSet(IDB_KEYS.thumbs, state.thumbs);
-  }, UNDO_MS + 500);
-  return true;
+    state.cookQueue = state.cookQueue.filter(q => q.mealId !== id);
+  }
+  idbSet(IDB_KEYS.pins, state.pins);
+  idbSet(IDB_KEYS.history, state.history);
+  idbSet(IDB_KEYS.cooklog, state.cooklog);
+  idbSet(IDB_KEYS.cookQueue, state.cookQueue);
+  idbSet(IDB_KEYS.thumbs, state.thumbs);
 }
 
 /* Small pop-up menu (⋯) anchored to a button. items: [{label, danger?, run}] */
