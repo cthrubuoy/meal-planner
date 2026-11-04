@@ -355,7 +355,7 @@
       wrap.className = "today-hero empty-hero";
       wrap.innerHTML = `<div class="today-hero-empty">
           <span class="today-kicker">Tonight</span>
-          <h2 class="today-title">${greeting}</h2>
+          <h2 class="today-title">${escapeHtml(greeting)}</h2>
           <div class="group">
             <button type="button" class="btn primary" data-go="plan">${icon("sparkles", 18)}Plan the week</button>
             <button type="button" class="btn" data-go="meals">${icon("meals", 18)}Browse meals</button>
