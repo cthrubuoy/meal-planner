@@ -686,6 +686,7 @@
     $("#co-done")?.addEventListener("click", async () => {
       const id = guided.id, title = meal.title;
       await logCooked(id, guided.rating, guided.note, guided.by);
+      if (state.doubled.delete(id)) saveSession();   // the batch is cooked: the next cook starts at normal amounts
       closeGuided();
       status(`🍳 Logged "${title}" as cooked`);
     });

@@ -310,14 +310,15 @@
     $("#plan-shop").disabled = !notListed;
     const t = $("#plan-tonight");
     const todayIso = localISO(new Date());
-    const tonight = weekOffset === 0 ? planned(todayIso).map(e => mealById(e.mealId)).filter(Boolean)[0] : null;
+    const tonightEntry = weekOffset === 0 ? planned(todayIso).find(e => mealById(e.mealId)) : null;
+    const tonight = tonightEntry ? mealById(tonightEntry.mealId) : null;
     t.hidden = !tonight;
     if (!tonight) return;
     t.innerHTML = `<div class="h3">Tonight · ${new Date().toLocaleDateString("en-GB", { weekday: "long" })}</div>
       <div class="pt-row"><img alt="" /><div class="pt-text"><b>${escapeHtml(tonight.title)}</b>${typeof tonight.cookMins === "number" ? `<span class="muted small">${tonight.cookMins} min</span>` : ""}</div>
       <button type="button" class="btn primary" data-cook-tonight>${icon("play", 16)}Cook</button></div>`;
     t.querySelector("img").src = gridImageSrc(tonight);
-    t.querySelector("[data-cook-tonight]").addEventListener("click", () => window.openGuided?.(tonight.id));
+    t.querySelector("[data-cook-tonight]").addEventListener("click", () => window.openGuided?.(tonight.id, tonightEntry.x === 2 ? 2 : undefined));
   }
   function calMenu(anchor, iso, idx){
     const e = planned(iso)[idx];
