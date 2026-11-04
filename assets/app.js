@@ -822,11 +822,11 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["check", "Undo brings everything back", "Deleted two meals in a row? One Undo now restores both, still picked for the shop."],
-  ["check", "Escape asks first", "Pressing Escape in Edit meal asks before throwing away your changes, and closes one window at a time."]
+  ["check", "Auto-fill plans from today", "Auto-fill and the swipe picker no longer fill days that have already gone, so Add to list doesn't buy for them."],
+  ["check", "Timers ring after a reload", "A cook-mode timer still sounds its alarm if the app was reloaded while it ran."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

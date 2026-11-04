@@ -3,6 +3,15 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v39 — Cook and plan fixes from the first-pass review (2026-11-04)
+Cache `meal-planner-v41` · assets `?v=39` · export schema 16 (unchanged)
+
+### Fixed
+- **A not-cooking reason can't inject anything into the page.** The reason shown on Today ("Not cooking tonight: …") went into the page as raw HTML, and it syncs from every device in the household. It's now shown as plain text (Today).
+- **Auto-fill and the swipe picker skip days that have gone.** Midweek, they used to fill Monday and Tuesday too, and Plan › Add to list then bought for them. They now start from today (Plan › Auto-fill, Plan › Swipe to pick).
+- **Timer alarms ring after a reload.** If the app reloaded while a cook-mode timer ran (an update, or the phone dropping the tab), the alarm was silent. On iPhone the sound also stayed off until something restarted it. The app now wakes the sound on your first tap and again before the alarm (Cook mode timers).
+- **Tonight moves on at midnight.** A tablet left on overnight kept showing yesterday's Tonight until you reloaded. Today and Plan now redraw when the date changes: just after midnight, or when you come back to the app (Today, Plan).
+
 ## v38 — Last of the first-pass bug fixes (2026-11-04)
 Cache `meal-planner-v40` · assets `?v=38` · export schema 16 (unchanged)
 
