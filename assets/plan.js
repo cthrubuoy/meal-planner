@@ -152,9 +152,10 @@
     const ctx = weekContext(dates);
     const before = JSON.stringify(state.plan);
     let added = 0;
+    const today = localISO(new Date());
     dates.forEach((d, idx) => {
       const iso = localISO(d);
-      if (!(state.prefs.planDays || []).includes(d.getDay()) || planned(iso).length || state.offDays[iso]) return;
+      if (iso < today || !(state.prefs.planDays || []).includes(d.getDay()) || planned(iso).length || state.offDays[iso]) return;
       const m = bestFor(d, { ...ctx, neighbourProteins: neighbours(dates, idx) });
       if (!m) return;
       setDay(iso, [{ mealId: m.id }]);
@@ -650,7 +651,8 @@
   const swiper = $("#swipe-picker");
   let sw = null;   // { dates, ctx, skipped:Set, current }
   function nextEmptyDay(){
-    return sw.dates.find(d => (state.prefs.planDays || []).includes(d.getDay()) && !planned(localISO(d)).length);
+    const today = localISO(new Date());
+    return sw.dates.find(d => localISO(d) >= today && (state.prefs.planDays || []).includes(d.getDay()) && !planned(localISO(d)).length);
   }
   function openSwiper(){
     const dates = visibleDates();
