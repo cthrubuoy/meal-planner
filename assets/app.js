@@ -822,11 +822,11 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["check", "Late-night cooking counts for the right day", "Marking a meal cooked just after midnight no longer logs it against the day before."],
-  ["check", "A safety copy before every import", "Importing a backup now saves a copy of what you had first, so nothing is lost if it was the wrong file."]
+  ["check", "Safer updates", "If an update can't download completely, the app keeps running the version you have instead of switching to a half-saved one."],
+  ["check", "Keyboard stays put", "Tapping ★ or the pick button with a keyboard keeps your place on that card."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

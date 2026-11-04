@@ -3,6 +3,16 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v37 — More first-pass bug fixes (2026-11-04)
+Cache `meal-planner-v39` · assets `?v=37` · export schema 16 (unchanged)
+
+### Fixed
+- **Updates can't leave the app half-saved for offline use.** If any file failed to download during an update, the new version still took over and deleted the old offline copy. Now the update just doesn't install, the version you have keeps working, and it tries again next time (`sw.js`).
+- **Error pages are no longer saved for offline use.** A 404 or server error page could replace the good saved copy of the app. Only successful pages are saved now (`sw.js`).
+- **Shared links don't pile up in storage.** Every recipe link shared into the app (`?share_url=…`) was saved as its own copy of the page. They now share one (`sw.js`).
+- **The app opens its database once, not about 13 times per save.** Connections were never closed. It now keeps one open, reopens it if the browser closes it, and lets go when a newer version needs it (`assets/app.js`).
+- **Keyboard focus stays on the card.** After ★ or the pick button (+/✓) on a meal card, focus jumped to the top of the page. It now stays on that button (Meals).
+
 ## v36 — More first-pass bug fixes (2026-11-04)
 Cache `meal-planner-v38` · assets `?v=36` · export schema 16 (unchanged)
 
