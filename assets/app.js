@@ -428,13 +428,25 @@ function showUndoToast(msg, onUndo, ms = 6000){
 }
 
 /* ============== IndexedDB ============== */
+/* One connection, opened on first use and reused (it used to open a new one per read/write and never
+   close it, ~13 per saveAll). It reopens after the browser closes it, and closes itself when another
+   tab or a new version needs to upgrade the database. */
+let idbConn = null;
 function idbOpen(){
-  return new Promise((res, rej) => {
+  if (idbConn) return idbConn;
+  const p = new Promise((res, rej) => {
     const r = indexedDB.open(DB_NAME, 1);
     r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-    r.onsuccess = () => res(r.result);
-    r.onerror   = () => rej(r.error);
+    r.onsuccess = () => {
+      const db = r.result;
+      db.onversionchange = () => { db.close(); if (idbConn === p) idbConn = null; };
+      db.onclose = () => { if (idbConn === p) idbConn = null; };
+      res(db);
+    };
+    r.onerror   = () => { if (idbConn === p) idbConn = null; rej(r.error); };
   });
+  idbConn = p;
+  return p;
 }
 async function idbGet(k){
   const db = await idbOpen();
