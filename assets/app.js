@@ -822,10 +822,10 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["check", "Photos always reach your other devices", "A meal added offline, or just before closing the app, now always sends its photo. Devices stuck waiting for one fix themselves."]
+  ["check", "Two devices, no lost cooks", "If the tablet and phone both log a cook or change the same plan day before syncing, both changes are kept now."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

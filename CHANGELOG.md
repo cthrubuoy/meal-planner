@@ -3,6 +3,14 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v42 — Sync merging fixes from the first-pass review (2026-11-04)
+Cache `meal-planner-v44` · assets `?v=42` · export schema 16 (unchanged)
+
+### Fixed
+- **Two devices changing the same thing no longer lose one side.** If two devices both logged a cook of the same meal, or both changed the same plan day, before they synced, one change vanished. Now the two are merged and both are kept. (One side effect: a cook entry deleted on one device while the other edits it can come back, and a rating changed on both shows up twice. Before, one side was lost.)
+- **Changes made just before sync is ready now go out.** A change made in the split second before sync started, or right after opening the app, could stay on that device for good. The app now checks for unsent changes once at every start.
+- **Joining a household, or restoring, no longer wipes this device's cook history.** The message also says exactly what happens: meals and cook history from both are kept, and where both have the same plan date, pinned weekday, cook or not-cooking day, the household's version wins (Settings › Sync › Join / Restore my meals).
+
 ## v41 — Photo sync fix (2026-11-04)
 Cache `meal-planner-v43` · assets `?v=41` · export schema 16 (unchanged)
 
