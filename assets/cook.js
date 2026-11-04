@@ -294,7 +294,7 @@
   function lastCookLine(id){
     const { count, avg, last } = cookStats(id);
     if (!count) return "";
-    const stars = last.rating ? ` ★${last.rating}` : "";
+    const stars = starCount(last.rating) ? ` ★${starCount(last.rating)}` : "";
     const note = last.note ? ` — “${escapeHtml(last.note)}”` : "";
     return `<p class="last-cook">${icon("cook", 15)}Cooked ${plural(count, "time")}${avg != null ? ` (avg ★${formatNumber(Math.round(avg * 10) / 10)})` : ""}. Last: ${escapeHtml(formatShortDate(last.date))}${stars}${note}</p>`;
   }

@@ -475,6 +475,11 @@ async function saveAll(){
 function localDateISO(d = new Date()){
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+/* Rating as a whole number of stars, 0-5, whatever old or synced data holds */
+function starCount(r){
+  const n = Math.round(Number(r));
+  return Number.isFinite(n) ? Math.min(5, Math.max(0, n)) : 0;
+}
 /* Plan: drop unknown meals and anything older than 12 weeks */
 function cleanPlan(plan, ids){
   const out = {};
@@ -2478,10 +2483,10 @@ async function recordShopUse(){
 /* ============== Cook log (times actually cooked) ============== */
 function cookStats(id){
   const log = state.cooklog[id] || [];
-  const rated = log.filter(e => typeof e.rating === "number");
+  const rated = log.filter(e => starCount(e.rating) > 0);
   return {
     count: log.length,
-    avg: rated.length ? rated.reduce((s, e) => s + e.rating, 0) / rated.length : null,
+    avg: rated.length ? rated.reduce((s, e) => s + starCount(e.rating), 0) / rated.length : null,
     last: log[log.length - 1] || null
   };
 }
@@ -3238,7 +3243,7 @@ function renderMealView(){
         ${meal.tags?.length ? `<h4 class="h4">Tags</h4><div class="token-list">${meal.tags.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
         <h4 class="h4">Cook log</h4>
         ${log.length
-          ? `<ul class="mv-log">${log.map(e => `<li><span class="muted">${escapeHtml(formatShortDate(e.date))}</span> ${e.by && chefById(e.by) ? `${chefAvatar(chefById(e.by), 20)} ` : ""}${e.rating ? `<span class="mv-stars">${"★".repeat(e.rating)}</span>` : ""} ${e.note ? escapeHtml(e.note) : ""}</li>`).join("")}</ul>`
+          ? `<ul class="mv-log">${log.map(e => `<li><span class="muted">${escapeHtml(formatShortDate(e.date))}</span> ${e.by && chefById(e.by) ? `${chefAvatar(chefById(e.by), 20)} ` : ""}${starCount(e.rating) ? `<span class="mv-stars">${"★".repeat(starCount(e.rating))}</span>` : ""} ${e.note ? escapeHtml(e.note) : ""}</li>`).join("")}</ul>`
           : `<p class="muted small">Not cooked in cook mode yet.</p>`}
       </section>
     </div>`;
