@@ -742,9 +742,16 @@
   let tick = null, audio = null;
   const saveTimers = () => store.set(TIMERS_KEY, JSON.stringify(timers));
 
-  function startTimer(secs, label, extra = {}){
+  /* Make the AudioContext if needed and wake it if the browser suspended it (iOS does after a reload
+     until a gesture). Called on the first tap/key, from startTimer and again before the alarm sounds. */
+  function ensureAudio(){
     if (!audio){ try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch { audio = null; } }
-    audio?.resume?.();
+    try { audio?.resume?.()?.catch?.(() => {}); } catch { /* blocked */ }
+  }
+  ["pointerdown", "keydown"].forEach(ev => document.addEventListener(ev, ensureAudio, { once: true, capture: true }));
+
+  function startTimer(secs, label, extra = {}){
+    ensureAudio();
     if ("Notification" in window && Notification.permission === "default"){
       try { Notification.requestPermission(); } catch { /* unsupported */ }
     }
@@ -753,6 +760,7 @@
     renderTimers();
   }
   function beep(){
+    ensureAudio();
     if (!audio) return;
     try {
       [0, 0.45, 0.9].forEach(t => {
