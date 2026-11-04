@@ -2540,16 +2540,32 @@ function syncQueueBatch(id){
   idbSet(IDB_KEYS.cookQueue, state.cookQueue);
   window.renderCookTab?.();
 }
+/* Keyboard focus sits on a node that a re-render replaces: note which card control had it ... */
+function cardFocusSpot(){
+  const a = document.activeElement;
+  const card = a && a.closest ? a.closest(".card") : null;
+  if (!card || !grid.contains(card)) return null;
+  return { id: card.dataset.id, cls: a === card ? "" : (a.classList[0] || "") };
+}
+/* ... and put it back on the equivalent control of the new card */
+function restoreCardFocus(spot){
+  if (!spot) return;
+  const card = grid.querySelector(`.card[data-id="${CSS.escape(spot.id)}"]`);
+  const el = card && (spot.cls ? card.querySelector("." + CSS.escape(spot.cls)) : card);
+  if (el) el.focus({ preventScroll: true });
+}
 /* Refresh one card in place (tick, ×2) — no full grid rebuild. */
 /* Refresh one card in place (tick, ×2, ★): its photo element is kept, so nothing flickers */
 function updateCard(id){
   const card = grid.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
   const meal = state.meals.find(m => m.id === id);
   if (!card || !meal){ renderMeals(); return; }
+  const spot = card.contains(document.activeElement) ? cardFocusSpot() : null;
   const fresh = buildCard(meal);
   const oldImg = card.querySelector("img"), newImg = fresh.querySelector("img");
   if (oldImg && newImg) newImg.replaceWith(oldImg);
   card.replaceWith(fresh);
+  restoreCardFocus(spot);
   if (state.selected.has(id)) fresh.classList.add("just-picked");
 }
 async function toggleFav(id){
@@ -2557,7 +2573,9 @@ async function toggleFav(id){
   if (!m) return;
   m.fav = !m.fav;
   await saveAll();
+  const spot = cardFocusSpot();
   renderMeals();
+  restoreCardFocus(spot);
   refreshMealView();
 }
 async function duplicateMeal(id){
