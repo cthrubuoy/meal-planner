@@ -810,11 +810,11 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["check", "Sturdier on a bad signal", "With one bar in the shop the app now opens from its saved copy within a few seconds, instead of waiting for the network."],
-  ["check", "Nothing lost mid-edit", "An app update no longer reloads while you're adding or editing a meal or cooking. It waits until you close it."]
+  ["check", "Late-night cooking counts for the right day", "Marking a meal cooked just after midnight no longer logs it against the day before."],
+  ["check", "A safety copy before every import", "Importing a backup now saves a copy of what you had first, so nothing is lost if it was the wrong file."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

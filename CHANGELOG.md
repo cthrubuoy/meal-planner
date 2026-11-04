@@ -3,6 +3,14 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v36 — More first-pass bug fixes (2026-11-04)
+Cache `meal-planner-v38` · assets `?v=36` · export schema 16 (unchanged)
+
+### Fixed
+- **Just after midnight now counts as today.** Between 00:00 and 01:00 in summer time, the app used UTC dates. A meal marked cooked, a shop and "who's cooking" were logged against the day before. All date keys now use the local day: the cook log, shop history, the plan clean-up and the export file name.
+- **Import saves a copy of your current data first.** Settings › Backup & restore › Import used to replace everything, and on a synced device that reaches everyone. It now downloads `meal-planner-export-<date>-schema16-before-import.json` with what you had before it replaces anything. Today and Plan also redraw straight after the import, with no reload needed.
+- **A bad rating can't blank the meal page.** A rating outside 1-5 (for example from old or synced data) made the meal page's Cook log throw and draw nothing. Ratings are now drawn as 0-5 whole stars on the meal page, in the cook-mode "Last" line and in the average.
+
 ## v35 — Bug fixes from the first-pass review (2026-11-03)
 Cache `meal-planner-v37` · assets `?v=35` · export schema 16 (unchanged)
 
