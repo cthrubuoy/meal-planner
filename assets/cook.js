@@ -453,6 +453,22 @@
   }
   $("#today-to-plan")?.addEventListener("click", () => switchView("plan"));
 
+  /* A tablet left on overnight: when the local date changes (the tab becomes visible again, or a timer
+     set for just after midnight fires), redraw Today and Plan so "Tonight" is the new day */
+  let shownDay = isoOf(new Date()), midnightTimer = null;
+  function checkNewDay(){
+    const now = isoOf(new Date());
+    if (now !== shownDay){ shownDay = now; renderCookTab(); window.renderPlan?.(); }
+    armMidnight();
+  }
+  function armMidnight(){
+    clearTimeout(midnightTimer);
+    const next = new Date(); next.setHours(24, 0, 2, 0);
+    midnightTimer = setTimeout(checkNewDay, Math.min(Math.max(next - new Date(), 1000), 2147483000));
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkNewDay(); });
+  armMidnight();
+
   function renderCookTab(){
     renderToday();
     renderQueue();
