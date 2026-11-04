@@ -471,11 +471,15 @@ async function saveAll(){
     saveSession()
   ]);
 }
+/* Local calendar day as YYYY-MM-DD (plan keys, cook log and history are local days; toISOString() is UTC and is a day behind 00:00-01:00 in BST) */
+function localDateISO(d = new Date()){
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 /* Plan: drop unknown meals and anything older than 12 weeks */
 function cleanPlan(plan, ids){
   const out = {};
   if (!plan || typeof plan !== "object") return out;
-  const cutoff = new Date(Date.now() - 84 * 864e5).toISOString().slice(0, 10);
+  const cutoff = localDateISO(new Date(Date.now() - 84 * 864e5));
   for (const [day, items] of Object.entries(plan)){
     if (!/^\d{4}-\d\d-\d\d$/.test(day) || day < cutoff || !Array.isArray(items)) continue;
     const keep = items.filter(e => e && ids.has(e.mealId)).map(e => {
@@ -500,7 +504,7 @@ function cleanChefs(list){
 /* Not-cooking days (v29): { iso: reason }, last 12 weeks onwards */
 function cleanOffDays(map){
   const out = {};
-  const cutoff = new Date(Date.now() - 84 * 864e5).toISOString().slice(0, 10);
+  const cutoff = localDateISO(new Date(Date.now() - 84 * 864e5));
   for (const [day, why] of Object.entries(map && typeof map === "object" ? map : {})){
     if (/^\d{4}-\d\d-\d\d$/.test(day) && day >= cutoff && typeof why === "string" && why.trim()) out[day] = why.trim().slice(0, 60);
   }
@@ -2451,7 +2455,7 @@ function formatShortDate(iso){
 /* Count each selected meal once per shop. Called when the list is used
    (Ocado, Share, Copy as TSV, Print). Clear selection starts a new shop. */
 async function recordShopUse(){
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateISO();
   let n = 0;
   for (const id of state.selected){
     if (state.countedIds.has(id)) continue;
@@ -2483,7 +2487,7 @@ function cookStats(id){
 }
 async function logCooked(id, rating, note, by, date){
   const log = state.cooklog[id] || [];
-  const e = { date: date || new Date().toISOString().slice(0, 10), rating: rating || null, note: (note || "").trim() };
+  const e = { date: date || localDateISO(), rating: rating || null, note: (note || "").trim() };
   if (by) e.by = by;
   log.push(e);
   log.sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -2821,7 +2825,7 @@ $("#chef-add-form")?.addEventListener("submit", async (e) => {
   await saveChefs();
 });
 /* Today's chef for a meal (from the plan), for "Chris is cooking" and the cook log */
-function plannedChef(mealId, iso = new Date().toISOString().slice(0, 10)){
+function plannedChef(mealId, iso = localDateISO()){
   const e = (state.plan[iso] || []).find(x => x.mealId === mealId && !x.skipped);
   return e?.chef ? chefById(e.chef) : null;
 }
@@ -3964,7 +3968,7 @@ $("#export")?.addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = localDateISO();
   a.download = `meal-planner-export-${stamp}-schema${EXPORT_SCHEMA_VERSION}.json`;
   document.body.appendChild(a);
   a.click();
@@ -4141,7 +4145,7 @@ function renderSettingsHome(){
   set("theme", THEME_NAMES[state.prefs.theme] || "Automatic");
   set("text", TEXT_NAMES[state.prefs.textSize] || "Normal text");
   const last = lastBackupDate();
-  set("backup", last ? `Last file ${formatShortDate(last.toISOString().slice(0, 10))}` : "No file yet");
+  set("backup", last ? `Last file ${formatShortDate(localDateISO(last))}` : "No file yet");
   set("version", `v${APP_VERSION}`);
   set("rules", state.normaliser.length ? `${state.normaliser.length} name rule${state.normaliser.length === 1 ? "" : "s"}` : "");
   const errs = diagRead().filter(e => e.level === "error").length;
@@ -4308,7 +4312,7 @@ function renderHistory(){
   const meals = state.meals.map(m => ({ m, h: state.history[m.id], last: lastChosen(m.id) }));
   const chosen = meals.filter(x => x.h?.count).sort((a, b) => b.h.count - a.h.count || a.m.title.localeCompare(b.m.title));
   const never = meals.filter(x => !x.h?.count).sort((a, b) => a.m.title.localeCompare(b.m.title));
-  const cutoff = new Date(Date.now() - HISTORY_STALE_DAYS * 864e5).toISOString().slice(0, 10);
+  const cutoff = localDateISO(new Date(Date.now() - HISTORY_STALE_DAYS * 864e5));
   const stale = chosen.filter(x => x.last < cutoff).sort((a, b) => a.last.localeCompare(b.last));
 
   // Cook log (times actually cooked, ratings)
