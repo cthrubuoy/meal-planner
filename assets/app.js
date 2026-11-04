@@ -822,11 +822,11 @@ async function logStartup(){
 }
 
 /* ============== What's new (once per version; also Settings › About) ============== */
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 const WHATS_NEW_KEY = "whatsnew-seen";
 const WHATS_NEW = [
-  ["check", "Safer updates", "If an update can't download completely, the app keeps running the version you have instead of switching to a half-saved one."],
-  ["check", "Keyboard stays put", "Tapping ★ or the pick button with a keyboard keeps your place on that card."]
+  ["check", "Undo brings everything back", "Deleted two meals in a row? One Undo now restores both, still picked for the shop."],
+  ["check", "Escape asks first", "Pressing Escape in Edit meal asks before throwing away your changes, and closes one window at a time."]
 ];
 function openWhatsNew(){
   $("#whatsnew-body").innerHTML = `<p class="muted small">Version ${APP_VERSION}</p><ul class="whatsnew-list">${

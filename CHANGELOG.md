@@ -3,6 +3,15 @@
 All notable changes to the Meal Planner app, newest first. The version matches the badge in the app header.
 Each entry also records the service-worker cache (`CACHE_NAME` in `sw.js`) and the export schema (`schemaVersion` in exported JSON files).
 
+## v38 — Last of the first-pass bug fixes (2026-11-04)
+Cache `meal-planner-v40` · assets `?v=38` · export schema 16 (unchanged)
+
+### Fixed
+- **Escape closes one window at a time, and asks before losing an edit.** Escape used to close Edit and the meal page underneath it together, did nothing in some windows (for example Plan these, Swap an ingredient, Paste), and threw away unsaved changes in Edit meal. Now it closes only the window on top, works in every window, and in Edit meal asks "Discard your changes to this meal?" if you've changed anything.
+- **Keyboard focus follows the windows.** Opening a window moves focus into it, Tab stays inside it, and closing it puts focus back on the button you came from.
+- **Undo after Delete brings everything back.** A restored meal came back unpicked, without its ×2 and with its shop count reset. Now it returns exactly as it was. A second delete within 6 seconds also used to lose the first one's Undo (and its cook history). One Undo now restores every meal deleted in that window ("2 meals deleted · Undo").
+- **Transparent photos no longer turn black on iPhone.** Safari can't save WebP, so the app falls back to JPEG, which has no transparency, and see-through areas of a PNG came out black. They're now white, for meal photos, scanned dish crops, grid thumbnails and chef photos.
+
 ## v37 — More first-pass bug fixes (2026-11-04)
 Cache `meal-planner-v39` · assets `?v=37` · export schema 16 (unchanged)
 
