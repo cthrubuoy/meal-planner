@@ -73,6 +73,27 @@
   let scanTok = 0;                  // each scan/import takes a token; an answer for an older one (or after Close) is ignored
   const stepsScanTok = new Map();   // mealId -> token of the latest back-of-card scan for that meal
 
+  /* Steps from a scan or import are strings with text, whatever the server sent (cook mode calls string methods on them) */
+  function cleanSteps(list) {
+    return (Array.isArray(list) ? list : []).map(x => {
+      if (typeof x === "string") return x;
+      if (typeof x === "number") return String(x);
+      if (x && typeof x === "object" && typeof x.text === "string") return x.text;
+      return "";
+    }).map(x => x.trim()).filter(Boolean);
+  }
+  /* Runs one scan/import job. Whatever happens, the spinner doesn't outlive it (unless a newer scan owns the modal). */
+  async function guardScan(tok, job) {
+    try { await job(); }
+    catch (err) {
+      logEvent?.("error", "scan", "the scan result couldn't be used", { error: String(err?.message || err) });
+      if (tok === scanTok) showError("The scan server sent something the app couldn't read. Please try again." + DETAILS);
+    }
+    finally {
+      if (tok === scanTok && !scanLoading.hidden) showError("The scan didn't finish. Please try again." + DETAILS);
+    }
+  }
+
   /* ---- Show/hide modal sections ---- */
   function openScan() {
     scanModal.classList.add("open");
@@ -301,12 +322,15 @@
 
   const firstUrl = text => (String(text || "").match(/https?:\/\/[^\s<>"']+/) || [])[0] || "";
 
-  async function runImport(url) {
+  function runImport(url) {
     openScan();
     $("#scan-loading p").textContent = "Fetching the recipe from that link…";
     showSection("loading");
     scanLastFile = null;
     const tok = ++scanTok;
+    return guardScan(tok, () => importLink(url, tok));
+  }
+  async function importLink(url, tok) {
     let resp, data;
     try {
       resp = await loggedFetch("link import", url, `${SCAN_BASE}/import`, {
@@ -323,7 +347,7 @@
       $("#scan-loading p").textContent = "Scanning the recipe card…";
     }
     if (tok !== scanTok) return;
-    if (!resp.ok || data.error) {
+    if (!resp.ok || !data || typeof data !== "object" || data.error) {
       showError((data?.reason || `Import failed (${resp.status}). Try a screenshot and Scan instead.`) + DETAILS);
       return;
     }
@@ -364,11 +388,13 @@
     });
   })();
 
-  async function runScan(file) {
+  function runScan(file) {
     openScan();
     showSection("loading");
     const tok = ++scanTok;
-
+    return guardScan(tok, () => scanCard(file, tok));
+  }
+  async function scanCard(file, tok) {
     let dataUrl;
     try {
       dataUrl = await fileToCompressedDataURL(file);
@@ -402,7 +428,7 @@
     }
 
     if (tok !== scanTok) return;
-    if (!resp.ok || data.error) {
+    if (!resp.ok || !data || typeof data !== "object" || data.error) {
       if (data?.error === "not_a_recipe_card") {
         showError("That doesn't look like a recipe card. Try a clearer photo of one.");
       } else if (data?.error === "image_too_large") {
@@ -430,21 +456,22 @@
 
   /* ---- Populate the confirmation form with extracted data ---- */
   function populateScanForm(data) {
-    $("#scan-title").value = data.title || "";
+    $("#scan-title").value = typeof data.title === "string" ? data.title : "";
     $("#scan-cook-mins").value = (typeof data.cookMins === "number") ? String(data.cookMins) : "";
-    $("#scan-notes").value = data.notes || "";
+    $("#scan-notes").value = typeof data.notes === "string" ? data.notes : "";
 
     scanIngContainer.innerHTML = "";
-    (data.ingredients || []).forEach(ing => addScanIngredientRow(ing));
-    if (!data.ingredients?.length) addScanIngredientRow();
+    const ings = (Array.isArray(data.ingredients) ? data.ingredients : []).filter(ing => ing && typeof ing === "object");
+    ings.forEach(ing => addScanIngredientRow(ing));
+    if (!ings.length) addScanIngredientRow();
 
-    scanSteps = Array.isArray(data.steps) ? data.steps.slice() : [];
+    scanSteps = cleanSteps(data.steps);
     refreshScanSteps();
 
     if (!scanTagEditor) {
       scanTagEditor = tokenEditor($("#scan-tags-editor"), $("#scan-tags-input"));
     }
-    scanTagEditor.set(data.tags || []);
+    scanTagEditor.set(Array.isArray(data.tags) ? data.tags.filter(t => typeof t === "string") : []);
   }
 
   function addScanIngredientRow(pref) {
@@ -499,8 +526,10 @@
   });
 
   /* ---- Submit: convert to meal and save ---- */
+  let scanSaving = false;   // a second tap on Add meal while the first is saving is ignored
   $("#scan-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (scanSaving) return;
 
     const title = $("#scan-title").value.trim();
     if (!title) { alert("Please give the meal a name."); $("#scan-title").focus(); return; }
@@ -541,26 +570,36 @@
       tags,
       ingredients,
       cookMins,
-      steps: scanSteps.slice(),
+      steps: cleanSteps(scanSteps),
       notes: ($("#scan-notes").value || "").trim()
     };
     const source = cleanSource(scanSource ? { url: scanSource } : { name: scanSourceName });
     if (source) meal.source = source;
 
     // push to global state and save
+    scanSaving = true;
     state.meals.unshift(meal);
-    await saveAll();
+    try {
+      await saveAll();
 
-    renderMeals();
-    renderShopping();
-    populateCookSelect();
-    updateIngredientSuggestions();
-    refreshTagSuggestions();
+      renderMeals();
+      renderShopping();
+      populateCookSelect();
+      updateIngredientSuggestions();
+      refreshTagSuggestions();
 
-    status(`✓ ${meal.title} added from scan`);
-    closeScan();
-    closeAddSheet();
-    setView("meals");
+      status(`✓ ${meal.title} added from scan`);
+      closeScan();
+      closeAddSheet();
+      setView("meals");
+    } catch (err) {
+      console.error(err);
+      const i = state.meals.indexOf(meal);   // the save failed: take the meal back out, or trying again would add it twice
+      if (i >= 0) state.meals.splice(i, 1);
+      alert("Something went wrong while saving. See console for details.");
+    } finally {
+      scanSaving = false;
+    }
   });
 
   /* ---- Esc: handled with every other modal in app.js (first pass #12) ---- */
@@ -626,13 +665,13 @@
       catch { status("Scan server returned an unexpected response.", 4000); return; }
 
       if (stale()) return;
-      if (!resp.ok || data.error) {
+      if (!resp.ok || !data || typeof data !== "object" || data.error) {
         if (data?.error === "not_a_recipe_card") status("That doesn't look like a recipe-instructions page.", 5000);
         else status(`Scan of "${titleNow()}" failed: ${data?.reason || resp.status}` + DETAILS, 9000);
         return;
       }
 
-      const newSteps = Array.isArray(data.steps) ? data.steps : [];
+      const newSteps = cleanSteps(data?.steps);
       if (!newSteps.length) {
         status("No cooking steps found on that photo.", 4000);
         return;
