@@ -3947,7 +3947,8 @@ document.addEventListener("click", (e) => {
 /* =====================================================
    EXPORT / IMPORT / CLEAR
    ===================================================== */
-$("#export")?.addEventListener("click", () => {
+/* Download the current data as an export file. suffix: e.g. "-before-import". */
+function downloadExport(suffix = ""){
   const data = JSON.stringify({
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
@@ -3969,13 +3970,16 @@ $("#export")?.addEventListener("click", () => {
   const a = document.createElement("a");
   a.href = url;
   const stamp = localDateISO();
-  a.download = `meal-planner-export-${stamp}-schema${EXPORT_SCHEMA_VERSION}.json`;
+  a.download = `meal-planner-export-${stamp}-schema${EXPORT_SCHEMA_VERSION}${suffix}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
   local.set(BACKUP_LAST_KEY, new Date().toISOString());
   renderBackupBanner();
+}
+$("#export")?.addEventListener("click", () => {
+  downloadExport();
   status("Exported.");
 });
 
@@ -4052,6 +4056,8 @@ $("#import")?.addEventListener("change", async (e) => {
 Continue?`)){
       e.target.value = ""; return;
     }
+    // safety copy of what is about to be replaced (on a synced device the replacement reaches everyone)
+    try{ downloadExport("-before-import"); } catch(err){ console.error(err); }
     state.meals = migrated.meals;
     state.normaliser = migrated.normaliser || [];
     state.unitDefaults = migrated.unitDefaults || {};
@@ -4071,6 +4077,7 @@ Continue?`)){
     applyTheme(); applyDensity(); syncSortUI();
     renderMeals(); renderShopping(); populateCookSelect();
     updateIngredientSuggestions(); refreshTagSuggestions();
+    window.renderPlan?.(); window.renderToday?.();
     status(`Imported ${migrated.meals.length} meal${migrated.meals.length === 1 ? "" : "s"}.`);
   } catch(err){
     console.error(err);
