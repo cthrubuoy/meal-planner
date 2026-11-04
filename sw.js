@@ -36,7 +36,9 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(CORE_ASSETS))
-      .catch((err) => console.warn("SW pre-cache failed:", err))
+      // Let a failed pre-cache reject: the install fails and the old worker keeps serving,
+      // rather than this one activating (and deleting the old cache) with an incomplete cache.
+      .catch((err) => { console.warn("SW pre-cache failed:", err); throw err; })
   );
 });
 
@@ -61,12 +63,17 @@ self.addEventListener("fetch", (event) => {
   const accept = req.headers.get("accept") || "";
   if (req.mode === "navigate" || accept.includes("text/html")) {
     event.respondWith((async () => {
+      // Cache under the URL without its query, so each ?share_url=... visit doesn't get its own entry.
+      const key = url.origin + url.pathname;
       const network = fetch(req).then(async fresh => {
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, fresh.clone()).catch(() => {});
+        // Only successful pages: a 404/500 must not replace a good cached copy.
+        if (fresh.ok){
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(key, fresh.clone()).catch(() => {});
+        }
         return fresh;
       });
-      const cached = await caches.match(req) || await caches.match("./index.html");
+      const cached = await caches.match(key) || await caches.match("./index.html");
       // v35: one bar of signal used to hang the app until the fetch failed. With a cached copy,
       // wait at most 3 s for the network; the fetch carries on and refreshes the cache for next time.
       if (cached){
