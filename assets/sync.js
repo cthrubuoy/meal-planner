@@ -13,8 +13,9 @@
    - Pulls bring other devices' records since `syncMeta.cursor`; they're
      applied into `state`, saved, and the screens re-render.
    - Photos travel separately, once each, by SHA-256 of their bytes.
-   - Last write wins per record. A record with an unsent local change is not
-     overwritten by a pull (the local change is pushed next).
+   - Last write wins per record (the server can't merge). A record with an unsent local
+     change is not overwritten by a pull (the local change is pushed next), except
+     cooklog and plan days, which are merged first (see MERGERS).
    Device-only: theme, text size, views, units, thumbnails, settings tab.
    Reuses app.js globals (state, idbGet/idbSet, IDB_KEYS, $, $$, icon, status…).
    ===================================================== */
@@ -168,6 +169,35 @@
     if (n){ await saveLocal(); schedule(PUSH_DELAY_MS); renderStatus(); }
   }
 
+  /* ---------- merging concurrent edits (v42, first pass S4) ----------
+     The server keeps the last write of a whole record, so two devices that edit the same record
+     (the tablet logs a cook of a meal while the phone logs a different cook of it; both add a
+     meal to the same plan day) would lose one side. When a pulled record collides with an unsent
+     local change to the same key, applyChanges merges instead of skipping, and the merged result
+     is pushed. Only these two collections merge; everything else stays last-write-wins.
+     - cooklog (a meal's array): union of entries, an entry being identified by date + by +
+       rating + note. Local entries first, then remote ones not already there; sorted by date
+       (stable) and trimmed to COOKLOG_MAX, as logCooked() does.
+     - plan (a day's array): union of entries identified by mealId + position (the index in the
+       day). Local order first, then remote entries not already there; where both sides have the
+       same mealId at the same index, the local entry is kept.
+     Known limit: no tombstones, so an entry one side deleted comes back if the other side still
+     has it, and an entry whose rating/note was edited shows up as two entries. */
+  const cookKey = e => stable([e?.date ?? null, e?.by ?? null, e?.rating ?? null, e?.note ?? ""]);
+  function mergeCooklog(local, remote){
+    const seen = new Set(local.map(cookKey)), out = [...local];
+    for (const e of remote) if (!seen.has(cookKey(e))){ seen.add(cookKey(e)); out.push(e); }
+    out.sort((a, b) => String(a?.date).localeCompare(String(b?.date)));
+    return typeof COOKLOG_MAX === "number" ? out.slice(-COOKLOG_MAX) : out;
+  }
+  function mergePlanDay(local, remote){
+    const planKey = (e, i) => `${e?.mealId}@${i}`;
+    const seen = new Set(local.map(planKey)), out = [...local];
+    remote.forEach((e, i) => { if (!seen.has(planKey(e, i))){ seen.add(planKey(e, i)); out.push(e); } });
+    return out;
+  }
+  const MERGERS = { cooklog: mergeCooklog, plan: mergePlanDay };
+
   /* ---------- records → state ---------- */
   const SHOP_SETS = { sel: "selected", have: "haveIt", use: "pantryUse", counted: "countedIds", x2: "doubled" };
   function applyRecord(c){
@@ -255,7 +285,20 @@
     const touched = new Set();
     for (const c of changes){
       const k = `${c.coll}/${c.id}`;
-      if (outbox.has(k)) continue;                       // our unsent change wins; it's pushed next
+      if (outbox.has(k)){                                // our unsent change wins; it's pushed next ...
+        const mine = outbox.get(k), merge = MERGERS[c.coll];
+        if (merge && !c.deleted && !mine.deleted && Array.isArray(mine.data) && Array.isArray(c.data)){   // ... except cooklog/plan: merge
+          const merged = merge(mine.data, c.data), mh = hashOf(merged);
+          if (mh !== hashOf(mine.data)){                 // the other side had something we don't
+            meta.hashes[k] = mh;
+            if (mh === hashOf(c.data)) outbox.delete(k); else outbox.set(k, { coll: c.coll, id: c.id, data: merged });
+            applyRecord({ coll: c.coll, id: c.id, data: merged });
+            touched.add(COLL_KEY[c.coll]);
+            schedule(PUSH_DELAY_MS);
+          }
+        }
+        continue;
+      }
       const h = c.deleted ? undefined : hashOf(c.data);
       if (!c.deleted && meta.hashes[k] === h) continue;   // deletions always apply (idempotent), e.g. on a fresh join
       if (h === undefined) delete meta.hashes[k]; else meta.hashes[k] = h;
@@ -417,6 +460,9 @@
     try {
       if (pendingKeys.size){ clearTimeout(diffTimer); await flushNotes(); }
       await recheckUploaded();
+      // a cook log / plan day we are about to push may collide with someone else's edit: pull first so applyChanges
+      // can merge, otherwise our push would overwrite theirs on the server before we ever see it
+      if ([...outbox.values()].some(e => MERGERS[e.coll] && !e.deleted)) await pullAll();
       await pushOutbox();
       await pullAll();
       if (failures) logEvent("info", "sync", "Back in sync", { waiting: outbox.size });
