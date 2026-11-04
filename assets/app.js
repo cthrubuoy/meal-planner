@@ -1038,6 +1038,13 @@ function canvasSupportsType(mime){
     return typeof d === "string" && d.startsWith("data:") && d.includes(mime);
   } catch { return false; }
 }
+/* JPEG has no transparency: without a background, a transparent PNG's clear areas come out black
+   (Safari can't encode WebP, so it always takes the JPEG path). Paint white first. */
+function jpegBackground(ctx, w, h, mime){
+  if (mime !== "image/jpeg") return;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+}
 function drawToDataURL(img, maxW, maxH, mime, quality){
   return new Promise(resolve => {
     const r = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
@@ -1047,6 +1054,7 @@ function drawToDataURL(img, maxW, maxH, mime, quality){
     c.width = w; c.height = h;
     const ctx = c.getContext("2d");
     ctx.imageSmoothingQuality = "high";
+    jpegBackground(ctx, w, h, mime);
     ctx.drawImage(img, 0, 0, w, h);
     resolve(c.toDataURL(mime, quality));
   });
@@ -1101,8 +1109,9 @@ async function cropImageToDataURL(src, box){
     c.width = Math.round(sw * scale); c.height = Math.round(sh * scale);
     const ctx = c.getContext("2d");
     ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
     const mime = canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg";
+    jpegBackground(ctx, c.width, c.height, mime);
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
     return c.toDataURL(mime, 0.86);
   } catch (err){
     console.warn("Crop failed:", err);
@@ -2839,8 +2848,11 @@ async function chefPhotoFrom(file){
   const img = new Image(); img.src = src; await img.decode();
   const side = Math.min(img.naturalWidth, img.naturalHeight);
   const cv = document.createElement("canvas"); cv.width = cv.height = 160;
-  cv.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 160, 160);
-  return cv.toDataURL(canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg", 0.82);
+  const mime = canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg";
+  const ctx = cv.getContext("2d");
+  jpegBackground(ctx, 160, 160, mime);
+  ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 160, 160);
+  return cv.toDataURL(mime, 0.82);
 }
 async function saveChefs(){ await idbSet(IDB_KEYS.chefs, state.chefs); renderChefs(); window.renderPlan?.(); window.renderToday?.(); }
 function renderChefs(){
@@ -3059,7 +3071,8 @@ if (avoidEditor){
    shows a copy with a 960px long edge (sharp at 2× on the widest card),
    made in the background and kept in IDB "thumbs" (not exported). */
 const THUMB_MAX = 960;
-const THUMB_MIME = canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg";
+let thumbMimeCached = null;   // worked out on first use (a canvas probe), then kept
+const thumbMime = () => thumbMimeCached || (thumbMimeCached = canvasSupportsType("image/webp") ? "image/webp" : "image/jpeg");
 const thumbFingerprint = src => `${src.length}:${src.slice(-48)}`;
 function gridImageSrc(meal){
   const src = meal.image?.src;
@@ -3095,7 +3108,7 @@ async function makeThumb(meal){
   let thumb = null;
   // Only worth it when it's meaningfully smaller than the original
   if (Math.max(img.naturalWidth, img.naturalHeight) > THUMB_MAX * 1.1){
-    const data = await drawToDataURL(img, THUMB_MAX, THUMB_MAX, THUMB_MIME, 0.88);
+    const data = await drawToDataURL(img, THUMB_MAX, THUMB_MAX, thumbMime(), 0.88);
     if (data && data.length < src.length * 0.85) thumb = data;
   }
   state.thumbs[meal.id] = { src: thumb, of };
