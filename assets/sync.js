@@ -68,6 +68,7 @@
 
   /* ---------- photos (data URL ⇄ bytes, by SHA-256) ---------- */
   const photoByFp = new Map();     // fingerprint of a data URL → { hash, mime }
+  let photoWait = false;                // set by applyChanges when a meal had to wait for its photo
   const srcByHash = new Map();     // hash → data URL (for uploads and reuse)
   const fp = src => `${src.length}|${src.slice(-64)}|${src.slice(30, 94)}`;
   function dataUrlBytes(src){
@@ -230,13 +231,26 @@
     }
   }
   async function applyChanges(changes){
-    // photos first, so a meal never lands without its picture (throws → retried next sync)
+    // photos first, so a meal never lands without its picture. A photo the server doesn't have (404: the sender
+    // hasn't re-uploaded it yet) holds back only its own meal: the rest applies, and the cursor stays put (see
+    // pullAll) so the meal is offered again next sync. Any other failure throws, as before.
     const need = [...new Set(changes.filter(c => c.coll === "meal" && !c.deleted && c.data?.image?.hash && !srcByHash.has(c.data.image.hash)).map(c => c.data.image.hash))];
+    const lacking = new Set();
     for (const h of need){
-      const blob = await api("GET", `/v1/photo/${h}`, { blob: true });
-      const src = await blobToDataUrl(blob);
-      srcByHash.set(h, src);
-      photoByFp.set(fp(src), { hash: h, mime: blob.type || "image/jpeg" });
+      try {
+        const blob = await api("GET", `/v1/photo/${h}`, { blob: true });
+        const src = await blobToDataUrl(blob);
+        srcByHash.set(h, src);
+        photoByFp.set(fp(src), { hash: h, mime: blob.type || "image/jpeg" });
+      } catch (e){
+        if (e.status !== 404) throw e;
+        lacking.add(h);
+      }
+    }
+    if (lacking.size){
+      logEvent("warn", "sync", `${lacking.size} photo(s) not on the server yet; those meals wait and are retried`);
+      photoWait = true;
+      changes = changes.filter(c => !(c.coll === "meal" && !c.deleted && lacking.has(c.data?.image?.hash)));
     }
     const touched = new Set();
     for (const c of changes){
@@ -286,6 +300,25 @@
     return blob ? r.blob() : r.json();
   }
 
+  /* Once per start: ask the server which photos this device believes it uploaded (meta.uploaded) it really lacks,
+     and send them from the local meals. Heals households stuck by the old bug, where a photo was marked uploaded
+     without being sent. Only hashes of photos still on this device can be sent; others are left alone. */
+  let rechecked = false;
+  async function recheckUploaded(){
+    if (rechecked) return;
+    if (!meta.uploaded.length){ rechecked = true; return; }
+    for (const m of state.meals) if (m.image?.src?.startsWith("data:")) await photoRef(m.image.src);
+    const mine = meta.uploaded.filter(h => srcByHash.has(h));
+    if (mine.length){
+      const { missing } = await api("POST", "/v1/photos/missing", { body: { hashes: mine } });
+      for (const h of missing){
+        const { mime, bytes } = dataUrlBytes(srcByHash.get(h));
+        await api("PUT", `/v1/photo/${h}`, { raw: bytes, type: mime });
+      }
+      if (missing.length) logEvent("info", "sync", `Re-sent ${missing.length} photo(s) the server was missing`);
+    }
+    rechecked = true;
+  }
   async function pushOutbox(progress){
     if (!outbox.size) return;
     const dels = [...outbox.values()].filter(e => e.deleted && e.coll !== "shop");
@@ -353,11 +386,14 @@
     schedule(500);
   }
   async function pullAll(){
-    let more = true, applied = 0;
+    let more = true, applied = 0, since = meta.cursor, keep = null;
     while (more){
-      const r = await api("GET", `/v1/pull?since=${meta.cursor}`);
+      photoWait = false;
+      const r = await api("GET", `/v1/pull?since=${since}`);
       if (r.changes.length) applied += await applyChanges(r.changes);
-      meta.cursor = r.cursor;
+      if (photoWait && keep === null) keep = since;     // a meal is waiting for its photo: re-pull from here next time
+      since = r.cursor;
+      meta.cursor = keep === null ? r.cursor : keep;
       more = r.more;
       await saveLocal();
     }
@@ -380,6 +416,7 @@
     running = true; sync.state = "syncing"; renderStatus();
     try {
       if (pendingKeys.size){ clearTimeout(diffTimer); await flushNotes(); }
+      await recheckUploaded();
       await pushOutbox();
       await pullAll();
       if (failures) logEvent("info", "sync", "Back in sync", { waiting: outbox.size });
