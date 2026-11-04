@@ -154,6 +154,22 @@
   }
   async function diffAll(){ let n = 0; for (const key of Object.keys(KEY_COLLS)) n += await diffKey(key); await saveLocal(); return n; }
 
+  /* One full diff of every synced key against the syncMeta hashes, once per start (v42, first pass S5).
+     noteChange only sees saves made while sync was ready, and its diff runs 250 ms later; a save inside
+     that window when the app closed, or before init, was never diffed and so never synced. Only called
+     from init() (app.js sets appReady after loadAll has finished) or after a pull: with an empty state
+     diffKey would queue deletions for everything. Waits for the first pull when this device has none yet
+     (cursor 0, a join that didn't finish), so it can't push its data over the household's. */
+  let startDiffDone = false;
+  async function startupDiff(){
+    if (startDiffDone || !auth || !ready || !window.appReady || !meta.cursor) return;
+    startDiffDone = true;
+    try {
+      const n = await diffAll();
+      if (n){ logEvent("info", "sync", `Start-up check found ${n} unsynced change${n === 1 ? "" : "s"}`); schedule(PUSH_DELAY_MS); renderStatus(); }
+    } catch (e){ startDiffDone = false; logEvent("warn", "sync", `Start-up check failed: ${e.message}`); }
+  }
+
   /* Called by idbSet() after every successful save */
   function noteChange(key){
     if (!auth || !ready || !KEY_COLLS[key]) return;
@@ -465,6 +481,7 @@
       if ([...outbox.values()].some(e => MERGERS[e.coll] && !e.deleted)) await pullAll();
       await pushOutbox();
       await pullAll();
+      await startupDiff();   // a device that had not pulled yet (cursor 0) diffs after its first pull
       if (failures) logEvent("info", "sync", "Back in sync", { waiting: outbox.size });
       failures = 0;
       sync.state = "ok"; sync.last = Date.now(); sync.error = "";
@@ -847,6 +864,7 @@
     await loadLocal();
     wire();
     ready = true;
+    await startupDiff();   // before the first sync, so changes the debounce never saw go out with it
     renderStatus();
     handleJoinLink();
     window.addEventListener("hashchange", handleJoinLink);
