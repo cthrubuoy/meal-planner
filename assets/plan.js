@@ -770,13 +770,7 @@
     }));
   }
 
-  // Escape closes the planner's sheets
-  window.addEventListener("keydown", e => {
-    if (e.key !== "Escape") return;
-    if (swiper?.classList.contains("open")) closeSwiper();
-    else if (picker?.classList.contains("open")) closePicker();
-    else if (wcim?.classList.contains("open")) closeWcim();
-  });
+  // Escape for the planner's sheets is handled with every other modal in app.js (first pass #12)
 
   window.renderPlan = renderPlan;
   window.planMenuItems = planMenuItems;

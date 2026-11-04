@@ -549,10 +549,7 @@
     setView("meals");
   });
 
-  /* ---- Esc closes modal ---- */
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && scanModal.classList.contains("open")) closeScan();
-  });
+  /* ---- Esc: handled with every other modal in app.js (first pass #12) ---- */
 
   /* =====================================================
      STEPS-ONLY SCAN (back of card)

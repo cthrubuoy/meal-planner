@@ -1853,6 +1853,55 @@ function lockBodyScroll(locked){
   // Stay locked while any modal is still open (e.g. Scan over Add)
   document.body.classList.toggle("modal-open", !!locked || !!$(".modal.open, .cook-overlay.open"));
 }
+/* Open modals in the order they opened (v38, first pass #12), seen through their "open" class so
+   every open/close function keeps working as it is. The top one gets keyboard focus, keeps Tab
+   inside it, and hands focus back to whatever opened it when it closes; Escape closes only it. */
+const ESC_CLOSE = { "add-modal": "add-close", "meal-view": "mv-close", "paste-modal": "paste-close",
+  "plan-picker": "pp-close", "swipe-picker": "sw-close", "wcim": "wcim-close", "scan-modal": "scan-close",
+  "edit-modal": "edit-close", "swap-modal": "swap-close", "plan-these-modal": "pt-close", "rollover": "ro-close",
+  "settings-modal": "settings-close", "filters-modal": "filters-close", "whatsnew": "whatsnew-close" };
+const modalStack = [];
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const focusablesIn = el => [...el.querySelectorAll(FOCUSABLE)].filter(x => x.offsetParent !== null || x === document.activeElement);
+function topModal(){ return modalStack.length ? modalStack[modalStack.length - 1].el : null; }
+new MutationObserver(recs => {
+  for (const r of recs){
+    const m = r.target, isOpen = m.classList.contains("open"), i = modalStack.findIndex(x => x.el === m);
+    if (isOpen && i === -1){
+      modalStack.push({ el: m, opener: document.activeElement });
+      // let the modal's own code focus a field first (Edit focuses its title after 40 ms)
+      setTimeout(() => {
+        if (!m.classList.contains("open") || m.contains(document.activeElement)) return;
+        if (!m.hasAttribute("tabindex")) m.setAttribute("tabindex", "-1");
+        m.focus({ preventScroll: true });
+      }, 80);
+    } else if (!isOpen && i !== -1){
+      const [gone] = modalStack.splice(i, 1);
+      const o = gone.opener;
+      if ((document.activeElement === document.body || m.contains(document.activeElement)) && o && o.isConnected && o !== document.body)
+        o.focus({ preventScroll: true });
+    }
+  }
+}).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });
+window.addEventListener("keydown", (e) => {
+  const top = topModal();
+  if (e.key === "Tab" && top && !$(".cook-overlay.open")){
+    const f = focusablesIn(top);
+    if (!f.length){ e.preventDefault(); return; }
+    const first = f[0], last = f[f.length - 1], a = document.activeElement;
+    if (!top.contains(a) || a === top){ e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    else if (e.shiftKey && a === first){ e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && a === last){ e.preventDefault(); first.focus(); }
+    return;
+  }
+  if (e.key !== "Escape") return;
+  if (popEl){ e.stopImmediatePropagation(); closePopover(); return; }
+  if (menuEl){ e.stopImmediatePropagation(); closeMenu(); return; }
+  if (!top || $(".cook-overlay.open")) return;   // cook mode handles its own Escape
+  e.stopImmediatePropagation(); e.preventDefault();
+  if (top.id === "edit-modal" && editIsDirty() && !confirm("Discard your changes to this meal?")) return;
+  document.getElementById(ESC_CLOSE[top.id] || "")?.click();
+}, true);
 
 
 /* Cook time in minutes, or null when blank/invalid. Same limit as Scan. */
@@ -2023,12 +2072,24 @@ function openEdit(id){
   editModal.classList.add("open");
   editModal.setAttribute("aria-hidden", "false");
   lockBodyScroll(true);
+  editSnapshot = editFormState();
   if (!isMobile()) setTimeout(() => $("#edit-title")?.focus(), 40);   // phones: no keyboard over the photo
 }
+/* Everything the Edit form shows, so Escape can tell whether there's anything to lose (first pass #12) */
+let editSnapshot = null;
+function editFormState(){
+  const fields = [...editModal.querySelectorAll("input, textarea, select")]
+    .map(el => el.type === "file" ? "" : (el.type === "checkbox" || el.type === "radio") ? el.checked : el.value);
+  const chips = [...editModal.querySelectorAll(".chip, .token")].map(el => el.textContent);
+  const photo = editModal.querySelector("img")?.getAttribute("src") || "";
+  return JSON.stringify([fields, chips, editSteps, photo.length, photo.slice(-32)]);
+}
+function editIsDirty(){ return editSnapshot !== null && editFormState() !== editSnapshot; }
 function closeEdit(){
   editModal.classList.remove("open");
   editModal.setAttribute("aria-hidden", "true");
   state.editingId = null;
+  editSnapshot = null;
   photoHead("edit-")?.set(null);
   $("#edit-form").reset();
   editIng.innerHTML = "";
@@ -2098,17 +2159,7 @@ async function saveEditForm(){
   status("Meal updated.");
 }
 
-/* Escape closes modals & popovers */
-window.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if ($("#filters-modal")?.classList.contains("open")) closeFilters();
-  if ($("#settings-modal")?.classList.contains("open")) closeSettings();
-  if (editModal?.classList.contains("open")) closeEdit();
-  else if (viewingId && !$("#scan-modal")?.classList.contains("open")) closeMealView();
-  if (addModal?.classList.contains("open") && !$("#scan-modal")?.classList.contains("open")) closeAddSheet();
-  if (popEl) closePopover();
-  if ($("#whatsnew")?.classList.contains("open")) closeWhatsNew();
-});
+/* Escape: one handler for every modal, popover and menu, in "Modal helpers" (first pass #12) */
 
 /* =====================================================
    TAG BAR + POPOVER
