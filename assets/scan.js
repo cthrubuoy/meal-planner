@@ -70,6 +70,8 @@
   let scanImage = null;             // the meal photo chosen on the review screen (data URL)
   let scanSource = "";              // link it was imported from
   let scanSourceName = "";          // the brand printed on a scanned card (scan server v2.6+), e.g. "Gousto"
+  let scanTok = 0;                  // each scan/import takes a token; an answer for an older one (or after Close) is ignored
+  const stepsScanTok = new Map();   // mealId -> token of the latest back-of-card scan for that meal
 
   /* ---- Show/hide modal sections ---- */
   function openScan() {
@@ -78,6 +80,7 @@
     document.body.classList.add("modal-open");
   }
   function closeScan() {
+    scanTok++;   // whatever is still being scanned belongs to a form that's gone
     scanModal.classList.remove("open");
     scanModal.setAttribute("aria-hidden", "true");
     lockBodyScroll(false);   // stays locked if the Add sheet is still open
@@ -303,6 +306,7 @@
     $("#scan-loading p").textContent = "Fetching the recipe from that link…";
     showSection("loading");
     scanLastFile = null;
+    const tok = ++scanTok;
     let resp, data;
     try {
       resp = await loggedFetch("link import", url, `${SCAN_BASE}/import`, {
@@ -312,11 +316,13 @@
       });
       data = await resp.json();
     } catch {
+      if (tok !== scanTok) return;
       showError("Couldn't reach the import server. Check your internet connection and try again.");
       return;
     } finally {
       $("#scan-loading p").textContent = "Scanning the recipe card…";
     }
+    if (tok !== scanTok) return;
     if (!resp.ok || data.error) {
       showError((data?.reason || `Import failed (${resp.status}). Try a screenshot and Scan instead.`) + DETAILS);
       return;
@@ -329,6 +335,7 @@
         const blob = await (await fetch(data.image)).blob();
         pagePhoto = await fileToCompressedDataURL(new File([blob], "recipe", { type: blob.type }));
       } catch { pagePhoto = null; }
+      if (tok !== scanTok) return;
     }
     setPhotoChoices([{ key:"page", label:"Photo from the page", src: pagePhoto }, { key:"none", label:"No photo" }], "page");
     showSection("form");
@@ -360,12 +367,14 @@
   async function runScan(file) {
     openScan();
     showSection("loading");
+    const tok = ++scanTok;
 
     let dataUrl;
     try {
       dataUrl = await fileToCompressedDataURL(file);
       if (!dataUrl) throw new Error("Couldn't process the image. Try another photo.");
     } catch (err) {
+      if (tok !== scanTok) return;
       showError(err.message || "Image processing failed.");
       return;
     }
@@ -378,17 +387,21 @@
         body: JSON.stringify({ image: dataUrl })
       });
     } catch (err) {
+      if (tok !== scanTok) return;
       showError((err?.timedOut ? SLOW_MSG : "Couldn't reach the scan server. Check your internet connection and try again.") + DETAILS);
       return;
     }
 
+    if (tok !== scanTok) return;
     try {
       data = await resp.json();
     } catch {
+      if (tok !== scanTok) return;
       showError((resp.status >= 520 ? SLOW_MSG : `The scan server returned an unexpected response (HTTP ${resp.status}).`) + DETAILS);
       return;
     }
 
+    if (tok !== scanTok) return;
     if (!resp.ok || data.error) {
       if (data?.error === "not_a_recipe_card") {
         showError("That doesn't look like a recipe card. Try a clearer photo of one.");
@@ -406,6 +419,7 @@
     scanSourceName = typeof data.source === "string" ? data.source : "";
     let dish = null;
     if (Array.isArray(data.dishPhoto)) dish = await cropImageToDataURL(file, data.dishPhoto);
+    if (tok !== scanTok) return;
     setPhotoChoices([
       { key:"dish", label:"Dish photo", src: dish },
       { key:"card", label:"Whole card", src: dataUrl },
@@ -578,6 +592,9 @@
       return;
     }
     const titleNow = () => state.meals.find(m => m.id === mealId)?.title || "this meal";
+    const tok = (stepsScanTok.get(mealId) || 0) + 1;
+    stepsScanTok.set(mealId, tok);
+    const stale = () => stepsScanTok.get(mealId) !== tok;   // a newer back-of-card scan of this meal has started
     status("Scanning the back of the card… You can save and carry on — the steps are added when it's done.", 8000);
 
     {
@@ -599,13 +616,16 @@
           body: JSON.stringify({ image: dataUrl, mode: "steps_only" })
         });
       } catch {
+        if (stale()) return;
         status(`Couldn't reach the scan server for "${titleNow()}". Check your connection` + DETAILS, 7000);
         return;
       }
 
+      if (stale()) return;
       try { data = await resp.json(); }
       catch { status("Scan server returned an unexpected response.", 4000); return; }
 
+      if (stale()) return;
       if (!resp.ok || data.error) {
         if (data?.error === "not_a_recipe_card") status("That doesn't look like a recipe-instructions page.", 5000);
         else status(`Scan of "${titleNow()}" failed: ${data?.reason || resp.status}` + DETAILS, 9000);
